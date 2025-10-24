@@ -1,0 +1,10 @@
+Hello, I am building my own LLM!
+This is a sample text for training the tokenizer.
+Machine learning and natural language processing are fascinating fields.
+The quick brown fox jumps over the lazy dog.
+Python is a great programming language for data science.
+Neural networks and deep learning have revolutionized AI.
+Tokenization is an important step in NLP pipelines.
+Subword tokenization helps handle unknown words better.
+SentencePiece is a popular subword tokenization library.
+BPE and unigram are common subword tokenization algorithms.
