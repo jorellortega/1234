@@ -1,0 +1,1642 @@
+"use client"
+
+import { useState, useEffect, type ChangeEvent, useRef } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings } from "lucide-react"
+import { HudPanel } from "@/components/hud-panel"
+import { AztecIcon } from "@/components/aztec-icon"
+import { DocumentUpload } from "@/components/DocumentUpload"
+import { MemoryReview } from "@/components/MemoryReview"
+import { ProgressiveResponse } from "@/components/ProgressiveResponse"
+import { MemoryFormData } from "@/lib/types"
+
+export default function AIPromptPage() {
+  const [prompt, setPrompt] = useState("")
+  const [response, setResponse] = useState("")
+  const [mode, setMode] = useState("openai")
+  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
+  const needsOllama = mode === "llama" || mode === "mistral"
+  const isVisionModel = mode === "blip" || mode === "llava"
+  
+  // Function to get display name for modes
+  const getModeDisplayName = (mode: string) => {
+    switch (mode) {
+      case "blip": return "One"
+      case "llava": return "Dos"
+      default: return mode.toUpperCase()
+    }
+  }
+  
+  // NEW: Streaming state for top console
+  const [stream, setStream] = useState(true)
+  const [temperature, setTemperature] = useState(0.7)
+  const [topK, setTopK] = useState(20)
+  const [maxTokens, setMaxTokens] = useState(1024)
+  const [output, setOutput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [glowEnabled, setGlowEnabled] = useState(false)
+  const [responseStyle, setResponseStyle] = useState<"concise" | "detailed">("concise")
+
+  // NEW: Document import state
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false)
+  const [showMemoryReview, setShowMemoryReview] = useState(false)
+  const [extractedMemories, setExtractedMemories] = useState<MemoryFormData[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isProcessingDocument, setIsProcessingDocument] = useState(false)
+  const [lastProcessedDocument, setLastProcessedDocument] = useState<string | null>(null)
+  const [showDocumentReview, setShowDocumentReview] = useState(false)
+  const [processedDocumentData, setProcessedDocumentData] = useState<any>(null)
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [conversationHistory, setConversationHistory] = useState<Array<{
+    id: string,
+    role: 'user' | 'assistant' | 'system',
+    content: string,
+    timestamp: Date,
+    documentContext?: string,
+    parentConversationId?: string
+  }>>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [showThreadView, setShowThreadView] = useState(false)
+  const consoleRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const JOR_BINARY = "010010100100111101010010"
+
+  useEffect(() => {
+    let cancelled = false
+    async function check() {
+      try {
+        const r = await fetch("/api/ollama-status", { cache: "no-store" })
+        const j = await r.json()
+        if (!cancelled) setOllamaOk(Boolean(j?.ok))
+      } catch {
+        if (!cancelled) setOllamaOk(false)
+      }
+    }
+    check()
+    return () => { cancelled = true }
+  }, [mode])
+
+  const handlePromptChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setPrompt(value)
+
+    // Check if the input (ignoring spaces) matches the binary code for "JOR"
+    if (value.replace(/\s/g, "") === JOR_BINARY) {
+      setResponse("WELCOME INFINITO")
+    } else {
+      setResponse("")
+    }
+  }
+
+  const handleModelChange = (value: string) => {
+    setMode(value)
+    console.log("mode:", value)
+  }
+
+
+
+  // NEW: Document drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      // Automatically process and save the dropped document
+      await processAndSaveDocument(files[0])
+    }
+  }
+
+  // NEW: Direct document processing and saving
+  const processAndSaveDocument = async (file: File) => {
+    try {
+      setError(null)
+      setIsProcessingDocument(true)
+      
+      // Create FormData for file upload
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('filename', file.name)
+
+      // Process document
+      const response = await fetch('/api/documents/process', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to process document')
+      }
+
+      const result = await response.json()
+      
+      if (result.memories && result.memories.length > 0) {
+        // Automatically save all extracted memories
+        for (const memory of result.memories) {
+          await fetch('/api/memories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(memory),
+          })
+        }
+        
+        // Show success message
+        setError(null)
+        setLastProcessedDocument(`${file.name} (${result.memories.length} memories)`)
+        
+        // Set the processed document data to show the file icon
+        setProcessedDocumentData(result)
+        // Don't automatically show the review window - let user click the icon
+        
+        // Start a new conversation for this document
+        setCurrentConversationId(null)
+        setConversationHistory([])
+        
+        // Add document loading event to conversation history
+        setConversationHistory([{
+          id: `doc-${Date.now()}`,
+          role: 'system',
+          content: `Document loaded: ${result.filename}`,
+          timestamp: new Date(),
+          documentContext: result.filename,
+          parentConversationId: undefined
+        }])
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => setLastProcessedDocument(null), 5000)
+        
+        console.log(`Successfully processed and saved ${result.memories.length} memories from ${file.name}`)
+      } else {
+        throw new Error('No memories extracted from document')
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process document')
+      console.error('Error processing document:', err)
+    } finally {
+      setIsProcessingDocument(false)
+    }
+  }
+
+  // NEW: Image upload handler for vision models
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+      setError(null)
+    } else {
+      setError('Please select a valid image file')
+    }
+  }
+
+  // NEW: Image drag and drop handlers
+  const handleImageDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleImageDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleImageDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      const file = files[0]
+      if (file.type.startsWith('image/')) {
+        setSelectedImage(file)
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setImagePreview(e.target?.result as string)
+        }
+        reader.readAsDataURL(file)
+        setError(null)
+      } else {
+        setError('Please drop a valid image file')
+      }
+    }
+  }
+
+  const clearSelectedImage = () => {
+    setSelectedImage(null)
+    setImagePreview(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+    // NEW: Save image as a document-like memory and upload to storage
+  const saveImageAsMemory = async () => {
+    if (!selectedImage || !imagePreview) return
+    
+    try {
+      // First, upload the image file to Supabase storage
+      const formData = new FormData()
+      formData.append('file', selectedImage)
+      formData.append('filename', selectedImage.name)
+      
+      console.log('Uploading image to storage bucket...')
+      
+      const uploadResponse = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData
+      })
+      
+      let storageUrl = null
+      if (uploadResponse.ok) {
+        const uploadData = await uploadResponse.json()
+        storageUrl = uploadData.url
+        console.log('Image uploaded to storage:', storageUrl)
+      } else {
+        console.error('Failed to upload image to storage:', uploadResponse.status)
+      }
+      
+      // Then save the memory with storage URL
+      const imageMemory = {
+        concept: `Image Document: ${selectedImage.name}`,
+        data: `Image file uploaded for vision model analysis.\n\nFilename: ${selectedImage.name}\nSize: ${(selectedImage.size / 1024 / 1024).toFixed(2)} MB\nType: ${selectedImage.type}\nVision Model: ${mode.toUpperCase()}\nStorage URL: ${storageUrl || 'Upload failed'}\n\nImage Data: ${imagePreview ? 'Available' : 'Not available'}`,
+        salience: 0.9,
+        connections: ['image_document', 'vision_model', 'memory_core'],
+        memory_type: 'semantic',
+        priority: 8,
+        memory_category: 'image_document',
+        parent_id: null,
+        hierarchy_level: 0
+      }
+
+      console.log('Saving image as memory document:', imageMemory)
+      
+      const response = await fetch('/api/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imageMemory)
+      })
+      
+      if (response.ok) {
+        const responseData = await response.json()
+        console.log('Image document saved to memory:', responseData)
+        
+        // Set this as the current document context
+        setProcessedDocumentData({
+          filename: selectedImage.name,
+          fileType: selectedImage.type,
+          extractedText: 'Image document for vision analysis',
+          memories: [imageMemory]
+        })
+        
+        setLastProcessedDocument(`${selectedImage.name} (Image Document)`)
+        setTimeout(() => setLastProcessedDocument(null), 5000)
+      } else {
+        console.error('Failed to save image document:', response.status)
+      }
+    } catch (error) {
+      console.error('Error saving image document:', error)
+    }
+  }
+
+  // NEW: Document processing handlers
+  const handleDocumentProcessed = (memories: MemoryFormData[]) => {
+    setExtractedMemories(memories)
+    setShowDocumentUpload(false)
+    setShowMemoryReview(true)
+  }
+
+  const handleSaveExtractedMemories = async (memories: MemoryFormData[]) => {
+    try {
+      // Save each extracted memory to the memory core
+      for (const memory of memories) {
+        await fetch('/api/memories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(memory),
+        })
+      }
+      
+      setShowMemoryReview(false)
+      setExtractedMemories([])
+      
+      // Show success message
+      setError(null)
+    } catch (err) {
+      setError('Failed to save some extracted memories')
+      console.error('Error saving extracted memories:', err)
+    }
+  }
+
+  // NEW: Stream from API function for SSE
+  async function* streamFromAPI(prompt: string, mode: string) {
+    const res = await fetch("/api/generate-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+          prompt, 
+          mode, 
+          max_tokens: maxTokens, 
+          temperature, 
+          top_k: topK,
+          image: isVisionModel && selectedImage ? imagePreview : undefined, // Send actual image data for vision models
+        }),
+    });
+
+    if (!res.body) throw new Error("No stream body");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n"); // SSE delimiter
+      buf = parts.pop() ?? "";
+      for (const part of parts) {
+        if (part.startsWith("data: ")) {
+          yield part.slice(6);
+        }
+      }
+    }
+  }
+
+  // NEW: Handle TRANSMIT button click
+  async function handleTransmit() {
+    if (!prompt.trim()) return
+    
+    // For image mode, check if an image is uploaded
+    if (isVisionModel && !selectedImage) {
+      setError("Please upload an image first to use image mode. Use the image upload section above.")
+      return
+    }
+    
+    setLoading(true)
+    setError(null)
+    setOutput("")
+
+    // If there's a document loaded, include it in the context
+    let enhancedPrompt = prompt
+    
+    // Add response style instruction
+    const styleInstruction = responseStyle === "concise" 
+      ? "CRITICAL: Give ONLY a direct, concise answer in 1-2 sentences maximum. Do NOT provide examples, code, or detailed explanations. Keep it brief and to the point."
+      : "IMPORTANT: Provide a detailed, comprehensive explanation with examples and context."
+    
+    // Add conversation context if available (skip for image mode to avoid errors)
+    let conversationContext = ''
+    if (!isVisionModel) {
+      try {
+        conversationContext = await retrieveConversationContext()
+      } catch (error) {
+        console.error('Failed to retrieve conversation context, continuing without it:', error)
+      }
+    }
+    
+    if (conversationContext) {
+      enhancedPrompt = `${styleInstruction}
+
+Conversation History:
+${conversationContext}
+
+Current Question: ${prompt}
+
+Please continue the conversation naturally, remembering the context above.`
+    }
+    
+    // Add document context if available
+    if (processedDocumentData) {
+      enhancedPrompt = `${styleInstruction}
+
+Document Context: ${processedDocumentData.filename}
+Extracted Text: ${processedDocumentData.extractedText}
+
+${conversationContext ? `Conversation History:
+${conversationContext}
+
+` : ''}Current Question: ${prompt}
+
+Please answer the user's question based on the document content above, and continue the conversation naturally.`
+    }
+    
+    // For simple questions without context, add style instruction
+    if (!conversationContext && !processedDocumentData) {
+      enhancedPrompt = `${styleInstruction}
+
+Question: ${prompt}
+
+Please provide a ${responseStyle} answer.`
+    }
+
+    const payload = JSON.stringify({
+      prompt: enhancedPrompt,
+      mode,
+      max_tokens: maxTokens,
+      temperature,
+      top_k: topK,
+      response_style: responseStyle,
+      image: isVisionModel && selectedImage ? imagePreview : undefined, // Send actual image data for vision models
+    })
+
+    console.log("sending mode:", mode)
+
+    try {
+      if (!stream) {
+        // Non-streaming path
+        const r = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        })
+        const data = await r.json()
+        if (!r.ok || data.error) throw new Error(data.error || "Request failed")
+        const text = String(data.output ?? "")
+        setOutput(text)
+        
+        // Save user question to memory core (skip for image mode to avoid errors)
+        if (!isVisionModel) {
+          await saveConversationTurn('user', prompt, '')
+          
+          // Save AI response to memory core
+          await saveConversationTurn('assistant', '', text)
+        }
+        
+        // Clear the input for the next question
+        setPrompt('')
+        
+        // Log to Supabase
+        fetch("/api/save-generation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            prompt, 
+            output: text, 
+            model: "distilgpt2", 
+            temperature, 
+            top_k: topK 
+          }),
+        }).catch(() => {})
+      } else {
+        // Streaming path
+        let finalText = ""
+        for await (const chunk of streamFromAPI(enhancedPrompt, mode)) {
+          finalText += chunk
+          setOutput(prev => prev + chunk)
+        }
+        
+        // Save user question to memory core (skip for image mode to avoid errors)
+        if (!isVisionModel) {
+          await saveConversationTurn('user', prompt, '')
+          
+          // Save AI response to memory core
+          await saveConversationTurn('assistant', '', finalText)
+        }
+        
+        // Clear the input for the next question
+        setPrompt('')
+        
+        // Log to Supabase
+        if (finalText) {
+          fetch("/api/save-generation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              prompt, 
+              output: finalText, 
+              model: "distilgpt2", 
+              temperature, 
+              top_k: topK 
+            }),
+          }).catch(() => {})
+        }
+      }
+    } catch (e: any) {
+      setError(e.message || "Unknown error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // NEW: Save conversation turn to memory core
+  const saveConversationTurn = async (role: 'user' | 'assistant', userInput: string, aiResponse: string) => {
+    // For image mode, save with image context
+    if (isVisionModel && selectedImage) {
+      try {
+        const visionMemory = {
+          concept: `Vision Model Analysis: ${role === 'user' ? 'User Question' : 'AI Response'} - ${selectedImage.name}`,
+          data: `${role === 'user' ? 'User Question' : 'AI Response'}: ${role === 'user' ? userInput : aiResponse}\n\nImage: ${selectedImage.name} (${(selectedImage.size / 1024 / 1024).toFixed(2)} MB)\nVision Model: ${mode.toUpperCase()}`,
+          salience: 0.8,
+          connections: ['vision_model', 'image_analysis', 'ai_chat', 'memory_core'],
+          memory_type: 'semantic',
+          priority: 7,
+          memory_category: 'vision_analysis',
+          parent_id: currentConversationId || null,
+          hierarchy_level: currentConversationId ? 1 : 0
+        }
+
+        console.log('Saving image mode memory:', visionMemory)
+        
+        const response = await fetch('/api/memories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(visionMemory)
+        })
+        
+        if (response.ok) {
+          const responseData = await response.json()
+          console.log('Image mode memory saved:', responseData)
+          
+          // Add to local conversation history
+          const memoryId = responseData.memory?.id || responseData.id || `vision-${Date.now()}`
+          if (!currentConversationId) {
+            setCurrentConversationId(memoryId)
+          }
+          
+          setConversationHistory(prev => [...prev, {
+            id: memoryId,
+            role,
+            content: role === 'user' ? userInput : aiResponse,
+            timestamp: new Date(),
+            documentContext: `Image Analysis: ${selectedImage.name}`,
+            parentConversationId: currentConversationId || memoryId
+          }])
+        } else {
+          console.error('Failed to save image mode memory:', response.status)
+        }
+      } catch (error) {
+        console.error('Error saving image mode memory:', error)
+      }
+      return
+    }
+    
+    // Skip memory saving for image mode without images to avoid database errors
+    if (isVisionModel && !selectedImage) {
+      console.log('Skipping memory save for image mode without image')
+      return
+    }
+    
+    try {
+      // Clean and validate the data before sending
+      const cleanData = role === 'user' ? userInput : aiResponse
+      if (!cleanData || cleanData.trim() === '') {
+        console.error('Empty content for conversation turn, skipping save')
+        return
+      }
+
+      const conversationMemory = {
+        concept: `Conversation Turn: ${role === 'user' ? 'User Question' : 'AI Response'}`,
+        data: cleanData,
+        salience: 0.7,
+        connections: ['conversation', 'ai_chat', 'memory_core'],
+        memory_type: 'semantic',
+        priority: 6,
+        memory_category: 'conversation',
+        parent_id: currentConversationId || null,
+        hierarchy_level: currentConversationId ? 1 : 0
+        // Removed document fields for now to avoid foreign key issues
+      }
+
+      console.log('Sending conversation memory:', conversationMemory)
+      
+      const response = await fetch('/api/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conversationMemory)
+      })
+      
+      console.log('Memory save response status:', response.status)
+
+      if (response.ok) {
+        const responseData = await response.json()
+        console.log('Memory save response:', responseData)
+        
+        // Handle different possible response formats
+        let savedMemory = null
+        if (responseData.memory) {
+          savedMemory = responseData.memory
+        } else if (responseData.id) {
+          savedMemory = responseData
+        } else if (responseData.data && responseData.data.id) {
+          savedMemory = responseData.data
+        }
+        
+        if (savedMemory && savedMemory.id) {
+          // If this is the first conversation turn, set it as the root
+          if (!currentConversationId) {
+            setCurrentConversationId(savedMemory.id)
+          }
+
+          // Add to local conversation history
+          setConversationHistory(prev => [...prev, {
+            id: savedMemory.id,
+            role,
+            content: role === 'user' ? userInput : aiResponse,
+            timestamp: new Date(),
+            documentContext: processedDocumentData?.filename,
+            parentConversationId: currentConversationId || savedMemory.id
+          }])
+
+          console.log(`Conversation turn saved to memory core: ${savedMemory.id}`)
+        } else {
+          console.error('Memory save response missing ID. Full response:', responseData)
+          console.error('Response keys:', Object.keys(responseData))
+        }
+      } else {
+        console.error('Failed to save memory:', response.status, response.statusText)
+        // Try to get the error details
+        try {
+          const errorText = await response.text()
+          console.error('Memory save error details:', errorText)
+        } catch (e) {
+          console.error('Could not read error response body')
+        }
+      }
+    } catch (error) {
+      console.error('Error saving conversation turn:', error)
+    }
+    
+    // Fallback: Add to local conversation history even if memory save fails
+    const fallbackId = crypto.randomUUID()
+    if (!currentConversationId) {
+      setCurrentConversationId(fallbackId)
+    }
+    
+    setConversationHistory(prev => [...prev, {
+      id: fallbackId,
+      role,
+      content: role === 'user' ? userInput : aiResponse,
+      timestamp: new Date(),
+      documentContext: processedDocumentData?.filename,
+      parentConversationId: currentConversationId || fallbackId
+    }])
+  }
+
+  // NEW: Retrieve conversation context from memory core
+  const retrieveConversationContext = async (): Promise<string> => {
+    // For image mode, return local conversation history instead of database
+    if (isVisionModel) {
+      if (conversationHistory.length > 0) {
+        return conversationHistory.map(msg => 
+          `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}`
+        ).join('\n\n')
+      }
+      return ''
+    }
+    
+    if (!currentConversationId) return ''
+
+    try {
+      // First get the root conversation memory
+      const rootResponse = await fetch(`/api/memories/${currentConversationId}`)
+      if (!rootResponse.ok) {
+        console.error('Failed to get root conversation:', rootResponse.status)
+        return ''
+      }
+      
+      const rootMemory = await rootResponse.json()
+      let conversationText = `${rootMemory.concept.includes('User Question') ? 'User' : 'AI'}: ${rootMemory.data}\n\n`
+      
+      // Then get all sub-memories (responses and follow-ups)
+      const response = await fetch(`/api/memories?parent_id=eq.${currentConversationId}&order=created_at.asc`)
+      if (response.ok) {
+        const conversationMemories = await response.json()
+        console.log('Retrieved conversation memories:', conversationMemories)
+        
+        if (conversationMemories && conversationMemories.length > 0) {
+          conversationText += conversationMemories.map((memory: any) => 
+            `${memory.concept.includes('User Question') ? 'User' : 'AI'}: ${memory.data}`
+          ).join('\n\n')
+        }
+      } else {
+        console.error('Failed to retrieve conversation context:', response.status, response.statusText)
+        // Try to get response text for more details
+        try {
+          const errorText = await response.text()
+          console.error('Error response body:', errorText)
+        } catch (e) {
+          console.error('Could not read error response body')
+        }
+      }
+      
+      return conversationText
+    } catch (error) {
+      console.error('Error retrieving conversation context:', error)
+    }
+    
+    return ''
+  }
+
+  return (
+    <div className="relative min-h-screen w-full">
+      <div className="aztec-background" />
+      <div className="animated-grid" />
+
+      <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
+        <header className="flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <svg className="w-10 h-10 infinity-symbol" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18.178 8C21.606 8 23.25 10.696 23.25 12c0 1.304-1.644 4-5.072 4-2.539 0-4.51-1.476-5.928-3.542l-.238-.345.238-.346C13.668 9.476 15.639 8 18.178 8zm0 1.5c-1.83 0-3.432.985-4.693 2.5 1.261 1.515 2.863 2.5 4.693 2.5 2.539 0 3.572-1.696 3.572-2.5 0-.804-1.033-2.5-3.572-2.5zm-12.356 0c-2.539 0-3.572 1.696-3.572 2.5 0 .804 1.033 2.5 3.572 2.5 1.83 0 3.432-.985 4.693-2.5-1.261-1.515-2.863-2.5-4.693-2.5zm0-1.5c2.539 0 4.51 1.476 5.928 3.542l.238.345-.238.346C10.332 14.524 8.361 16 5.822 16 2.394 16 .75 13.304.75 12c0-1.304 1.644-4 5.072-4z" fill="url(#infinito-gradient)" stroke="url(#infinito-gradient)" strokeWidth="0.5"/>
+              <defs>
+                <linearGradient id="infinito-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                  <stop offset="50%" style={{stopColor: '#8b5cf6', stopOpacity: 1}} />
+                  <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                </linearGradient>
+              </defs>
+            </svg>
+            <h1 className="text-3xl font-bold infinito-gradient">INFINITO</h1>
+          </div>
+          <Link href="/library" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
+            <BookUser className="h-5 w-5" />
+            <span className="hidden md:inline">Library</span>
+          </Link>
+          <Link
+            href="/memory-core"
+            className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+          >
+            <BrainCircuit className="h-5 w-5" />
+            <span className="hidden md:inline">Memory Core</span>
+          </Link>
+          <Link
+            href="/ai-settings"
+            className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+          >
+            <Settings className="h-5 w-5" />
+            <span className="hidden md:inline">AI Settings</span>
+          </Link>
+
+          <div className="text-right text-cyan-400 text-sm">
+            <p>
+              STATUS: <span className="text-amber-400 font-bold">ONLINE</span>
+            </p>
+            <p>V.1.0.2-GAMMA</p>
+          </div>
+        </header>
+
+        <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
+          {/* Left Panel */}
+          <div className="hidden lg:block lg:col-span-3 space-y-6">
+            <HudPanel title="System Core">
+              <p className="flex items-center gap-2">
+                <AztecIcon name="sun-stone" className="text-amber-400 animate-icon-pulse" /> Cognitive Matrix:{" "}
+                <span className="text-green-400">STABLE</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="sun-stone"
+                  className="text-amber-400 animate-icon-pulse"
+                />{" "}
+                Heuristic Engine: <span className="text-green-400">ACTIVE</span>
+              </p>
+              <p>
+                Data Throughput: <span className="text-white">1.2 ZB/s</span>
+              </p>
+
+            </HudPanel>
+            <HudPanel title="Active Threads">
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="serpent"
+                  className="text-cyan-400 animate-icon-pulse"
+                />{" "}
+                Predictive Analysis
+              </p>
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="serpent"
+                  className="text-cyan-400 animate-icon-pulse"
+                />{" "}
+                Code Synthesis
+              </p>
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="serpent"
+                  className="text-cyan-400 animate-icon-pulse"
+                />{" "}
+                Global Monitoring
+              </p>
+            </HudPanel>
+          </div>
+
+          {/* Center Panel - Main Interaction */}
+          <div className="col-span-1 lg:col-span-6 flex flex-col justify-center items-center h-full">
+            <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
+              {response ? (
+                <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
+                  {response}
+                </h2>
+              ) : (
+                <>
+                  <svg className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-4 infinity-symbol" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M151.483 66.667C180.05 66.667 193.75 89.133 193.75 100c0 10.867-13.7 33.333-42.267 33.333-21.158 0-37.583-12.3-49.4-29.517l-1.983-2.875 1.983-2.883c11.817-17.133 28.242-29.391 49.4-29.391zm0 12.5c-15.25 0-28.6 8.208-39.108 20.833 10.508 12.625 23.858 20.833 39.108 20.833 21.158 0 29.767-14.133 29.767-20.833 0-6.7-8.609-20.833-29.767-20.833zm-102.966 0c-21.158 0-29.767 14.133-29.767 20.833 0 6.7 8.609 20.833 29.767 20.833 15.25 0 28.6-8.208 39.108-20.833-10.508-12.625-23.858-20.833-39.108-20.833zm0-12.5c21.158 0 37.583 12.258 49.4 29.516l1.983 2.875-1.983 2.884c-11.817 17.216-28.242 29.391-49.4 29.391C19.95 133.333 6.25 110.867 6.25 100c0-10.867 13.7-33.333 42.267-33.333z" 
+                          fill="url(#infinito-main-gradient)" 
+                          stroke="url(#infinito-stroke-gradient)" 
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"/>
+                    <defs>
+                      <linearGradient id="infinito-main-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                        <stop offset="25%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
+                        <stop offset="50%" style={{stopColor: '#8b5cf6', stopOpacity: 1}} />
+                        <stop offset="75%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
+                        <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                      </linearGradient>
+                      <linearGradient id="infinito-stroke-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
+                        <stop offset="50%" style={{stopColor: '#a78bfa', stopOpacity: 0.8}} />
+                        <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <h2 className="text-5xl md:text-6xl font-bold mb-2 tracking-widest infinito-gradient">
+                    INFINITO
+                  </h2>
+                  <p className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 tracking-[0.3em] uppercase text-sm">The AI of Infinite Possibilities</p>
+                </>
+              )}
+            </div>
+
+            {/* Ollama Status Banner */}
+            {needsOllama && ollamaOk === false && (
+              <div className="w-full max-w-3xl bg-amber-900/40 border border-amber-500/40 text-amber-300 text-sm px-3 py-2 rounded-md mb-3">
+                Local models unavailable: Ollama isn't reachable. Start Ollama or switch modes.
+              </div>
+            )}
+            
+
+            
+
+
+
+            {/* Model Selector */}
+            <div className="w-full max-w-3xl mb-4 flex justify-between items-center">
+              {/* Left Side - Main Model */}
+              <div className="flex items-center gap-3">
+                <span className="text-cyan-400 text-sm font-semibold tracking-wide uppercase">MODEL:</span>
+                <Select value={mode} onValueChange={handleModelChange}>
+                  <SelectTrigger className="w-32 h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
+                    <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>
+                    <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>
+                    <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>
+                    <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>
+                    <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>
+                    <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>
+                    <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Right Side - Image Mode */}
+              <div className="flex items-center gap-3">
+                <span className="text-purple-400 text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
+                <Select value={mode === "blip" || mode === "llava" ? mode : ""} onValueChange={(value) => {
+                  if (value === "blip" || value === "llava") {
+                    setMode(value)
+                  }
+                }}>
+                  <SelectTrigger className="w-40 h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
+                    <SelectValue placeholder="Select Vision Model" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
+                    <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One"</SelectItem>
+                    <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos"</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+
+
+            {/* NEW: Drag and Drop Zone */}
+            <div 
+              ref={consoleRef}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`w-full max-w-3xl transition-all duration-300 ${
+                isDragOver 
+                  ? 'scale-105 border-2 border-dashed border-cyan-400 bg-cyan-900/20' 
+                  : ''
+              }`}
+            >
+              {/* Drag Overlay */}
+              {isDragOver && (
+                <div className="absolute inset-0 flex items-center justify-center bg-cyan-900/50 backdrop-blur-sm rounded-lg z-20">
+                  <div className="text-center text-cyan-400">
+                    <Upload className="h-16 w-16 mx-auto mb-4 animate-bounce" />
+                    <p className="text-xl font-bold">Drop Document Here</p>
+                    <p className="text-sm">PDF, Word, or Text files</p>
+                  </div>
+                </div>
+              )}
+
+              <div className={`aztec-panel backdrop-blur-md shadow-2xl p-2 relative transition-all duration-300 border-infinito ${
+                isVisionModel 
+                  ? 'shadow-purple-500/20' 
+                  : 'shadow-infinito'
+              } ${glowEnabled ? 'glow' : ''}`}>
+
+                
+                {isProcessingDocument && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm rounded-lg z-10">
+                    <div className="text-center text-cyan-400">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto mb-4"></div>
+                      <p className="text-lg font-bold">Processing Document...</p>
+                      <p className="text-sm">Extracting memories with AI</p>
+                    </div>
+                  </div>
+                )}
+                
+                
+                
+                                        {/* Document Preview - appears inside console when document is ready (hidden when thread is open) */}
+            {processedDocumentData && !showDocumentReview && !showThreadView && (
+              <div className={`mb-2 p-2 bg-gradient-to-r from-cyan-900/20 via-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded ${glowEnabled ? 'glow' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="text-cyan-400">
+                      {processedDocumentData.fileType.includes('pdf') ? (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                          <path d="M14 2v6h6"/>
+                          <path d="M9 13h6"/>
+                          <path d="M9 17h6"/>
+                          <path d="M9 9h1"/>
+                        </svg>
+                      ) : processedDocumentData.fileType.includes('word') || processedDocumentData.fileType.includes('document') ? (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                          <path d="M14 2v6h6"/>
+                          <path d="M16 13H8"/>
+                          <path d="M16 17H8"/>
+                          <path d="M10 9H8"/>
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                          <path d="M14 2v6h6"/>
+                          <path d="M16 13H8"/>
+                          <path d="M16 17H8"/>
+                          <path d="M10 9H8"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs font-medium text-cyan-300">
+                        {processedDocumentData.filename}
+                      </div>
+                      <div className="text-xs text-cyan-500">
+                        {processedDocumentData.fileType} • {processedDocumentData.memories.length} memories
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex space-x-1">
+                    <Button
+                      onClick={() => setShowDocumentReview(true)}
+                      className="text-xs px-1.5 py-0.5 bg-cyan-600/60 hover:bg-cyan-500/80 text-white"
+                      title="View full details"
+                    >
+                      Details
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setProcessedDocumentData(null)
+                        setShowDocumentReview(false)
+                      }}
+                      className="text-xs px-1.5 py-0.5 bg-gray-600/60 hover:bg-gray-500/80 text-white"
+                      title="Dismiss document"
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-cyan-400/80">
+                  AI ready to help with questions about this document
+                </div>
+                
+                {/* Extracted Text Preview */}
+                <div className={`mt-2 p-1.5 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''}`}>
+                  <div className="text-xs text-cyan-500 mb-1">Text Preview:</div>
+                  <div className="text-xs text-cyan-300 max-h-16 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap leading-relaxed">
+                      {processedDocumentData.extractedText.substring(0, 150)}...
+                    </pre>
+                  </div>
+                </div>
+
+
+              </div>
+            )}
+                
+                {/* Image Mode Image Upload - integrated into prompt area */}
+                {isVisionModel && (
+                  <div 
+                    className={`mb-3 p-3 bg-purple-900/20 border border-purple-500/30 rounded-lg transition-all duration-300 relative ${
+                      isDragOver ? 'scale-105 border-2 border-dashed border-purple-400 bg-purple-900/40' : ''
+                    }`}
+                    onDragOver={handleImageDragOver}
+                    onDragLeave={handleImageDragLeave}
+                    onDrop={handleImageDrop}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-purple-400 text-sm font-medium">📷 Image Mode: {getModeDisplayName(mode)}</span>
+                      {selectedImage && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={clearSelectedImage}
+                          className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 text-xs px-2 py-1"
+                        >
+                          ✕ Clear
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {!selectedImage ? (
+                      <div className="text-center">
+                        {/* Drag Overlay */}
+                        {isDragOver && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-purple-900/50 backdrop-blur-sm rounded-lg z-20">
+                            <div className="text-center text-purple-400">
+                              <div className="text-4xl mb-2">📷</div>
+                              <p className="text-lg font-bold">Drop Image Here</p>
+                              <p className="text-sm">JPG, PNG, GIF, or other image formats</p>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center gap-3">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                          <Button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm"
+                          >
+                            📷 Upload Image
+                          </Button>
+                          <span className="text-purple-300 text-xs">or drag & drop an image here</span>
+                        </div>
+                        <p className="text-purple-300 text-xs mt-2">Select an image to analyze with {getModeDisplayName(mode)}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          {imagePreview && (
+                            <img 
+                              src={imagePreview} 
+                              alt="Selected image" 
+                              className="w-12 h-12 object-cover rounded border border-purple-500/50"
+                            />
+                          )}
+                          <div className="flex-1">
+                            <p className="text-purple-300 text-sm font-medium">{selectedImage.name}</p>
+                            <p className="text-purple-400 text-xs">{(selectedImage.size / 1024 / 1024).toFixed(2)} MB • Ready for analysis</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={saveImageAsMemory}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs"
+                            title="Save image to memory core"
+                          >
+                            💾 Save to Memory
+                          </Button>
+                          <p className="text-green-400 text-sm">✅ Image ready for analysis! Ask questions about it below.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <textarea
+                  placeholder={
+                    isProcessingDocument 
+                      ? "Processing document..." 
+                      : isVisionModel 
+                        ? selectedImage 
+                          ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
+                          : "Ask about an image or describe what you see... (upload image first)"
+                        : processedDocumentData 
+                          ? `Ask about ${processedDocumentData.filename} or continue working...` 
+                          : "INITIATE QUERY... (or drop a document here)"
+                  }
+                  className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
+                    isVisionModel 
+                      ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
+                      : 'text-blue-300 placeholder-blue-700'
+                  } ${isVisionModel ? 'h-40' : 'h-32'}`}
+                  value={prompt}
+                  onChange={handlePromptChange}
+                  disabled={isProcessingDocument}
+                />
+                
+
+
+                {/* Thread View - Only show when expanded */}
+                {showThreadView && (
+                  <div className={`mb-2 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''}`}>
+                    {/* Document Header - Only show if document is loaded */}
+                    {processedDocumentData && (
+                      <div className="p-3 border-b border-cyan-500/20 bg-black/20">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <div className="text-cyan-400">
+                              {processedDocumentData.fileType.includes('pdf') ? (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                  <path d="M14 2v6h6"/>
+                                  <path d="M9 13h6"/>
+                                  <path d="M9 17h6"/>
+                                  <path d="M9 9h1"/>
+                                </svg>
+                              ) : processedDocumentData.fileType.includes('word') || processedDocumentData.fileType.includes('document') ? (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                  <path d="M14 2v6h6"/>
+                                  <path d="M16 13H8"/>
+                                  <path d="M16 17H8"/>
+                                  <path d="M10 9H8"/>
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                  <path d="M14 2v6h6"/>
+                                  <path d="M16 13H8"/>
+                                  <path d="M16 17H8"/>
+                                  <path d="M10 9H8"/>
+                                </svg>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-cyan-300">
+                                {processedDocumentData.filename}
+                              </div>
+                              <div className="text-xs text-cyan-500">
+                                {processedDocumentData.fileType} • {processedDocumentData.memories.length} memories extracted
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={() => {
+                              setProcessedDocumentData(null)
+                              setConversationHistory([])
+                              setCurrentConversationId(null)
+                            }}
+                            className="text-xs px-2 py-1 bg-red-600/60 hover:bg-red-500/80 text-white"
+                            title="Clear document and conversation"
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                        <div className="text-xs text-cyan-400/80 mb-2">
+                          AI ready to help with questions about this document
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Conversation Thread */}
+                    <div className="p-3">
+                      <div className="text-xs text-cyan-500 mb-3">Conversation Thread:</div>
+                      <div className="text-xs text-cyan-300 max-h-60 overflow-y-auto space-y-3">
+                        {conversationHistory.map((msg, index) => (
+                          <div key={msg.id || `msg-${index}`} className="border-l-2 border-cyan-500/30 pl-3">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className={`text-xs font-medium ${
+                                msg.role === 'user' ? 'text-cyan-400' : 
+                                msg.role === 'assistant' ? 'text-green-400' : 
+                                'text-blue-400'
+                              }`}>
+                                {msg.role === 'user' ? 'You' : 
+                                 msg.role === 'assistant' ? 'AI' : 
+                                 'System'}
+                              </span>
+                              <span className="text-xs text-cyan-600">
+                                {msg.timestamp.toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div className="text-xs text-cyan-300 leading-relaxed">
+                              {msg.content}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex justify-between items-center p-2 border-t border-blue-500/30">
+                  <div className="flex gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white"
+                      onClick={() => setShowDocumentUpload(true)}
+                      title="Import Document"
+                    >
+                      <FileUp className="h-5 w-5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white">
+                      <Mic className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  
+                  {/* Thread Button - positioned in middle area */}
+                  {conversationHistory.length > 0 && (
+                    <Button
+                      onClick={() => setShowThreadView(!showThreadView)}
+                      className="px-3 py-1.5 bg-transparent border border-cyan-500/40 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300 transition-all text-xs font-medium"
+                      title={showThreadView ? "Hide conversation thread" : "Show conversation thread"}
+                    >
+                      {showThreadView ? "HIDE THREAD" : "SHOW THREAD"}
+                    </Button>
+                  )}
+                  
+                  <Button 
+                    onClick={handleTransmit}
+                    disabled={loading}
+                    title={needsOllama && ollamaOk === false ? "May fail while Ollama is down." : undefined}
+                    className="bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-8 py-3 text-lg tracking-widest transition-all disabled:opacity-50"
+                  >
+                    {loading 
+                      ? (stream ? "STREAMING..." : "PROCESSING...") 
+                      : isVisionModel 
+                        ? "ANALYZE IMAGE" 
+                        : "TRANSMIT"
+                    }
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* NEW: Document Processing Success Message */}
+            {lastProcessedDocument && (
+              <div className="w-full max-w-3xl mt-4 p-3 bg-green-900/20 border border-green-500/30 rounded-lg text-green-400 text-sm text-center">
+                ✅ Document processed successfully! {lastProcessedDocument}
+              </div>
+            )}
+
+            {/* NEW: Stream toggle and controls */}
+            <div className="w-full max-w-3xl mt-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-cyan-400">
+                  <input 
+                    type="checkbox" 
+                    checked={stream} 
+                    onChange={(e) => setStream(e.target.checked)}
+                    className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
+                  />
+                  <span>Stream tokens</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-cyan-400">
+                  <input 
+                    type="checkbox" 
+                    checked={glowEnabled} 
+                    onChange={(e) => setGlowEnabled(e.target.checked)}
+                    className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
+                  />
+                  <span>Glow effect</span>
+                </label>
+                              <div className="flex items-center gap-2 text-sm text-cyan-400">
+                <span>Response:</span>
+                                  <select
+                    value={responseStyle}
+                    onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
+                    className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-2 py-1 text-xs focus:ring-cyan-500"
+                  >
+                    <option value="concise">Concise</option>
+                    <option value="detailed">Detailed</option>
+                  </select>
+                <span className={`text-xs px-2 py-1 rounded ${
+                  responseStyle === "concise" 
+                    ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                    : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                }`}>
+                  {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
+                </span>
+              </div>
+              </div>
+              
+              <div className="flex gap-4 text-xs text-cyan-400">
+                <label className="flex items-center gap-2">
+                  <span>Temp:</span>
+                  <input
+                    type="range" min={0.1} max={1.5} step={0.05}
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    className="w-16"
+                  />
+                  <span className="w-8 text-center">{temperature.toFixed(2)}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span>Top-K:</span>
+                  <input
+                    type="range" min={0} max={200} step={5}
+                    value={topK}
+                    onChange={(e) => setTopK(parseInt(e.target.value))}
+                    className="w-16"
+                  />
+                  <span className="w-8 text-center">{topK}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span>Max:</span>
+                  <input
+                    type="range" min={50} max={2048} step={50}
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                    className="w-16"
+                  />
+                  <span className="w-8 text-center">{maxTokens}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* NEW: Output display */}
+            {error && (
+              <div className="w-full max-w-3xl mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                Error: {error}
+              </div>
+            )}
+            
+
+            
+            {/* AI Response Window - Only show when thread is closed */}
+            {output && !showThreadView && (
+              <ProgressiveResponse 
+                content={output} 
+                responseStyle={responseStyle}
+                onShowMore={async (topic: string) => {
+                  // Make a follow-up API call asking for more details
+                  const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
+
+IMPORTANT: Format your response with clear paragraphs. Each paragraph should be separated by a blank line (double line break). For example:
+
+Paragraph 1 content here.
+
+Paragraph 2 content here.
+
+Paragraph 3 content here.
+
+Make sure to use proper spacing between paragraphs for readability.`
+                  
+                  const payload = JSON.stringify({
+                    prompt: followUpPrompt,
+                    mode,
+                    max_tokens: maxTokens,
+                    temperature,
+                    top_k: topK,
+                    response_style: "detailed", // Force detailed for follow-up
+                  })
+
+                  try {
+                    if (stream) {
+                      // For streaming, collect the response
+                      let detailedResponse = ""
+                      for await (const chunk of streamFromAPI(followUpPrompt, mode)) {
+                        detailedResponse += chunk
+                      }
+                      return detailedResponse
+                    } else {
+                      // For non-streaming
+                      const r = await fetch("/api/generate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: payload,
+                      })
+                      const data = await r.json()
+                      if (!r.ok || data.error) throw new Error(data.error || "Request failed")
+                      return String(data.output ?? "")
+                    }
+                  } catch (error) {
+                    console.error('Follow-up API call failed:', error)
+                    throw error
+                  }
+                }}
+                className={`w-full max-w-3xl mt-4 ${glowEnabled ? 'glow' : ''}`}
+              />
+            )}
+          </div>
+
+          {/* Right Panel */}
+          <div className="hidden lg:block lg:col-span-3 space-y-6">
+            <HudPanel title="Security Matrix">
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="jaguar"
+                  className="text-green-400 animate-icon-pulse"
+                />{" "}
+                End-to-End Encryption
+              </p>
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="jaguar"
+                  className="text-green-400 animate-icon-pulse"
+                />{" "}
+                Anomaly Detection
+              </p>
+              <p className="flex items-center gap-2">
+                <AztecIcon
+                  name="jaguar"
+                  className="text-green-400 animate-icon-pulse"
+                />{" "}
+                Anti-Cognitive Hazard
+              </p>
+            </HudPanel>
+            <HudPanel title="Data Stream">
+              <p className="truncate">[20:41:12] SYNC: Global Weather Patterns</p>
+              <p className="truncate">[20:41:10] QUERY: Dark Matter Composition</p>
+              <p className="truncate">[20:41:08] RCV: Subspace Transmission</p>
+              <p className="truncate text-gray-600">[20:41:05] IDLE: Awaiting Input...</p>
+            </HudPanel>
+            
+            {/* NEW: Document Processing Status */}
+            {(isProcessingDocument || lastProcessedDocument) && (
+              <HudPanel title="Document Processing">
+                {isProcessingDocument ? (
+                  <div className="flex items-center gap-2 text-cyan-400">
+                    <FileText className="h-4 w-4 animate-pulse" />
+                    <span className="text-sm">Processing Document...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-green-400">
+                    <FileText className="h-4 w-4" />
+                    <span className="text-sm">Document Processed!</span>
+                  </div>
+                )}
+                {lastProcessedDocument && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {lastProcessedDocument}
+                  </p>
+                )}
+              </HudPanel>
+            )}
+            
+            {/* Vision Model Status */}
+            {isVisionModel && (
+              <HudPanel title="Vision Model Active">
+                <div className="flex items-center gap-2 text-purple-400">
+                  <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse" />
+                  <span className="text-sm font-semibold">{mode.toUpperCase()}</span>
+                </div>
+                <p className="text-xs text-purple-300 mt-1">
+                  Ready for image analysis
+                </p>
+                <p className="text-xs text-purple-500 mt-1">
+                  Upload an image to begin
+                </p>
+              </HudPanel>
+            )}
+          </div>
+        </main>
+
+        <footer className="text-center text-cyan-800 text-xs mt-4">
+          <p>INFINITO INTERFACE © {new Date().getFullYear()}. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
+        </footer>
+
+        {/* Document Review Window - Inline below console */}
+        {showDocumentReview && processedDocumentData && (
+          <div className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 mt-6 ${glowEnabled ? 'glow' : ''}`}>
+            <div className="flex justify-between items-center mb-4 border-b border-cyan-500/30 pb-3">
+              <div>
+                <h2 className="text-xl font-bold text-cyan-400">
+                  Document Ready: {processedDocumentData.filename}
+                </h2>
+                <p className="text-sm text-cyan-300">
+                  {processedDocumentData.fileType} • {(processedDocumentData.fileSize / 1024 / 1024).toFixed(2)} MB • {processedDocumentData.memories.length} memories extracted
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowDocumentReview(false)}
+                className="aztec-button text-xs px-2 py-1"
+              >
+                ✕ Close
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Left - File Info & Memories */}
+              <div className="space-y-3">
+                <div className="bg-black/20 p-3 rounded border border-cyan-500/20">
+                  <h3 className="text-sm font-semibold text-cyan-400 mb-2">File Details</h3>
+                  <div className="text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-cyan-600">ID:</span>
+                      <span className="text-cyan-300 font-mono">{processedDocumentData.documentId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-cyan-600">Type:</span>
+                      <span className="text-cyan-300">{processedDocumentData.fileType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-cyan-600">Size:</span>
+                      <span className="text-cyan-300">{(processedDocumentData.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-black/20 p-3 rounded border border-cyan-500/20">
+                  <h3 className="text-sm font-semibold text-cyan-400 mb-2">Extracted Memories</h3>
+                  <div className="text-xs text-cyan-300">
+                    <p className="mb-2">AI found <span className="text-cyan-400 font-bold">{processedDocumentData.memories.length}</span> key concepts:</p>
+                    <ul className="space-y-1">
+                      {processedDocumentData.memories.slice(0, 3).map((memory: any, index: number) => (
+                        <li key={index} className="flex items-center">
+                          <span className="text-cyan-500 mr-2">•</span>
+                          <span className="truncate">{memory.concept}</span>
+                        </li>
+                      ))}
+                      {processedDocumentData.memories.length > 3 && (
+                        <li className="text-cyan-600">... and {processedDocumentData.memories.length - 3} more</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right - Extracted Text */}
+              <div className="bg-black/20 p-3 rounded border border-cyan-500/20">
+                <h3 className="text-sm font-semibold text-cyan-400 mb-2">Extracted Text Content</h3>
+                <div className="text-xs text-cyan-300">
+                  <p className="mb-2 text-cyan-600">AI extracted text for analysis:</p>
+                  <div className="bg-black/30 p-2 rounded border border-cyan-500/20 max-h-32 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap leading-relaxed text-xs">
+                      {processedDocumentData.extractedText}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-cyan-500/30 text-center">
+              <p className="text-sm text-cyan-300 mb-3">
+                Document processed and stored. {processedDocumentData.memories.length} memories saved to memory core.
+              </p>
+              <div className="flex justify-center space-x-3">
+                <Button
+                  onClick={() => {
+                    setShowDocumentReview(false)
+                    // You could navigate to memory-core here
+                  }}
+                  className="aztec-button text-xs"
+                >
+                  View Memories
+                </Button>
+                <Button
+                  onClick={() => setShowDocumentReview(false)}
+                  className="aztec-button bg-cyan-600 hover:bg-cyan-700 text-xs"
+                >
+                  Continue Working
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modals */}
+        {showDocumentUpload && (
+          <DocumentUpload
+            onCancel={() => setShowDocumentUpload(false)}
+            onDocumentProcessed={handleDocumentProcessed}
+          />
+        )}
+
+        {showMemoryReview && (
+          <MemoryReview
+            memories={extractedMemories}
+            onCancel={() => setShowMemoryReview(false)}
+            onSave={handleSaveExtractedMemories}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
