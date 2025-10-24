@@ -39,6 +39,7 @@ export default function AIPromptPage() {
   const [error, setError] = useState<string | null>(null)
   const [glowEnabled, setGlowEnabled] = useState(false)
   const [responseStyle, setResponseStyle] = useState<"concise" | "detailed">("concise")
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
 
   // NEW: Document import state
   const [showDocumentUpload, setShowDocumentUpload] = useState(false)
@@ -767,17 +768,31 @@ Please provide a ${responseStyle} answer.`
             </svg>
             <h1 className="text-3xl font-bold infinito-gradient">INFINITO</h1>
           </div>
-          <Link href="/library" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
-            <BookUser className="h-5 w-5" />
-            <span className="hidden md:inline">Library</span>
-          </Link>
-          <Link
-            href="/memory-core"
-            className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-          >
-            <BrainCircuit className="h-5 w-5" />
-            <span className="hidden md:inline">Memory Core</span>
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/library" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
+              <BookUser className="h-5 w-5" />
+              <span className="hidden md:inline">Library</span>
+            </Link>
+            <Link
+              href="/memory-core"
+              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+            >
+              <BrainCircuit className="h-5 w-5" />
+              <span className="hidden md:inline">Memory Core</span>
+            </Link>
+            <Link
+              href="/login"
+              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+            >
+              <span className="hidden md:inline">Sign In</span>
+            </Link>
+            <Link
+              href="/profile"
+              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+            >
+              <span className="hidden md:inline">Profile</span>
+            </Link>
+          </div>
           <Link
             href="/ai-settings"
             className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
@@ -1305,79 +1320,100 @@ Please provide a ${responseStyle} answer.`
               </div>
             )}
 
-            {/* NEW: Stream toggle and controls */}
-            <div className="w-full max-w-3xl mt-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-sm text-cyan-400">
-                  <input 
-                    type="checkbox" 
-                    checked={stream} 
-                    onChange={(e) => setStream(e.target.checked)}
-                    className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
-                  />
-                  <span>Stream tokens</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm text-cyan-400">
-                  <input 
-                    type="checkbox" 
-                    checked={glowEnabled} 
-                    onChange={(e) => setGlowEnabled(e.target.checked)}
-                    className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
-                  />
-                  <span>Glow effect</span>
-                </label>
-                              <div className="flex items-center gap-2 text-sm text-cyan-400">
-                <span>Response:</span>
-                                  <select
-                    value={responseStyle}
-                    onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
-                    className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-2 py-1 text-xs focus:ring-cyan-500"
-                  >
-                    <option value="concise">Concise</option>
-                    <option value="detailed">Detailed</option>
-                  </select>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  responseStyle === "concise" 
-                    ? "bg-green-500/20 text-green-400 border border-green-500/30" 
-                    : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                }`}>
-                  {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
-                </span>
-              </div>
+            {/* NEW: Advanced Settings Toggle */}
+            <div className="w-full max-w-3xl mt-4">
+              {/* Advanced Settings Toggle Button */}
+              <div className="flex items-center justify-end mb-3">
+                <button
+                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                  className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors px-3 py-1 rounded border border-cyan-500/30 hover:border-cyan-400/50"
+                >
+                  <Settings className="h-3 w-3" />
+                  <span>{showAdvancedSettings ? "Hide Advanced" : "Advanced Settings"}</span>
+                  <span className={`transform transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}>
+                    ▼
+                  </span>
+                </button>
               </div>
               
-              <div className="flex gap-4 text-xs text-cyan-400">
-                <label className="flex items-center gap-2">
-                  <span>Temp:</span>
-                  <input
-                    type="range" min={0.1} max={1.5} step={0.05}
-                    value={temperature}
-                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                    className="w-16"
-                  />
-                  <span className="w-8 text-center">{temperature.toFixed(2)}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span>Top-K:</span>
-                  <input
-                    type="range" min={0} max={200} step={5}
-                    value={topK}
-                    onChange={(e) => setTopK(parseInt(e.target.value))}
-                    className="w-16"
-                  />
-                  <span className="w-8 text-center">{topK}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span>Max:</span>
-                  <input
-                    type="range" min={50} max={2048} step={50}
-                    value={maxTokens}
-                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                    className="w-16"
-                  />
-                  <span className="w-8 text-center">{maxTokens}</span>
-                </label>
-              </div>
+              {/* All Settings (Conditional) */}
+              {showAdvancedSettings && (
+                <div className="space-y-4 p-4 bg-black/10 rounded-lg border border-cyan-500/20">
+                  {/* Stream, Glow, Response Controls */}
+                  <div className="flex items-center gap-4 text-sm text-cyan-400">
+                    <label className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={stream} 
+                        onChange={(e) => setStream(e.target.checked)}
+                        className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
+                      />
+                      <span>Stream tokens</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={glowEnabled} 
+                        onChange={(e) => setGlowEnabled(e.target.checked)}
+                        className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
+                      />
+                      <span>Glow effect</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span>Response:</span>
+                      <select
+                        value={responseStyle}
+                        onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
+                        className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-2 py-1 text-xs focus:ring-cyan-500"
+                      >
+                        <option value="concise">Concise</option>
+                        <option value="detailed">Detailed</option>
+                      </select>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        responseStyle === "concise" 
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                          : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                      }`}>
+                        {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Temperature, Top-K, Max Controls */}
+                  <div className="flex gap-4 text-xs text-cyan-400">
+                    <label className="flex items-center gap-2">
+                      <span>Temp:</span>
+                      <input
+                        type="range" min={0.1} max={1.5} step={0.05}
+                        value={temperature}
+                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                        className="w-16"
+                      />
+                      <span className="w-8 text-center">{temperature.toFixed(2)}</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <span>Top-K:</span>
+                      <input
+                        type="range" min={0} max={200} step={5}
+                        value={topK}
+                        onChange={(e) => setTopK(parseInt(e.target.value))}
+                        className="w-16"
+                      />
+                      <span className="w-8 text-center">{topK}</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <span>Max:</span>
+                      <input
+                        type="range" min={50} max={2048} step={50}
+                        value={maxTokens}
+                        onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                        className="w-16"
+                      />
+                      <span className="w-8 text-center">{maxTokens}</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* NEW: Output display */}
@@ -1519,7 +1555,7 @@ Make sure to use proper spacing between paragraphs for readability.`
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-4">
-          <p>INFINITO INTERFACE © {new Date().getFullYear()}. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
+          <p>Developed by JOR • Powered by Covion Studio © 2025</p>
         </footer>
 
         {/* Document Review Window - Inline below console */}
