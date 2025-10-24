@@ -13,6 +13,8 @@ import { Eye, EyeOff, ArrowLeft, Brain, CheckCircle } from "lucide-react"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
+  const [name, setName] = useState("")
+  const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -26,6 +28,12 @@ export default function SignupPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    if (!name.trim()) {
+      setError("Name is required")
+      setLoading(false)
+      return
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match")
@@ -43,16 +51,23 @@ export default function SignupPage() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            phone: phone,
+            full_name: name
+          }
+        }
       })
 
       if (error) {
         setError(error.message)
       } else {
         setSuccess(true)
-        // Redirect to login after 3 seconds
+        // Since email confirmation is disabled, user is automatically logged in
         setTimeout(() => {
-          router.push("/login")
-        }, 3000)
+          router.push("/")
+          router.refresh()
+        }, 2000)
       }
     } catch (err) {
       setError("An unexpected error occurred")
@@ -68,12 +83,12 @@ export default function SignupPage() {
           <Card className="bg-black/40 backdrop-blur-md border-green-500/30 shadow-2xl shadow-green-500/20">
             <CardContent className="text-center py-8">
               <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-green-400 mb-2">Check Your Email</h2>
+              <h2 className="text-2xl font-bold text-green-400 mb-2">Welcome to INFINITO!</h2>
               <p className="text-slate-300 mb-4">
-                We've sent you a confirmation link. Please check your email and click the link to verify your account.
+                Your account has been created successfully. You're now logged in and ready to start using your AI memory system.
               </p>
               <p className="text-sm text-slate-400">
-                Redirecting to login in 3 seconds...
+                Redirecting to dashboard in 2 seconds...
               </p>
             </CardContent>
           </Card>
@@ -115,6 +130,19 @@ export default function SignupPage() {
               )}
 
               <div className="space-y-2">
+                <Label htmlFor="name" className="text-cyan-400">Full Name</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  required
+                  className="bg-black/20 border-cyan-500/30 text-white placeholder:text-slate-400 focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="email" className="text-cyan-400">Email</Label>
                 <Input
                   id="email"
@@ -123,6 +151,18 @@ export default function SignupPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your@email.com"
                   required
+                  className="bg-black/20 border-cyan-500/30 text-white placeholder:text-slate-400 focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-cyan-400">Phone Number</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1 (555) 123-4567"
                   className="bg-black/20 border-cyan-500/30 text-white placeholder:text-slate-400 focus:border-cyan-400"
                 />
               </div>

@@ -4,13 +4,14 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
 import { MemoryReview } from "@/components/MemoryReview"
 import { ProgressiveResponse } from "@/components/ProgressiveResponse"
 import { MemoryFormData } from "@/lib/types"
+import { supabase } from "@/lib/supabase-client"
 
 export default function AIPromptPage() {
   const [prompt, setPrompt] = useState("")
@@ -19,6 +20,38 @@ export default function AIPromptPage() {
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
+  
+  // Authentication state
+  const [user, setUser] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  
+  // Check authentication status
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setUser(user)
+      } catch (error) {
+        console.error('Error getting user:', error)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+
+    getUser()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+  }
   
   // Function to get display name for modes
   const getModeDisplayName = (mode: string) => {
@@ -755,19 +788,6 @@ Please provide a ${responseStyle} answer.`
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
         <header className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <svg className="w-10 h-10 infinity-symbol" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M18.178 8C21.606 8 23.25 10.696 23.25 12c0 1.304-1.644 4-5.072 4-2.539 0-4.51-1.476-5.928-3.542l-.238-.345.238-.346C13.668 9.476 15.639 8 18.178 8zm0 1.5c-1.83 0-3.432.985-4.693 2.5 1.261 1.515 2.863 2.5 4.693 2.5 2.539 0 3.572-1.696 3.572-2.5 0-.804-1.033-2.5-3.572-2.5zm-12.356 0c-2.539 0-3.572 1.696-3.572 2.5 0 .804 1.033 2.5 3.572 2.5 1.83 0 3.432-.985 4.693-2.5-1.261-1.515-2.863-2.5-4.693-2.5zm0-1.5c2.539 0 4.51 1.476 5.928 3.542l.238.345-.238.346C10.332 14.524 8.361 16 5.822 16 2.394 16 .75 13.304.75 12c0-1.304 1.644-4 5.072-4z" fill="url(#infinito-gradient)" stroke="url(#infinito-gradient)" strokeWidth="0.5"/>
-              <defs>
-                <linearGradient id="infinito-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
-                  <stop offset="50%" style={{stopColor: '#8b5cf6', stopOpacity: 1}} />
-                  <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
-                </linearGradient>
-              </defs>
-            </svg>
-            <h1 className="text-3xl font-bold infinito-gradient">INFINITO</h1>
-          </div>
           <div className="flex items-center gap-4">
             <Link href="/library" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
               <BookUser className="h-5 w-5" />
@@ -780,18 +800,39 @@ Please provide a ${responseStyle} answer.`
               <BrainCircuit className="h-5 w-5" />
               <span className="hidden md:inline">Memory Core</span>
             </Link>
-            <Link
-              href="/login"
-              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-            >
-              <span className="hidden md:inline">Sign In</span>
-            </Link>
-            <Link
-              href="/profile"
-              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-            >
-              <span className="hidden md:inline">Profile</span>
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                >
+                  <User className="h-4 w-4" />
+                  <span className="hidden md:inline">Profile</span>
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden md:inline">Sign Out</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                >
+                  <span className="hidden md:inline">Sign In</span>
+                </Link>
+                <Link
+                  href="/signup"
+                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                >
+                  <span className="hidden md:inline">Sign Up</span>
+                </Link>
+              </>
+            )}
           </div>
           <Link
             href="/ai-settings"
