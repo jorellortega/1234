@@ -4,7 +4,7 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
@@ -24,6 +24,9 @@ export default function AIPromptPage() {
   // Authentication state
   const [user, setUser] = useState<any>(null)
   const [authLoading, setAuthLoading] = useState(true)
+  
+  // Panel visibility state
+  const [showPanels, setShowPanels] = useState(false)
   
   // Check authentication status
   useEffect(() => {
@@ -834,13 +837,23 @@ Please provide a ${responseStyle} answer.`
               </>
             )}
           </div>
-          <Link
-            href="/ai-settings"
-            className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-          >
-            <Settings className="h-5 w-5" />
-            <span className="hidden md:inline">AI Settings</span>
-          </Link>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowPanels(!showPanels)}
+              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+            >
+              {showPanels ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              <span className="hidden md:inline">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
+            </button>
+            
+            <Link
+              href="/ai-settings"
+              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+            >
+              <Settings className="h-5 w-5" />
+              <span className="hidden md:inline">AI Settings</span>
+            </Link>
+          </div>
 
           <div className="text-right text-cyan-400 text-sm">
             <p>
@@ -852,7 +865,8 @@ Please provide a ${responseStyle} answer.`
 
         <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
           {/* Left Panel */}
-          <div className="hidden lg:block lg:col-span-3 space-y-6">
+          {showPanels && (
+            <div className="hidden lg:block lg:col-span-3 space-y-6">
             <HudPanel title="System Core">
               <p className="flex items-center gap-2">
                 <AztecIcon name="sun-stone" className="text-amber-400 animate-icon-pulse" /> Cognitive Matrix:{" "}
@@ -894,6 +908,7 @@ Please provide a ${responseStyle} answer.`
               </p>
             </HudPanel>
           </div>
+          )}
 
           {/* Center Panel - Main Interaction */}
           <div className="col-span-1 lg:col-span-6 flex flex-col justify-center items-center h-full">
@@ -1524,7 +1539,8 @@ Make sure to use proper spacing between paragraphs for readability.`
           </div>
 
           {/* Right Panel */}
-          <div className="hidden lg:block lg:col-span-3 space-y-6">
+          {showPanels && (
+            <div className="hidden lg:block lg:col-span-3 space-y-6">
             <HudPanel title="Security Matrix">
               <p className="flex items-center gap-2">
                 <AztecIcon
@@ -1593,6 +1609,7 @@ Make sure to use proper spacing between paragraphs for readability.`
               </HudPanel>
             )}
           </div>
+          )}
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-4">
