@@ -12,21 +12,46 @@ export default function PaymentSuccessPage() {
 
   useEffect(() => {
     const fetchCredits = async () => {
+      console.log('🔄 Payment success page: Starting credit fetch')
       try {
-        const { data: { user } } = await supabase.auth.getUser()
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        console.log('👤 User authentication:', { 
+          user: !!user, 
+          userId: user?.id, 
+          userEmail: user?.email,
+          error: userError?.message 
+        })
+        
         if (user) {
-          const { data: profile } = await supabase
+          console.log('🔍 Fetching user profile for credits...')
+          const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('credits')
             .eq('id', user.id)
             .single()
           
+          console.log('📊 Profile fetch result:', {
+            profile: profile,
+            credits: profile?.credits,
+            error: profileError?.message,
+            profileExists: !!profile
+          })
+          
           setCredits(profile?.credits || 0)
+          console.log('✅ Credits set to:', profile?.credits || 0)
+        } else {
+          console.log('⚠️ No user found, setting credits to 0')
+          setCredits(0)
         }
       } catch (error) {
-        console.error('Error fetching credits:', error)
+        console.error('❌ Error fetching credits:', error)
+        console.error('🔍 Error details:', {
+          message: error.message,
+          stack: error.stack
+        })
       } finally {
         setLoading(false)
+        console.log('🏁 Credit fetch completed, loading set to false')
       }
     }
 
