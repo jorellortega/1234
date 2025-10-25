@@ -790,72 +790,76 @@ Please provide a ${responseStyle} answer.`
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
-        <header className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Link href="/library" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
-              <BookUser className="h-5 w-5" />
-              <span className="hidden md:inline">Library</span>
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          {/* Mobile: Stack navigation vertically */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <Link href="/library" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10">
+              <BookUser className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden sm:inline text-sm">Library</span>
             </Link>
             <Link
               href="/memory-core"
-              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+              className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
             >
-              <BrainCircuit className="h-5 w-5" />
-              <span className="hidden md:inline">Memory Core</span>
+              <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden sm:inline text-sm">Memory Core</span>
             </Link>
             {user ? (
               <>
                 <Link
                   href="/profile"
-                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
                 >
                   <User className="h-4 w-4" />
-                  <span className="hidden md:inline">Profile</span>
+                  <span className="hidden sm:inline text-sm">Profile</span>
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span className="hidden md:inline">Sign Out</span>
+                  <span className="hidden sm:inline text-sm">Sign Out</span>
                 </button>
               </>
             ) : (
               <>
                 <Link
                   href="/login"
-                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
                 >
-                  <span className="hidden md:inline">Sign In</span>
+                  <span className="text-sm">Sign In</span>
                 </Link>
                 <Link
                   href="/signup"
-                  className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
                 >
-                  <span className="hidden md:inline">Sign Up</span>
+                  <span className="text-sm">Sign Up</span>
                 </Link>
               </>
             )}
           </div>
           
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowPanels(!showPanels)}
-              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-            >
-              {showPanels ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              <span className="hidden md:inline">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
-            </button>
+          {/* Mobile: Stack controls vertically */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPanels(!showPanels)}
+                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              >
+                {showPanels ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
+                <span className="hidden sm:inline text-sm">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
+              </button>
+              
+              <Link
+                href="/ai-settings"
+                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              >
+                <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="hidden sm:inline text-sm">AI Settings</span>
+              </Link>
+            </div>
             
-            <Link
-              href="/ai-settings"
-              className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors"
-            >
-              <Settings className="h-5 w-5" />
-              <span className="hidden md:inline">AI Settings</span>
-            </Link>
-            
-            <div className="text-right text-cyan-400 text-sm">
+            <div className="text-right text-cyan-400 text-xs sm:text-sm">
               <p>
                 CREDITS: <span className="text-amber-400 font-bold">ONLINE</span>
               </p>
@@ -963,12 +967,12 @@ Please provide a ${responseStyle} answer.`
 
 
             {/* Model Selector */}
-            <div className="w-full max-w-3xl mb-4 flex justify-between items-center">
-              {/* Left Side - Main Model */}
-              <div className="flex items-center gap-3">
-                <span className="text-cyan-400 text-sm font-semibold tracking-wide uppercase">MODEL:</span>
+            <div className="w-full max-w-3xl mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              {/* Main Model - Mobile: Full width, Desktop: Left side */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">MODEL:</span>
                 <Select value={mode} onValueChange={handleModelChange}>
-                  <SelectTrigger className="w-32 h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
+                  <SelectTrigger className="w-full sm:w-32 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
@@ -983,15 +987,15 @@ Please provide a ${responseStyle} answer.`
                 </Select>
               </div>
               
-              {/* Right Side - Image Mode */}
-              <div className="flex items-center gap-3">
-                <span className="text-purple-400 text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
+              {/* Image Mode - Mobile: Full width, Desktop: Right side */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
                 <Select value={mode === "blip" || mode === "llava" ? mode : ""} onValueChange={(value) => {
                   if (value === "blip" || value === "llava") {
                     setMode(value)
                   }
                 }}>
-                  <SelectTrigger className="w-40 h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
+                  <SelectTrigger className="w-full sm:w-40 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
                     <SelectValue placeholder="Select Vision Model" />
                   </SelectTrigger>
                   <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
@@ -1326,38 +1330,44 @@ Please provide a ${responseStyle} answer.`
                   </div>
                 )}
                 
-                <div className="flex justify-between items-center p-2 border-t border-blue-500/30">
-                  <div className="flex gap-1">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
+                  {/* Mobile: Stack buttons vertically */}
+                  <div className="flex gap-2 w-full sm:w-auto">
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white"
+                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white h-10 w-10"
                       onClick={() => setShowDocumentUpload(true)}
                       title="Import Document"
                     >
                       <FileUp className="h-5 w-5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white h-10 w-10"
+                    >
                       <Mic className="h-5 w-5" />
                     </Button>
                   </div>
                   
-                  {/* Thread Button - positioned in middle area */}
+                  {/* Thread Button - Mobile: Full width, Desktop: Middle */}
                   {conversationHistory.length > 0 && (
                     <Button
                       onClick={() => setShowThreadView(!showThreadView)}
-                      className="px-3 py-1.5 bg-transparent border border-cyan-500/40 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300 transition-all text-xs font-medium"
+                      className="w-full sm:w-auto px-4 py-2 bg-transparent border border-cyan-500/40 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300 transition-all text-sm font-medium"
                       title={showThreadView ? "Hide conversation thread" : "Show conversation thread"}
                     >
                       {showThreadView ? "HIDE THREAD" : "SHOW THREAD"}
                     </Button>
                   )}
                   
+                  {/* Transmit Button - Mobile: Full width, Desktop: Right */}
                   <Button 
                     onClick={handleTransmit}
                     disabled={loading}
                     title={needsOllama && ollamaOk === false ? "May fail while Ollama is down." : undefined}
-                    className="bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-8 py-3 text-lg tracking-widest transition-all disabled:opacity-50"
+                    className="w-full sm:w-auto bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-6 sm:px-8 py-3 text-base sm:text-lg tracking-widest transition-all disabled:opacity-50"
                   >
                     {loading 
                       ? (stream ? "STREAMING..." : "PROCESSING...") 
@@ -1383,9 +1393,9 @@ Please provide a ${responseStyle} answer.`
               <div className="flex items-center justify-center mb-3">
                 <button
                   onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                  className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors px-3 py-1 rounded border border-cyan-500/30 hover:border-cyan-400/50"
+                  className="flex items-center gap-2 text-xs sm:text-sm text-cyan-400 hover:text-cyan-300 transition-colors px-4 py-2 rounded border border-cyan-500/30 hover:border-cyan-400/50 touch-manipulation"
                 >
-                  <Settings className="h-3 w-3" />
+                  <Settings className="h-4 w-4" />
                   <span>{showAdvancedSettings ? "Hide Advanced" : "Advanced Settings"}</span>
                   <span className={`transform transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}>
                     ▼
@@ -1396,37 +1406,39 @@ Please provide a ${responseStyle} answer.`
               {/* All Settings (Conditional) */}
               {showAdvancedSettings && (
                 <div className="space-y-4 p-4 bg-black/10 rounded-lg border border-cyan-500/20">
-                  {/* Stream, Glow, Response Controls */}
-                  <div className="flex items-center gap-4 text-sm text-cyan-400">
-                    <label className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={stream} 
-                        onChange={(e) => setStream(e.target.checked)}
-                        className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
-                      />
-                      <span>Stream tokens</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={glowEnabled} 
-                        onChange={(e) => setGlowEnabled(e.target.checked)}
-                        className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500"
-                      />
-                      <span>Glow effect</span>
-                    </label>
-                    <div className="flex items-center gap-2">
+                  {/* Stream, Glow, Response Controls - Mobile: Stack vertically */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-sm text-cyan-400">
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          checked={stream} 
+                          onChange={(e) => setStream(e.target.checked)}
+                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                        />
+                        <span>Stream tokens</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          checked={glowEnabled} 
+                          onChange={(e) => setGlowEnabled(e.target.checked)}
+                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                        />
+                        <span>Glow effect</span>
+                      </label>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                       <span>Response:</span>
                       <select
                         value={responseStyle}
                         onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
-                        className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-2 py-1 text-xs focus:ring-cyan-500"
+                        className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-3 py-2 text-sm focus:ring-cyan-500 w-full sm:w-auto"
                       >
                         <option value="concise">Concise</option>
                         <option value="detailed">Detailed</option>
                       </select>
-                      <span className={`text-xs px-2 py-1 rounded ${
+                      <span className={`text-xs px-3 py-1 rounded ${
                         responseStyle === "concise" 
                           ? "bg-green-500/20 text-green-400 border border-green-500/30" 
                           : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
@@ -1436,37 +1448,43 @@ Please provide a ${responseStyle} answer.`
                     </div>
                   </div>
                   
-                  {/* Temperature, Top-K, Max Controls */}
-                  <div className="flex gap-4 text-xs text-cyan-400">
-                    <label className="flex items-center gap-2">
+                  {/* Temperature, Top-K, Max Controls - Mobile: Stack vertically */}
+                  <div className="flex flex-col sm:flex-row gap-4 text-xs text-cyan-400">
+                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                       <span>Temp:</span>
-                      <input
-                        type="range" min={0.1} max={1.5} step={0.05}
-                        value={temperature}
-                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                        className="w-16"
-                      />
-                      <span className="w-8 text-center">{temperature.toFixed(2)}</span>
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="range" min={0.1} max={1.5} step={0.05}
+                          value={temperature}
+                          onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                          className="flex-1 sm:w-16"
+                        />
+                        <span className="w-12 text-center">{temperature.toFixed(2)}</span>
+                      </div>
                     </label>
-                    <label className="flex items-center gap-2">
+                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                       <span>Top-K:</span>
-                      <input
-                        type="range" min={0} max={200} step={5}
-                        value={topK}
-                        onChange={(e) => setTopK(parseInt(e.target.value))}
-                        className="w-16"
-                      />
-                      <span className="w-8 text-center">{topK}</span>
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="range" min={0} max={200} step={5}
+                          value={topK}
+                          onChange={(e) => setTopK(parseInt(e.target.value))}
+                          className="flex-1 sm:w-16"
+                        />
+                        <span className="w-12 text-center">{topK}</span>
+                      </div>
                     </label>
-                    <label className="flex items-center gap-2">
+                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                       <span>Max:</span>
-                      <input
-                        type="range" min={50} max={2048} step={50}
-                        value={maxTokens}
-                        onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                        className="w-16"
-                      />
-                      <span className="w-8 text-center">{maxTokens}</span>
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="range" min={50} max={2048} step={50}
+                          value={maxTokens}
+                          onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                          className="flex-1 sm:w-16"
+                        />
+                        <span className="w-12 text-center">{maxTokens}</span>
+                      </div>
                     </label>
                   </div>
                 </div>
