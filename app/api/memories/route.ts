@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
   try {
@@ -8,8 +8,33 @@ export async function GET(request: Request) {
     const parentId = searchParams.get('parent_id')
     const hierarchyLevel = searchParams.get('hierarchy_level')
     
-    const supabase = supabaseServer()
-    let query = supabase.from('memories').select('*')
+    // Create Supabase client with anon key for user authentication
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Authorization header required' },
+        { status: 401 }
+      )
+    }
+    
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    
+    let query = supabase.from('memories').select('*').eq('user_id', user.id)
     
     // Filter by category if specified
     if (category) {
@@ -87,7 +112,31 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = supabaseServer()
+    // Create Supabase client with anon key for user authentication
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Authorization header required' },
+        { status: 401 }
+      )
+    }
+    
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
     
     // If this is a sub-memory, calculate hierarchy level
     let finalHierarchyLevel = hierarchy_level || 0
@@ -130,8 +179,8 @@ export async function POST(request: Request) {
         parent_id: parent_id || null,
         memory_category: memory_category || 'general',
         hierarchy_level: finalHierarchyLevel,
-        sort_order: finalSortOrder
-        // Removed metadata field as it doesn't exist in the table schema
+        sort_order: finalSortOrder,
+        user_id: user.id
       })
       .select()
       .single()

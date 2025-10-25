@@ -9,6 +9,7 @@ import { MemoryReview } from "@/components/MemoryReview"
 import { Home, PlusCircle, RefreshCw, FolderOpen, ArrowLeft, FileText, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Memory, MemoryCategory, MemoryFormData } from '@/lib/types'
+import { supabase } from '@/lib/supabase-client'
 
 export default function MemoryCorePage() {
   const [memories, setMemories] = useState<Memory[]>([])
@@ -21,11 +22,21 @@ export default function MemoryCorePage() {
   const [selectedCategory, setSelectedCategory] = useState<MemoryCategory>('all')
   const [currentParent, setCurrentParent] = useState<Memory | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<Memory[]>([])
+  
+  // Authentication state
+  const [user, setUser] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
   const fetchMemories = async (parentId?: string, category?: MemoryCategory) => {
     try {
       setLoading(true)
       setError(null)
+      
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
       
       let url = '/api/memories?'
       if (parentId) {
@@ -38,7 +49,11 @@ export default function MemoryCorePage() {
         url += `&category=${category}`
       }
       
-      const response = await fetch(url)
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch memories')
       }
@@ -82,10 +97,17 @@ export default function MemoryCorePage() {
 
   const createMemory = async (memoryData: MemoryFormData) => {
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+      
       const response = await fetch('/api/memories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(memoryData),
       })
@@ -136,9 +158,34 @@ export default function MemoryCorePage() {
     }
   }
 
+  // Check authentication status
   useEffect(() => {
-    fetchRootMemories()
+    const getUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setUser(user)
+      } catch (error) {
+        console.error('Error getting user:', error)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+
+    getUser()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (user) {
+      fetchRootMemories()
+    }
+  }, [user])
 
   const formatTimestamp = (timestamp: string) => {
     try {
@@ -170,6 +217,58 @@ export default function MemoryCorePage() {
       case 'general': return 'text-gray-400'
       default: return 'text-cyan-400'
     }
+  }
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="relative min-h-screen w-full overflow-hidden">
+        <div className="aztec-background" />
+        <div className="animated-grid" />
+        <div className="relative z-10 flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto"></div>
+            <p className="text-cyan-400 mt-4">Loading Memory Core...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show login prompt if not authenticated
+  if (!user) {
+    return (
+      <div className="relative min-h-screen w-full overflow-hidden">
+        <div className="aztec-background" />
+        <div className="animated-grid" />
+        <div className="relative z-10 flex items-center justify-center h-screen">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-cyan-400 mb-4">JOR // MEMORY CORE</h1>
+            <p className="text-cyan-300 mb-6">Authentication required to access Memory Core</p>
+            <div className="flex gap-4 justify-center">
+              <Link 
+                href="/login"
+                className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors"
+              >
+                Sign In
+              </Link>
+              <Link 
+                href="/signup"
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                Sign Up
+              </Link>
+              <Link 
+                href="/"
+                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                Home
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

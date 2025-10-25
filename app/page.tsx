@@ -837,6 +837,7 @@ Please provide a ${responseStyle} answer.`
               </>
             )}
           </div>
+          
           <div className="flex items-center gap-4">
             <button
               onClick={() => setShowPanels(!showPanels)}
@@ -853,13 +854,13 @@ Please provide a ${responseStyle} answer.`
               <Settings className="h-5 w-5" />
               <span className="hidden md:inline">AI Settings</span>
             </Link>
-          </div>
-
-          <div className="text-right text-cyan-400 text-sm">
-            <p>
-              STATUS: <span className="text-amber-400 font-bold">ONLINE</span>
-            </p>
-            <p>V.1.0.2-GAMMA</p>
+            
+            <div className="text-right text-cyan-400 text-sm">
+              <p>
+                CREDITS: <span className="text-amber-400 font-bold">ONLINE</span>
+              </p>
+              <p>V.1.0</p>
+            </div>
           </div>
         </header>
 
@@ -911,7 +912,7 @@ Please provide a ${responseStyle} answer.`
           )}
 
           {/* Center Panel - Main Interaction */}
-          <div className="col-span-1 lg:col-span-6 flex flex-col justify-center items-center h-full">
+          <div className={`flex flex-col justify-center items-center h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
               {response ? (
                 <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
@@ -1379,7 +1380,7 @@ Please provide a ${responseStyle} answer.`
             {/* NEW: Advanced Settings Toggle */}
             <div className="w-full max-w-3xl mt-4">
               {/* Advanced Settings Toggle Button */}
-              <div className="flex items-center justify-end mb-3">
+              <div className="flex items-center justify-center mb-3">
                 <button
                   onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
                   className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors px-3 py-1 rounded border border-cyan-500/30 hover:border-cyan-400/50"
