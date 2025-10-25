@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { supabase } from "@/lib/supabase-client"
-import { User, LogOut, ArrowLeft, Brain, Settings, Shield, Database } from "lucide-react"
+import { User, LogOut, ArrowLeft, Brain, Settings, Shield, Database, CreditCard, Zap, ShoppingCart, History } from "lucide-react"
 
 interface UserProfile {
   id: string
   email: string
   created_at: string
+  full_name?: string
+  credits?: number
 }
 
 export default function ProfilePage() {
@@ -36,10 +38,19 @@ export default function ProfilePage() {
         }
 
         if (user) {
+          // Fetch user profile with credits and full name
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('credits, full_name')
+            .eq('id', user.id)
+            .single()
+          
           setUser({
             id: user.id,
             email: user.email || "",
-            created_at: user.created_at
+            created_at: user.created_at,
+            full_name: profile?.full_name || null,
+            credits: profile?.credits || 0
           })
         }
       } catch (err) {
@@ -131,19 +142,19 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label className="text-slate-300">Email</Label>
+                <Label className="text-slate-300">Full Name</Label>
                 <Input
-                  value={user.email}
+                  value={user.full_name || "Not set"}
                   disabled
                   className="bg-black/20 border-cyan-500/30 text-white"
                 />
               </div>
               <div>
-                <Label className="text-slate-300">User ID</Label>
+                <Label className="text-slate-300">Email</Label>
                 <Input
-                  value={user.id}
+                  value={user.email}
                   disabled
-                  className="bg-black/20 border-cyan-500/30 text-white text-xs"
+                  className="bg-black/20 border-cyan-500/30 text-white"
                 />
               </div>
               <div>
@@ -210,6 +221,104 @@ export default function ProfilePage() {
               </Link>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Credit System Section */}
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2">
+            <CreditCard className="h-6 w-6" />
+            Credit System
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Buy Credits Card */}
+            <Card className="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 backdrop-blur-md border-blue-500/30 shadow-2xl shadow-blue-500/20 hover:shadow-blue-400/30 transition-all">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-blue-400 text-lg">
+                  <ShoppingCart className="h-5 w-5" />
+                  Buy Credits
+                </CardTitle>
+                <CardDescription className="text-blue-300">
+                  Purchase credits to power your AI interactions
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/credits">
+                  <Button className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:brightness-110 text-white font-bold">
+                    <Zap className="h-4 w-4 mr-2" />
+                    View Pricing
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Current Credits Card */}
+            <Card className="bg-gradient-to-br from-green-900/20 to-emerald-900/20 backdrop-blur-md border-green-500/30 shadow-2xl shadow-green-500/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-green-400 text-lg">
+                  <Zap className="h-5 w-5" />
+                  Current Credits
+                </CardTitle>
+                <CardDescription className="text-green-300">
+                  Your available credit balance
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-green-400 mb-2">{user?.credits || 0}</div>
+                  <p className="text-sm text-green-300">Credits Available</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Credit Usage Card */}
+            <Card className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 backdrop-blur-md border-purple-500/30 shadow-2xl shadow-purple-500/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-purple-400 text-lg">
+                  <History className="h-5 w-5" />
+                  Usage
+                </CardTitle>
+                <CardDescription className="text-purple-300">
+                  Track your credit usage history
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm text-purple-300">
+                  <div className="flex justify-between">
+                    <span>AI Generations:</span>
+                    <span className="text-purple-400">1 credit each</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Vision Models:</span>
+                    <span className="text-purple-400">3 credits each</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Document Processing:</span>
+                    <span className="text-purple-400">5 credits each</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Payment History Card */}
+            <Card className="bg-gradient-to-br from-orange-900/20 to-red-900/20 backdrop-blur-md border-orange-500/30 shadow-2xl shadow-orange-500/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-orange-400 text-lg">
+                  <CreditCard className="h-5 w-5" />
+                  Payment History
+                </CardTitle>
+                <CardDescription className="text-orange-300">
+                  View your transaction history
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" className="w-full border-orange-500/30 text-orange-400 hover:bg-orange-500/10">
+                  <History className="h-4 w-4 mr-2" />
+                  View Transactions
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Success/Error Messages */}

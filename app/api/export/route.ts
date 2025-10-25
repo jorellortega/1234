@@ -40,9 +40,18 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "1000", 10) || 1000, 5000);
 
   const sb = supabaseServer();
+  
+  // Get current user session
+  const { data: { user }, error: authError } = await sb.auth.getUser();
+  
+  if (authError || !user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   let qy = sb
     .from("generations")
     .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
+    .eq("user_id", user.id)  // Filter by current user
     .order("created_at", { ascending: false })
     .limit(limit);
 

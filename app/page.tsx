@@ -24,6 +24,7 @@ export default function AIPromptPage() {
   // Authentication state
   const [user, setUser] = useState<any>(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [userCredits, setUserCredits] = useState(0)
   
   // Panel visibility state
   const [showPanels, setShowPanels] = useState(false)
@@ -34,6 +35,11 @@ export default function AIPromptPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         setUser(user)
+        
+        if (user) {
+          // Fetch user credits
+          await fetchUserCredits(user.id)
+        }
       } catch (error) {
         console.error('Error getting user:', error)
       } finally {
@@ -46,10 +52,32 @@ export default function AIPromptPage() {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      if (session?.user) {
+        fetchUserCredits(session.user.id)
+      } else {
+        setUserCredits(0)
+      }
+      setAuthLoading(false)
     })
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Fetch user credits
+  const fetchUserCredits = async (userId: string) => {
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('credits')
+        .eq('id', userId)
+        .single()
+      
+      setUserCredits(profile?.credits || 0)
+    } catch (error) {
+      console.error('Error fetching credits:', error)
+      setUserCredits(0)
+    }
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -426,6 +454,50 @@ export default function AIPromptPage() {
     // For image mode, check if an image is uploaded
     if (isVisionModel && !selectedImage) {
       setError("Please upload an image first to use image mode. Use the image upload section above.")
+      return
+    }
+    
+    // Check if user is authenticated
+    if (!user) {
+      setError("Please sign in to use INFINITO AI")
+      return
+    }
+    
+    // Check credits before proceeding
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setError("Please sign in to use INFINITO AI")
+        return
+      }
+      
+      const requiredCredits = isVisionModel ? 3 : 1 // Vision models cost more
+      
+      const creditResponse = await fetch('/api/credits/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          requiredCredits,
+          operation: 'check_and_deduct'
+        })
+      })
+      
+      const creditData = await creditResponse.json()
+      
+      if (!creditData.success) {
+        setError(creditData.message || 'Insufficient credits. Please buy more credits to continue.')
+        return
+      }
+      
+      // Update user credits in local state
+      setUserCredits(creditData.credits)
+      
+    } catch (error) {
+      console.error('Error checking credits:', error)
+      setError('Failed to verify credits. Please try again.')
       return
     }
     
@@ -860,9 +932,20 @@ Please provide a ${responseStyle} answer.`
             </div>
             
             <div className="text-right text-cyan-400 text-xs sm:text-sm">
-              <p>
-                CREDITS: <span className="text-amber-400 font-bold">ONLINE</span>
-              </p>
+              <div className="flex items-center gap-2 mb-1">
+                <Link 
+                  href="/credits" 
+                  className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer hover:underline"
+                >
+                  CREDITS:
+                </Link>
+                <Link 
+                  href="/credits" 
+                  className="text-amber-400 font-bold hover:text-amber-300 transition-colors cursor-pointer hover:underline"
+                >
+                  {userCredits}
+                </Link>
+              </div>
               <p>V.1.0</p>
             </div>
           </div>
