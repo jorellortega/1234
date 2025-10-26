@@ -201,12 +201,6 @@ export default function ProfilePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link href="/ai-settings">
-                <Button variant="outline" className="w-full border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10">
-                  <Shield className="h-4 w-4 mr-2" />
-                  AI Settings
-                </Button>
-              </Link>
               <Link href="/memory-core">
                 <Button variant="outline" className="w-full border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10">
                   <Brain className="h-4 w-4 mr-2" />
@@ -319,6 +313,48 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* API Keys Section */}
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-purple-400 mb-6 flex items-center gap-2">
+            <Zap className="h-6 w-6" />
+            Developer Portal Access
+          </h2>
+          
+          <Card className="bg-black/40 backdrop-blur-md border-purple-500/30 shadow-2xl shadow-purple-500/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-purple-400">
+                <Settings className="h-5 w-5" />
+                ⚡ Developer Portal
+              </CardTitle>
+              <CardDescription className="text-purple-300">
+                Access your developer portal to configure AI platform integrations and service credentials.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Link href="/ai-settings">
+                <Button className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:brightness-110 text-white font-bold">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Access Developer Portal
+                </Button>
+              </Link>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-purple-300">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                  <span>Configure AI platform integrations</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                  <span>Override system defaults</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                  <span>Secure credential management</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Success/Error Messages */}

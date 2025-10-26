@@ -2,21 +2,43 @@
 
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronUp, Copy, Check, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download } from "lucide-react"
 
 interface ProgressiveResponseProps {
   content: string
   className?: string
   responseStyle?: "concise" | "detailed"
   onShowMore?: (topic: string) => Promise<string>
+  // Audio props
+  audioUrl?: string
+  isGeneratingAudio?: boolean
+  audioError?: string
+  onGenerateAudio?: (text: string) => void
 }
 
-export function ProgressiveResponse({ content, className = "", responseStyle = "detailed", onShowMore }: ProgressiveResponseProps) {
+export function ProgressiveResponse({ 
+  content, 
+  className = "", 
+  responseStyle = "detailed", 
+  onShowMore,
+  audioUrl,
+  isGeneratingAudio = false,
+  audioError,
+  onGenerateAudio
+}: ProgressiveResponseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [detailedContent, setDetailedContent] = useState<string>("")
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const responseRef = useRef<HTMLDivElement>(null)
+  
+  // Audio state
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [volume, setVolume] = useState(1)
+  const audioRef = useRef<HTMLAudioElement>(null)
 
   // Auto-scroll to response when it first appears
   useEffect(() => {
@@ -44,39 +66,35 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
 
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
-    // Look for natural break points in the response
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0)
-    
     // NEVER truncate image responses - they need the full URL
     if (content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
       return { concisePart: content, detailedPart: null }
     }
     
-    // For concise mode, always try to create a split even for single sentences
+    // For concise mode, always show 1-2 complete sentences
     if (responseStyle === "concise") {
-      if (content.length > 100) {
-        // If content is long, split it roughly in half
-        const midPoint = Math.floor(content.length / 2)
-        const concisePart = content.substring(0, midPoint).trim()
-        const detailedPart = content.substring(midPoint).trim()
-        return { concisePart, detailedPart }
-      } else if (sentences.length <= 1) {
-        // For short single sentences, show everything
+      // Split by sentence endings (. ! ?) but keep the punctuation
+      const sentenceRegex = /([^.!?]*[.!?]+)/g
+      const sentences = content.match(sentenceRegex) || []
+      
+      if (sentences.length <= 2) {
+        // If response is short (1-2 sentences), show everything
         return { concisePart: content, detailedPart: null }
+      } else {
+        // Show first 1-2 complete sentences
+        const sentencesToShow = Math.min(2, sentences.length)
+        const conciseText = sentences.slice(0, sentencesToShow).join(' ').trim()
+        const detailedText = sentences.slice(sentencesToShow).join(' ').trim()
+        
+        return { 
+          concisePart: conciseText, 
+          detailedPart: detailedText || null 
+        }
       }
     }
     
-    if (sentences.length <= 2) {
-      // If response is short, show everything
-      return { concisePart: content, detailedPart: null }
-    }
-    
-    // Take first 1-2 sentences for concise part
-    const conciseCount = Math.min(2, Math.ceil(sentences.length * 0.3))
-    const concisePart = sentences.slice(0, conciseCount).join('. ') + '.'
-    const detailedPart = sentences.slice(conciseCount).join('. ') + '.'
-    
-    return { concisePart, detailedPart }
+    // For detailed mode, show everything
+    return { concisePart: content, detailedPart: null }
   }, [content, responseStyle])
 
   const handleCopy = async () => {
@@ -155,31 +173,153 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
   const hasDetailedContent = detailedPart && detailedPart.trim().length > 0
   const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore)
 
+  // Audio control functions
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const updateTime = () => setCurrentTime(audio.currentTime)
+    const updateDuration = () => setDuration(audio.duration)
+    const handleEnded = () => setIsPlaying(false)
+
+    audio.addEventListener('timeupdate', updateTime)
+    audio.addEventListener('loadedmetadata', updateDuration)
+    audio.addEventListener('ended', handleEnded)
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime)
+      audio.removeEventListener('loadedmetadata', updateDuration)
+      audio.removeEventListener('ended', handleEnded)
+    }
+  }, [audioUrl])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    audio.volume = isMuted ? 0 : volume
+  }, [volume, isMuted])
+
+  const togglePlayPause = () => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (isPlaying) {
+      audio.pause()
+      setIsPlaying(false)
+    } else {
+      audio.play()
+      setIsPlaying(true)
+    }
+  }
+
+  const downloadAudio = () => {
+    if (!audioUrl) return
+
+    const link = document.createElement('a')
+    link.href = audioUrl
+    link.download = `ai-response-${Date.now()}.mp3`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handleGenerateAudio = () => {
+    if (!content || !onGenerateAudio) return
+    
+    if (content.length > 5000) {
+      alert("Text must be less than 5000 characters for audio generation")
+      return
+    }
+
+    onGenerateAudio(content)
+  }
+
   // Debug logging removed to prevent console spam
 
   return (
     <div ref={responseRef} className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 ${className}`}>
       <div className="flex justify-between items-center mb-3">
         <div className="text-cyan-400 text-sm font-semibold">AI RESPONSE:</div>
-        <Button 
-          onClick={handleCopy}
-          variant="ghost" 
-          size="sm"
-          className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
-        >
-          {copied ? (
-            <>
-              <Check className="h-4 w-4 mr-1" />
-              <span className="text-xs">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4 mr-1" />
-              <span className="text-xs">Copy</span>
-            </>
+        <div className="flex items-center gap-2">
+          {/* Audio Controls */}
+          {onGenerateAudio && (
+            <div className="flex items-center gap-1">
+              {!audioUrl && !isGeneratingAudio && (
+                <Button 
+                  onClick={handleGenerateAudio}
+                  variant="ghost" 
+                  size="sm"
+                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+                >
+                  <Volume2 className="h-4 w-4 mr-1" />
+                  <span className="text-xs">Audio</span>
+                </Button>
+              )}
+              
+              {isGeneratingAudio && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  disabled
+                  className="text-cyan-400 h-8 px-3"
+                >
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  <span className="text-xs">Generating...</span>
+                </Button>
+              )}
+              
+              {audioUrl && !isGeneratingAudio && (
+                <>
+                  <Button 
+                    onClick={togglePlayPause}
+                    variant="ghost" 
+                    size="sm"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-2"
+                  >
+                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                  <Button 
+                    onClick={downloadAudio}
+                    variant="ghost" 
+                    size="sm"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-2"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+              
+              {audioError && (
+                <span className="text-red-400 text-xs">{audioError}</span>
+              )}
+            </div>
           )}
-        </Button>
+          
+          {/* Copy Button */}
+          <Button 
+            onClick={handleCopy}
+            variant="ghost" 
+            size="sm"
+            className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+          >
+            {copied ? (
+              <>
+                <Check className="h-4 w-4 mr-1" />
+                <span className="text-xs">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4 mr-1" />
+                <span className="text-xs">Copy</span>
+              </>
+            )}
+          </Button>
+        </div>
       </div>
+      
+      {/* Audio Element */}
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" />}
       
       <div className="text-cyan-300 whitespace-pre-wrap border border-cyan-500/20 rounded p-3 bg-black/20">
         {/* Concise part - always visible */}

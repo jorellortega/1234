@@ -194,16 +194,50 @@ export async function POST(req: Request) {
             } else {
               const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
               
-              // Get the OpenAI API key from the database
-              const { data: apiKey, error } = await supabase
+              // Get OpenAI API key - first try system-wide key, then user-specific key
+              let apiKey = null;
+              
+              // First, try to get system-wide key
+              const { data: systemApiKey, error: systemError } = await supabase
                 .from('api_keys')
                 .select('encrypted_key')
+                .is('user_id', null)
                 .eq('service_id', 'openai')
                 .eq('is_active', true)
-                .single();
+                .maybeSingle();
+
+              if (systemApiKey && !systemError) {
+                apiKey = systemApiKey;
+              } else {
+                // If no system key, try user-specific key (if user is authenticated)
+                const authHeader = req.headers.get('authorization');
+                if (authHeader) {
+                  const token = authHeader.replace('Bearer ', '');
+                  const { createClient: createAnonClient } = await import('@supabase/supabase-js');
+                  const supabaseAnon = createAnonClient(
+                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                  );
+                  
+                  const { data: { user } } = await supabaseAnon.auth.getUser(token);
+                  if (user) {
+                    const { data: userApiKey, error: userError } = await supabase
+                      .from('api_keys')
+                      .select('encrypted_key')
+                      .eq('user_id', user.id)
+                      .eq('service_id', 'openai')
+                      .eq('is_active', true)
+                      .maybeSingle();
+
+                    if (userApiKey && !userError) {
+                      apiKey = userApiKey;
+                    }
+                  }
+                }
+              }
               
-              if (error || !apiKey) {
-                output = `[AiO Error] OpenAI API key not found. Please add your OpenAI API key in the AI Settings page.`;
+              if (!apiKey) {
+                output = `[AiO Error] OpenAI API key not found. Please add your OpenAI API key in the AI Settings page or contact admin to set system-wide key.`;
               } else {
                 const openaiApiKey = apiKey.encrypted_key;
                 

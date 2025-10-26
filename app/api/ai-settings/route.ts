@@ -9,19 +9,35 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables')
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } })
-
 // Simple health check endpoint
 export async function GET(request: NextRequest) {
   try {
-    // Check if Supabase is available
-    if (!supabase) {
-      return NextResponse.json({ 
-        error: 'Database not configured',
-        message: 'Please set up your Supabase environment variables to use this feature.',
-        setupRequired: true
-      }, { status: 503 })
+    // Create Supabase client with anon key for user authentication
+    const supabaseAnon = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json({ error: "Authorization header required" }, { status: 401 });
     }
+
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAnon.auth.getUser(token);
+    
+    if (userError || !user) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    // Create service role client for database operations (bypasses RLS)
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    );
 
     // First check if the tables exist by trying to fetch from ai_services
     try {
@@ -47,8 +63,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // For now, fetch all API keys (similar to how memories work)
-    // TODO: Add proper user authentication later
+    // Fetch user's API keys only
     const { data, error } = await supabase
       .from('api_keys')
       .select(`
@@ -61,6 +76,7 @@ export async function GET(request: NextRequest) {
           icon_name
         )
       `)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -95,6 +111,33 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Create Supabase client with anon key for user authentication
+    const supabaseAnon = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json({ error: "Authorization header required" }, { status: 401 });
+    }
+
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAnon.auth.getUser(token);
+    
+    if (userError || !user) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    // Create service role client for database operations (bypasses RLS)
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    );
+
     // Check if service exists
     const { data: service, error: serviceError } = await supabase
       .from('ai_services')
@@ -113,12 +156,21 @@ export async function POST(request: NextRequest) {
     const encryptedKey = key
     const keyHash = btoa(key) // Simple hash for demo - use proper hashing in production
 
-    // Check if there's already a key for this service
-    const { data: existingKey } = await supabase
+    // Check if there's already a key for this service and user
+    const { data: existingKey, error: existingKeyError } = await supabase
       .from('api_keys')
       .select('id')
       .eq('service_id', serviceId)
-      .single()
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (existingKeyError) {
+      console.error('Error checking for existing key:', existingKeyError)
+      return NextResponse.json({ 
+        error: 'Failed to check for existing API key',
+        details: existingKeyError.message
+      }, { status: 500 })
+    }
 
     let result
     if (existingKey) {
@@ -137,10 +189,11 @@ export async function POST(request: NextRequest) {
       if (error) throw error
       result = data
     } else {
-      // Insert new key (without user_id for now)
+      // Insert new key with user_id
       const { data, error } = await supabase
         .from('api_keys')
         .insert({
+          user_id: user.id,
           service_id: serviceId,
           key_name: `${service.name} API Key`,
           encrypted_key: encryptedKey,

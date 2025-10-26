@@ -83,6 +83,49 @@ export default function AIPromptPage() {
     await supabase.auth.signOut()
     setUser(null)
   }
+
+  // Generate audio from text using ElevenLabs
+  const generateAudio = async (text: string) => {
+    if (!text.trim()) return
+
+    setIsGeneratingAudio(true)
+    setAudioError(null)
+    setAudioUrl(null)
+
+    try {
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Authentication required. Please log in.')
+      }
+
+      const response = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          text: text.trim(),
+          voice_id: "21m00Tcm4TlvDq8ikWAM", // Default voice
+          model_id: "eleven_monolingual_v1"
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate audio')
+      }
+
+      const data = await response.json()
+      setAudioUrl(data.audio)
+    } catch (error) {
+      console.error('Audio generation error:', error)
+      setAudioError(error instanceof Error ? error.message : 'Failed to generate audio')
+    } finally {
+      setIsGeneratingAudio(false)
+    }
+  }
   
   // Function to get display name for modes
   const getModeDisplayName = (mode: string) => {
@@ -104,6 +147,11 @@ export default function AIPromptPage() {
   const [glowEnabled, setGlowEnabled] = useState(false)
   const [responseStyle, setResponseStyle] = useState<"concise" | "detailed">("concise")
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
+
+  // Audio state
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
+  const [audioError, setAudioError] = useState<string | null>(null)
 
   // NEW: Document import state
   const [showDocumentUpload, setShowDocumentUpload] = useState(false)
@@ -504,6 +552,8 @@ export default function AIPromptPage() {
     setLoading(true)
     setError(null)
     setOutput("")
+    setAudioUrl(null)
+    setAudioError(null)
 
     // If there's a document loaded, include it in the context
     let enhancedPrompt = prompt
@@ -1001,13 +1051,6 @@ Please provide a ${responseStyle} answer.`
                 <span className="hidden sm:inline text-sm">Purchase Credits</span>
               </Link>
               
-              <Link
-                href="/ai-settings"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-              >
-                <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="hidden sm:inline text-sm">AI Settings</span>
-              </Link>
             </div>
             
             <div className="text-right text-cyan-400 text-xs sm:text-sm">
@@ -1668,6 +1711,10 @@ Please provide a ${responseStyle} answer.`
                 <ProgressiveResponse 
                   content={output} 
                   responseStyle={responseStyle}
+                  audioUrl={audioUrl || undefined}
+                  isGeneratingAudio={isGeneratingAudio}
+                  audioError={audioError || undefined}
+                  onGenerateAudio={generateAudio}
                   onShowMore={async (topic: string) => {
                   // Make a follow-up API call asking for more details
                   const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
