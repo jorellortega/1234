@@ -26,11 +26,11 @@ const pricingTiers: PricingTier[] = [
   {
     id: "starter",
     name: "Starter Pack",
-    price: 9.99,
-    credits: 100,
+    price: 5.00,
+    credits: 104,
     description: "Perfect for trying out INFINITO",
     features: [
-      "100 AI generations",
+      "104 credits (104,000 tokens)",
       "Basic memory storage",
       "Standard response time",
       "Email support"
@@ -41,11 +41,11 @@ const pricingTiers: PricingTier[] = [
   {
     id: "pro",
     name: "Pro Pack",
-    price: 29.99,
-    credits: 500,
+    price: 20.00,
+    credits: 416,
     description: "For regular AI users",
     features: [
-      "500 AI generations",
+      "416 credits (416,000 tokens)",
       "Advanced memory storage",
       "Priority response time",
       "Document processing",
@@ -58,11 +58,11 @@ const pricingTiers: PricingTier[] = [
   {
     id: "enterprise",
     name: "Enterprise Pack",
-    price: 99.99,
-    credits: 2000,
+    price: 100.00,
+    credits: 2083,
     description: "For power users and teams",
     features: [
-      "2000 AI generations",
+      "2,083 credits (2,083,000 tokens)",
       "Unlimited memory storage",
       "Fastest response time",
       "Advanced document processing",
@@ -190,8 +190,8 @@ export default function CreditsPage() {
         return
       }
 
-      // Calculate price: $0.10 per credit (same as Pro pack rate)
-      const price = customCredits * 0.10
+      // Calculate price: $0.048 per credit (includes 60% markup)
+      const price = customCredits * 0.048
       
       const response = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -362,13 +362,16 @@ export default function CreditsPage() {
                   {/* Center - Price display */}
                   <div className="text-center bg-gradient-to-br from-green-900/20 to-emerald-900/20 rounded-2xl p-8 border-2 border-green-400/30">
                     <div className="text-6xl font-bold text-green-400 mb-3 tracking-tight">
-                      ${(customCredits * 0.10).toFixed(2)}
+                      ${(customCredits * 0.048).toFixed(2)}
                     </div>
                     <div className="text-green-300 text-2xl font-semibold mb-2">
                       {customCredits} Credits
                     </div>
                     <div className="text-lg text-green-500 font-medium">
-                      $0.10 per credit
+                      $0.048 per credit (includes 60% markup)
+                    </div>
+                    <div className="text-sm text-green-400 mt-2">
+                      1 Credit = 1,000 tokens
                     </div>
                     <div className="mt-4 text-sm text-green-400">
                       ⚡ Instant delivery after payment
@@ -398,6 +401,23 @@ export default function CreditsPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          {/* Pricing Explanation */}
+          <div className="mb-8 text-center">
+            <div className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-2xl p-6 border border-cyan-500/30">
+              <h3 className="text-xl font-bold text-cyan-400 mb-3">How Credits Work</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="text-cyan-300">
+                  <strong className="text-cyan-400">1 Credit = 1,000 tokens</strong><br/>
+                  Each credit gives you 1,000 output tokens from AI models
+                </div>
+                <div className="text-cyan-300">
+                  <strong className="text-cyan-400">$0.048 per credit</strong><br/>
+                  Includes 60% markup on OpenAI costs for sustainable service
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Pricing Packs */}
@@ -439,6 +459,9 @@ export default function CreditsPage() {
                       </div>
                       <div className="text-cyan-300">
                         {tier.credits} Credits
+                      </div>
+                      <div className="text-sm text-cyan-400 mt-1">
+                        ({tier.credits.toLocaleString()} tokens)
                       </div>
                     </div>
                     
