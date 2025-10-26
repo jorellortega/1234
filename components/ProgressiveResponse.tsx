@@ -92,11 +92,23 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
       // Auto-scroll to keep the response window in view after expansion
       setTimeout(() => {
         if (responseRef.current) {
+          // Scroll to the response element
           responseRef.current.scrollIntoView({ 
             behavior: 'smooth', 
             block: 'start',
             inline: 'nearest'
           })
+          
+          // Additional scroll adjustment to ensure content is visible
+          setTimeout(() => {
+            const rect = responseRef.current?.getBoundingClientRect()
+            if (rect && rect.bottom > window.innerHeight) {
+              window.scrollBy({
+                top: rect.bottom - window.innerHeight + 50,
+                behavior: 'smooth'
+              })
+            }
+          }, 300)
         }
       }, 100)
     } catch (error) {
@@ -112,6 +124,17 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
             block: 'start',
             inline: 'nearest'
           })
+          
+          // Additional scroll adjustment to ensure content is visible
+          setTimeout(() => {
+            const rect = responseRef.current?.getBoundingClientRect()
+            if (rect && rect.bottom > window.innerHeight) {
+              window.scrollBy({
+                top: rect.bottom - window.innerHeight + 50,
+                behavior: 'smooth'
+              })
+            }
+          }, 300)
         }
       }, 100)
     } finally {
@@ -122,16 +145,7 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
   const hasDetailedContent = detailedPart && detailedPart.trim().length > 0
   const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore)
 
-  // Debug logging
-  console.log('ProgressiveResponse Debug:', {
-    responseStyle,
-    contentLength: content.length,
-    hasDetailedContent,
-    onShowMore: !!onShowMore,
-    shouldShowProgressive,
-    concisePart,
-    detailedPart
-  })
+  // Debug logging removed to prevent console spam
 
   return (
     <div ref={responseRef} className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 ${className}`}>
@@ -189,8 +203,8 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
         
         {/* Detailed part - either from content or from API call */}
         {shouldShowProgressive && (
-          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
-            isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+          <div className={`transition-all duration-500 ease-in-out overflow-hidden ${
+            isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="pt-2 border-t border-cyan-500/20">
               {/* Copy button for detailed content */}

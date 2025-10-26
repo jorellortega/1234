@@ -999,7 +999,7 @@ Please provide a ${responseStyle} answer.`
           )}
 
           {/* Center Panel - Main Interaction */}
-          <div className={`flex flex-col ${output ? 'justify-start items-center py-8' : 'justify-center items-center'} h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
+          <div className={`flex flex-col ${output ? 'justify-start items-center py-8 min-h-screen' : 'justify-center items-center h-full'} ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
               {response ? (
                 <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
