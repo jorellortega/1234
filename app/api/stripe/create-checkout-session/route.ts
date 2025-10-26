@@ -57,14 +57,22 @@ export async function POST(request: Request) {
 
     // Create Stripe checkout session
     console.log('🛒 Creating Stripe checkout session...')
+    
+    // Get the base URL - try environment variable first, then fallback to request origin
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                   (request.headers.get('origin') || 
+                    request.headers.get('host') ? `https://${request.headers.get('host')}` : 
+                    'http://localhost:3000')
+    
+    console.log('🌐 Base URL determined:', baseUrl)
     console.log('📋 Session configuration:', {
       credits: credits,
       price: price,
       priceId: priceId,
       userId: user.id,
       userEmail: user.email,
-      successUrl: `${process.env.NEXT_PUBLIC_SITE_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${process.env.NEXT_PUBLIC_SITE_URL}/payment/cancel`
+      successUrl: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${baseUrl}/payment/cancel`
     })
     
     const session = await stripe.checkout.sessions.create({
@@ -83,8 +91,8 @@ export async function POST(request: Request) {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/payment/cancel`,
+      success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/payment/cancel`,
       metadata: {
         userId: user.id,
         credits: credits.toString(),
