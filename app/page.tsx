@@ -666,9 +666,19 @@ Please provide a ${responseStyle} answer.`
 
         console.log('Saving image mode memory:', visionMemory)
         
+        // Get the current session token for authentication
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          console.error('No active session for vision memory save')
+          return
+        }
+
         const response = await fetch('/api/memories', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
           body: JSON.stringify(visionMemory)
         })
         
@@ -728,9 +738,19 @@ Please provide a ${responseStyle} answer.`
 
       console.log('Sending conversation memory:', conversationMemory)
       
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.error('No active session for conversation memory save')
+        return
+      }
+      
       const response = await fetch('/api/memories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify(conversationMemory)
       })
       
@@ -816,8 +836,19 @@ Please provide a ${responseStyle} answer.`
     if (!currentConversationId) return ''
 
     try {
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.error('No active session for conversation context retrieval')
+        return ''
+      }
+
       // First get the root conversation memory
-      const rootResponse = await fetch(`/api/memories/${currentConversationId}`)
+      const rootResponse = await fetch(`/api/memories/${currentConversationId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
       if (!rootResponse.ok) {
         console.error('Failed to get root conversation:', rootResponse.status)
         return ''
@@ -827,7 +858,11 @@ Please provide a ${responseStyle} answer.`
       let conversationText = `${rootMemory.concept.includes('User Question') ? 'User' : 'AI'}: ${rootMemory.data}\n\n`
       
       // Then get all sub-memories (responses and follow-ups)
-      const response = await fetch(`/api/memories?parent_id=eq.${currentConversationId}&order=created_at.asc`)
+      const response = await fetch(`/api/memories?parent_id=eq.${currentConversationId}&order=created_at.asc`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
       if (response.ok) {
         const conversationMemories = await response.json()
         console.log('Retrieved conversation memories:', conversationMemories)
