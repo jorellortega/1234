@@ -1620,7 +1620,7 @@ Please provide a ${responseStyle} answer.`
             
             {/* AI Response Window - Only show when thread is closed */}
             {output && !showThreadView && (
-              <div className="w-full pb-8">
+              <div className="w-full max-w-3xl mx-auto pb-8">
                 <ProgressiveResponse 
                   content={output} 
                   responseStyle={responseStyle}
