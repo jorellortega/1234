@@ -647,7 +647,7 @@ Please provide a ${responseStyle} answer.`
     }
   }
 
-  // NEW: Save conversation turn to memory core
+  // NEW: Save conversation turn to memory core and library
   const saveConversationTurn = async (role: 'user' | 'assistant', userInput: string, aiResponse: string) => {
     // For image mode, save with image context
     if (isVisionModel && selectedImage) {
@@ -707,6 +707,42 @@ Please provide a ${responseStyle} answer.`
         console.error('Error saving image mode memory:', error)
       }
       return
+    }
+
+    // Save to Library (generations table) - save complete conversations
+    try {
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        // Only save when we have both user input and AI response (complete conversation)
+        if (role === 'assistant' && userInput.trim() && aiResponse.trim()) {
+          const generationData = {
+            prompt: userInput, // User's question
+            output: aiResponse, // AI's response
+            model: mode,
+            temperature: temperature,
+            top_k: topK,
+            parent_id: currentConversationId || null
+          }
+
+          const libraryResponse = await fetch('/api/generations/create', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify(generationData)
+          })
+          
+          if (libraryResponse.ok) {
+            console.log('Saved complete conversation to library:', generationData)
+          } else {
+            console.error('Failed to save to library:', libraryResponse.status)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error saving to library:', error)
     }
     
     // Skip memory saving for image mode without images to avoid database errors
