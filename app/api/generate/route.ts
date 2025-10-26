@@ -242,8 +242,9 @@ export async function POST(req: Request) {
                 const openaiApiKey = apiKey.encrypted_key;
                 
                 // Check if user wants an image (look for specific image-related keywords)
+                // Only trigger if the prompt is not too long (to avoid document text triggering DALL-E)
                 const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize as image'];
-                const wantsImage = imageKeywords.some(keyword => 
+                const wantsImage = prompt.length < 500 && imageKeywords.some(keyword => 
                   prompt.toLowerCase().includes(keyword.toLowerCase())
                 );
                 

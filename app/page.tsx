@@ -25,6 +25,7 @@ export default function AIPromptPage() {
   const [user, setUser] = useState<any>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [userCredits, setUserCredits] = useState(0)
+  const [isAdmin, setIsAdmin] = useState(false)
   
   // Panel visibility state
   const [showPanels, setShowPanels] = useState(false)
@@ -39,6 +40,8 @@ export default function AIPromptPage() {
         if (user) {
           // Fetch user credits
           await fetchUserCredits(user.id)
+          // Check admin status
+          await checkAdminStatus()
         }
       } catch (error) {
         console.error('Error getting user:', error)
@@ -54,8 +57,10 @@ export default function AIPromptPage() {
       setUser(session?.user ?? null)
       if (session?.user) {
         fetchUserCredits(session.user.id)
+        checkAdminStatus()
       } else {
         setUserCredits(0)
+        setIsAdmin(false)
       }
       setAuthLoading(false)
     })
@@ -76,6 +81,33 @@ export default function AIPromptPage() {
     } catch (error) {
       console.error('Error fetching credits:', error)
       setUserCredits(0)
+    }
+  }
+
+  // Check admin status
+  const checkAdminStatus = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setIsAdmin(false)
+        return
+      }
+
+      const response = await fetch('/api/admin/check-role', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setIsAdmin(data.isAdmin || false)
+      } else {
+        setIsAdmin(false)
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error)
+      setIsAdmin(false)
     }
   }
 
@@ -162,6 +194,7 @@ export default function AIPromptPage() {
   const [lastProcessedDocument, setLastProcessedDocument] = useState<string | null>(null)
   const [showDocumentReview, setShowDocumentReview] = useState(false)
   const [processedDocumentData, setProcessedDocumentData] = useState<any>(null)
+  const [showFullTextDialog, setShowFullTextDialog] = useState(false)
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [conversationHistory, setConversationHistory] = useState<Array<{
@@ -259,11 +292,17 @@ export default function AIPromptPage() {
       const result = await response.json()
       
       if (result.memories && result.memories.length > 0) {
+        // Get the current session token for authentication
+        const { data: { session } } = await supabase.auth.getSession()
+        
         // Automatically save all extracted memories
         for (const memory of result.memories) {
           await fetch('/api/memories', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+            },
             body: JSON.stringify(memory),
           })
         }
@@ -817,8 +856,8 @@ Please provide a ${responseStyle} answer.`
         memory_type: 'semantic',
         priority: 6,
         memory_category: 'conversation',
-        parent_id: currentConversationId || null,
-        hierarchy_level: currentConversationId ? 1 : 0
+        parent_id: null, // Always start without parent to avoid foreign key issues
+        hierarchy_level: 0
         // Removed document fields for now to avoid foreign key issues
       }
 
@@ -892,10 +931,8 @@ Please provide a ${responseStyle} answer.`
     }
     
     // Fallback: Add to local conversation history even if memory save fails
-    const fallbackId = crypto.randomUUID()
-    if (!currentConversationId) {
-      setCurrentConversationId(fallbackId)
-    }
+    // But don't set a fake parent_id that doesn't exist
+    const fallbackId = `local-${Date.now()}`
     
     setConversationHistory(prev => [...prev, {
       id: fallbackId,
@@ -903,7 +940,7 @@ Please provide a ${responseStyle} answer.`
       content: role === 'user' ? userInput : aiResponse,
       timestamp: new Date(),
       documentContext: processedDocumentData?.filename,
-      parentConversationId: currentConversationId || fallbackId
+      parentConversationId: null // Don't set fake parent
     }])
   }
 
@@ -937,26 +974,44 @@ Please provide a ${responseStyle} answer.`
       })
       if (!rootResponse.ok) {
         console.error('Failed to get root conversation:', rootResponse.status)
+        // If the root memory doesn't exist, clear the currentConversationId
+        setCurrentConversationId(null)
         return ''
       }
       
-      const rootMemory = await rootResponse.json()
+      const rootResponseData = await rootResponse.json()
+      
+      // Handle different response formats: {memory: {...}} or directly {...}
+      const rootMemory = rootResponseData.memory || rootResponseData
+      
+      // Check if rootMemory is valid
+      if (!rootMemory || !rootMemory.concept || !rootMemory.data) {
+        console.error('Invalid root memory:', rootMemory)
+        setCurrentConversationId(null)
+        return ''
+      }
+      
       let conversationText = `${rootMemory.concept.includes('User Question') ? 'User' : 'AI'}: ${rootMemory.data}\n\n`
       
       // Then get all sub-memories (responses and follow-ups)
-      const response = await fetch(`/api/memories?parent_id=eq.${currentConversationId}&order=created_at.asc`, {
+      const response = await fetch(`/api/memories?parent_id=${currentConversationId}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
       })
       if (response.ok) {
-        const conversationMemories = await response.json()
-        console.log('Retrieved conversation memories:', conversationMemories)
+        const conversationMemoriesData = await response.json()
+        console.log('Retrieved conversation memories:', conversationMemoriesData)
+        
+        // Handle response format: {memories: [...]} or [...]
+        const conversationMemories = conversationMemoriesData.memories || conversationMemoriesData
         
         if (conversationMemories && conversationMemories.length > 0) {
-          conversationText += conversationMemories.map((memory: any) => 
-            `${memory.concept.includes('User Question') ? 'User' : 'AI'}: ${memory.data}`
-          ).join('\n\n')
+          conversationText += conversationMemories
+            .filter((memory: any) => memory && memory.concept && memory.data) // Filter out invalid memories
+            .map((memory: any) => 
+              `${memory.concept.includes('User Question') ? 'User' : 'AI'}: ${memory.data}`
+            ).join('\n\n')
         }
       } else {
         console.error('Failed to retrieve conversation context:', response.status, response.statusText)
@@ -1122,42 +1177,45 @@ Please provide a ${responseStyle} answer.`
 
           {/* Center Panel - Main Interaction */}
           <div className={`flex flex-col justify-center items-center h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
-            <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
-              {response ? (
-                <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
-                  {response}
-                </h2>
-              ) : (
-                <>
-                  <svg className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-4 infinity-symbol" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M151.483 66.667C180.05 66.667 193.75 89.133 193.75 100c0 10.867-13.7 33.333-42.267 33.333-21.158 0-37.583-12.3-49.4-29.517l-1.983-2.875 1.983-2.883c11.817-17.133 28.242-29.391 49.4-29.391zm0 12.5c-15.25 0-28.6 8.208-39.108 20.833 10.508 12.625 23.858 20.833 39.108 20.833 21.158 0 29.767-14.133 29.767-20.833 0-6.7-8.609-20.833-29.767-20.833zm-102.966 0c-21.158 0-29.767 14.133-29.767 20.833 0 6.7 8.609 20.833 29.767 20.833 15.25 0 28.6-8.208 39.108-20.833-10.508-12.625-23.858-20.833-39.108-20.833zm0-12.5c21.158 0 37.583 12.258 49.4 29.516l1.983 2.875-1.983 2.884c-11.817 17.216-28.242 29.391-49.4 29.391C19.95 133.333 6.25 110.867 6.25 100c0-10.867 13.7-33.333 42.267-33.333z" 
-                          fill="url(#infinito-main-gradient)" 
-                          stroke="url(#infinito-stroke-gradient)" 
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"/>
-                    <defs>
-                      <linearGradient id="infinito-main-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
-                        <stop offset="25%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
-                        <stop offset="50%" style={{stopColor: '#8b5cf6', stopOpacity: 1}} />
-                        <stop offset="75%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
-                        <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
-                      </linearGradient>
-                      <linearGradient id="infinito-stroke-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
-                        <stop offset="50%" style={{stopColor: '#a78bfa', stopOpacity: 0.8}} />
-                        <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                  <h2 className="text-5xl md:text-6xl font-bold mb-2 tracking-widest infinito-gradient">
-                    INFINITO
+            {/* Hide logo/title when AI response is shown */}
+            {!output && (
+              <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
+                {response ? (
+                  <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
+                    {response}
                   </h2>
-                  <p className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 tracking-[0.3em] uppercase text-sm">The AI of Infinite Possibilities</p>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <svg className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-4 infinity-symbol" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M151.483 66.667C180.05 66.667 193.75 89.133 193.75 100c0 10.867-13.7 33.333-42.267 33.333-21.158 0-37.583-12.3-49.4-29.517l-1.983-2.875 1.983-2.883c11.817-17.133 28.242-29.391 49.4-29.391zm0 12.5c-15.25 0-28.6 8.208-39.108 20.833 10.508 12.625 23.858 20.833 39.108 20.833 21.158 0 29.767-14.133 29.767-20.833 0-6.7-8.609-20.833-29.767-20.833zm-102.966 0c-21.158 0-29.767 14.133-29.767 20.833 0 6.7 8.609 20.833 29.767 20.833 15.25 0 28.6-8.208 39.108-20.833-10.508-12.625-23.858-20.833-39.108-20.833zm0-12.5c21.158 0 37.583 12.258 49.4 29.516l1.983 2.875-1.983 2.884c-11.817 17.216-28.242 29.391-49.4 29.391C19.95 133.333 6.25 110.867 6.25 100c0-10.867 13.7-33.333 42.267-33.333z" 
+                            fill="url(#infinito-main-gradient)" 
+                            stroke="url(#infinito-stroke-gradient)" 
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"/>
+                      <defs>
+                        <linearGradient id="infinito-main-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                          <stop offset="25%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
+                          <stop offset="50%" style={{stopColor: '#8b5cf6', stopOpacity: 1}} />
+                          <stop offset="75%" style={{stopColor: '#3b82f6', stopOpacity: 1}} />
+                          <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 1}} />
+                        </linearGradient>
+                        <linearGradient id="infinito-stroke-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
+                          <stop offset="50%" style={{stopColor: '#a78bfa', stopOpacity: 0.8}} />
+                          <stop offset="100%" style={{stopColor: '#06b6d4', stopOpacity: 0.8}} />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <h2 className="text-5xl md:text-6xl font-bold mb-2 tracking-widest infinito-gradient">
+                      INFINITO
+                    </h2>
+                    <p className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 tracking-[0.3em] uppercase text-sm">The AI of Infinite Possibilities</p>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Ollama Status Banner */}
             {needsOllama && ollamaOk === false && (
@@ -1171,45 +1229,47 @@ Please provide a ${responseStyle} answer.`
 
 
 
-            {/* Model Selector */}
-            <div className="w-full max-w-3xl mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              {/* Main Model - Mobile: Full width, Desktop: Left side */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">MODEL:</span>
-                <Select value={mode} onValueChange={handleModelChange}>
-                  <SelectTrigger className="w-full sm:w-32 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
-                    <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>
-                    <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>
-                    <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>
-                    <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>
-                    <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>
-                    <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>
-                    <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Model Selector - Admin Only */}
+            {isAdmin && (
+              <div className="w-full max-w-3xl mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                {/* Main Model - Mobile: Full width, Desktop: Left side */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                  <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">MODEL:</span>
+                  <Select value={mode} onValueChange={handleModelChange}>
+                    <SelectTrigger className="w-full sm:w-32 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
+                      <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>
+                      <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>
+                      <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>
+                      <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>
+                      <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>
+                      <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>
+                      <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Image Mode - Mobile: Full width, Desktop: Right side */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                  <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
+                  <Select value={mode === "blip" || mode === "llava" ? mode : ""} onValueChange={(value) => {
+                    if (value === "blip" || value === "llava") {
+                      setMode(value)
+                    }
+                  }}>
+                    <SelectTrigger className="w-full sm:w-40 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue placeholder="Select Vision Model" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
+                      <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One"</SelectItem>
+                      <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos"</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              
-              {/* Image Mode - Mobile: Full width, Desktop: Right side */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
-                <Select value={mode === "blip" || mode === "llava" ? mode : ""} onValueChange={(value) => {
-                  if (value === "blip" || value === "llava") {
-                    setMode(value)
-                  }
-                }}>
-                  <SelectTrigger className="w-full sm:w-40 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
-                    <SelectValue placeholder="Select Vision Model" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
-                    <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One"</SelectItem>
-                    <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos"</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            )}
 
 
 
@@ -1291,12 +1351,16 @@ Please provide a ${responseStyle} answer.`
                       <div className="text-xs font-medium text-cyan-300">
                         {processedDocumentData.filename}
                       </div>
-                      <div className="text-xs text-cyan-500">
-                        {processedDocumentData.fileType} • {processedDocumentData.memories.length} memories
-                      </div>
                     </div>
                   </div>
                   <div className="flex space-x-1">
+                    <Button
+                      onClick={() => setShowFullTextDialog(true)}
+                      className="text-xs px-1.5 py-0.5 bg-purple-600/60 hover:bg-purple-500/80 text-white"
+                      title="Preview full text"
+                    >
+                      Preview
+                    </Button>
                     <Button
                       onClick={() => setShowDocumentReview(true)}
                       className="text-xs px-1.5 py-0.5 bg-cyan-600/60 hover:bg-cyan-500/80 text-white"
@@ -1316,18 +1380,14 @@ Please provide a ${responseStyle} answer.`
                     </Button>
                   </div>
                 </div>
-                <div className="mt-1 text-xs text-cyan-400/80">
-                  AI ready to help with questions about this document
-                </div>
                 
                 {/* Extracted Text Preview */}
-                <div className={`mt-2 p-1.5 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''}`}>
-                  <div className="text-xs text-cyan-500 mb-1">Text Preview:</div>
-                  <div className="text-xs text-cyan-300 max-h-16 overflow-y-auto">
-                    <pre className="whitespace-pre-wrap leading-relaxed">
-                      {processedDocumentData.extractedText.substring(0, 150)}...
-                    </pre>
-                  </div>
+                <div 
+                  className={`mt-2 p-1.5 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''} cursor-pointer hover:bg-black/40 transition-colors`}
+                  onClick={() => setShowFullTextDialog(true)}
+                  title="Click to view full text"
+                >
+                  <div className="text-xs text-cyan-500">Text Preview:</div>
                 </div>
 
 
@@ -1419,30 +1479,6 @@ Please provide a ${responseStyle} answer.`
                   </div>
                 )}
 
-                <textarea
-                  placeholder={
-                    isProcessingDocument 
-                      ? "Processing document..." 
-                      : isVisionModel 
-                        ? selectedImage 
-                          ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
-                          : "Ask about an image or describe what you see... (upload image first)"
-                        : processedDocumentData 
-                          ? `Ask about ${processedDocumentData.filename} or continue working...` 
-                          : "INITIATE QUERY... (or drop a document here)"
-                  }
-                  className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
-                    isVisionModel 
-                      ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
-                      : 'text-blue-300 placeholder-blue-700'
-                  } ${isVisionModel ? 'h-40' : 'h-32'}`}
-                  value={prompt}
-                  onChange={handlePromptChange}
-                  disabled={isProcessingDocument}
-                />
-                
-
-
                 {/* Thread View - Only show when expanded */}
                 {showThreadView && (
                   <div className={`mb-2 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''}`}>
@@ -1481,9 +1517,6 @@ Please provide a ${responseStyle} answer.`
                             <div>
                               <div className="text-sm font-medium text-cyan-300">
                                 {processedDocumentData.filename}
-                              </div>
-                              <div className="text-xs text-cyan-500">
-                                {processedDocumentData.fileType} • {processedDocumentData.memories.length} memories extracted
                               </div>
                             </div>
                           </div>
@@ -1534,6 +1567,28 @@ Please provide a ${responseStyle} answer.`
                     </div>
                   </div>
                 )}
+
+                <textarea
+                  placeholder={
+                    isProcessingDocument 
+                      ? "Processing document..." 
+                      : isVisionModel 
+                        ? selectedImage 
+                          ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
+                          : "Ask about an image or describe what you see... (upload image first)"
+                        : processedDocumentData 
+                          ? "AI ready to help with questions about this document" 
+                          : "INITIATE QUERY... (or drop a document here)"
+                  }
+                  className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
+                    isVisionModel 
+                      ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
+                      : 'text-blue-300 placeholder-blue-700'
+                  } ${isVisionModel ? 'h-40' : 'h-32'}`}
+                  value={prompt}
+                  onChange={handlePromptChange}
+                  disabled={isProcessingDocument}
+                />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
                   {/* Mobile: Stack buttons vertically */}
@@ -1959,6 +2014,51 @@ Make sure to use proper spacing between paragraphs for readability.`
             onCancel={() => setShowMemoryReview(false)}
             onSave={handleSaveExtractedMemories}
           />
+        )}
+
+        {/* Full Text Dialog */}
+        {showFullTextDialog && processedDocumentData && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-black/95 border border-cyan-500/30 rounded-lg max-w-4xl w-full max-h-[80vh] flex flex-col shadow-2xl">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-cyan-500/30">
+                <div>
+                  <h2 className="text-xl font-bold text-cyan-400">
+                    Full Text: {processedDocumentData.filename}
+                  </h2>
+                  <p className="text-xs text-cyan-500 mt-1">
+                    Complete extracted text content
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setShowFullTextDialog(false)}
+                  className="text-cyan-400 hover:text-white hover:bg-cyan-400/10 p-2 rounded"
+                  title="Close"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="bg-black/30 p-4 rounded border border-cyan-500/20">
+                  <pre className="text-sm text-cyan-200 whitespace-pre-wrap leading-relaxed font-mono">
+                    {processedDocumentData.extractedText}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-2 p-4 border-t border-cyan-500/30">
+                <Button
+                  onClick={() => setShowFullTextDialog(false)}
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white px-6"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

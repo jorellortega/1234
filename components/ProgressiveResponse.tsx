@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download } from "lucide-react"
+import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText } from "lucide-react"
 
 interface ProgressiveResponseProps {
   content: string
@@ -105,6 +105,18 @@ export function ProgressiveResponse({
     } catch (err) {
       console.error('Failed to copy:', err)
     }
+  }
+
+  const handleExportPDF = () => {
+    // Get prompt from URL or current input if available
+    const urlParams = new URLSearchParams(window.location.search)
+    const prompt = urlParams.get('prompt') || ''
+    
+    // Generate PDF export URL
+    const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(content)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
+    
+    // Open in new window
+    window.open(pdfUrl, '_blank')
   }
 
   const handleShowMore = async () => {
@@ -296,6 +308,17 @@ export function ProgressiveResponse({
             </div>
           )}
           
+          {/* Export PDF Button */}
+          <Button 
+            onClick={handleExportPDF}
+            variant="ghost" 
+            size="sm"
+            className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            <span className="text-xs">PDF</span>
+          </Button>
+          
           {/* Copy Button */}
           <Button 
             onClick={handleCopy}
@@ -321,7 +344,7 @@ export function ProgressiveResponse({
       {/* Audio Element */}
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" />}
       
-      <div className="text-cyan-300 whitespace-pre-wrap border border-cyan-500/20 rounded p-3 bg-black/20">
+      <div className="text-gray-100 whitespace-pre-wrap border border-cyan-500/20 rounded p-3 bg-black/20">
         {/* Concise part - always visible */}
         <div className="mb-3">
           {concisePart}
