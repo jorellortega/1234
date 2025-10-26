@@ -27,6 +27,17 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
           block: 'start',
           inline: 'nearest'
         })
+        
+        // Additional scroll adjustment to ensure content is visible
+        setTimeout(() => {
+          const rect = responseRef.current?.getBoundingClientRect()
+          if (rect && rect.bottom > window.innerHeight) {
+            window.scrollBy({
+              top: rect.bottom - window.innerHeight + 50,
+              behavior: 'smooth'
+            })
+          }
+        }, 300)
       }, 200)
     }
   }, [content])
@@ -92,7 +103,6 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
       // Auto-scroll to keep the response window in view after expansion
       setTimeout(() => {
         if (responseRef.current) {
-          // Scroll to the response element
           responseRef.current.scrollIntoView({ 
             behavior: 'smooth', 
             block: 'start',
@@ -203,7 +213,7 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
         
         {/* Detailed part - either from content or from API call */}
         {shouldShowProgressive && (
-          <div className={`transition-all duration-500 ease-in-out overflow-hidden ${
+          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
             isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="pt-2 border-t border-cyan-500/20">
