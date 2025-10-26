@@ -24,7 +24,8 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
       setTimeout(() => {
         responseRef.current?.scrollIntoView({ 
           behavior: 'smooth', 
-          block: 'center' 
+          block: 'start',
+          inline: 'nearest'
         })
       }, 200)
     }
@@ -93,7 +94,8 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
         if (responseRef.current) {
           responseRef.current.scrollIntoView({ 
             behavior: 'smooth', 
-            block: 'center' 
+            block: 'start',
+            inline: 'nearest'
           })
         }
       }, 100)
@@ -107,7 +109,8 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
         if (responseRef.current) {
           responseRef.current.scrollIntoView({ 
             behavior: 'smooth', 
-            block: 'center' 
+            block: 'start',
+            inline: 'nearest'
           })
         }
       }, 100)

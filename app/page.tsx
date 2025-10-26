@@ -999,7 +999,7 @@ Please provide a ${responseStyle} answer.`
           )}
 
           {/* Center Panel - Main Interaction */}
-          <div className={`flex flex-col justify-center items-center h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
+          <div className={`flex flex-col ${output ? 'justify-start items-center py-8' : 'justify-center items-center'} h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
               {response ? (
                 <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
@@ -1585,10 +1585,11 @@ Please provide a ${responseStyle} answer.`
             
             {/* AI Response Window - Only show when thread is closed */}
             {output && !showThreadView && (
-              <ProgressiveResponse 
-                content={output} 
-                responseStyle={responseStyle}
-                onShowMore={async (topic: string) => {
+              <div className="w-full pb-8">
+                <ProgressiveResponse 
+                  content={output} 
+                  responseStyle={responseStyle}
+                  onShowMore={async (topic: string) => {
                   // Make a follow-up API call asking for more details
                   const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
 
@@ -1637,6 +1638,7 @@ Make sure to use proper spacing between paragraphs for readability.`
                 }}
                 className={`w-full max-w-3xl mt-4 ${glowEnabled ? 'glow' : ''}`}
               />
+              </div>
             )}
           </div>
 
