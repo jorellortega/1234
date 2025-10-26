@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronUp, Copy, Check, Loader2 } from "lucide-react"
 
@@ -16,6 +16,19 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
   const [copied, setCopied] = useState(false)
   const [detailedContent, setDetailedContent] = useState<string>("")
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const responseRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to response when it first appears
+  useEffect(() => {
+    if (content && responseRef.current) {
+      setTimeout(() => {
+        responseRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        })
+      }, 200)
+    }
+  }, [content])
 
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
@@ -74,10 +87,30 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
       const detailedResponse = await onShowMore(topic)
       setDetailedContent(detailedResponse)
       setIsExpanded(true)
+      
+      // Auto-scroll to keep the response window in view after expansion
+      setTimeout(() => {
+        if (responseRef.current) {
+          responseRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          })
+        }
+      }, 100)
     } catch (error) {
       console.error('Failed to get detailed response:', error)
       setDetailedContent("Sorry, I couldn't load more details. Please try asking a follow-up question.")
       setIsExpanded(true)
+      
+      // Auto-scroll even on error
+      setTimeout(() => {
+        if (responseRef.current) {
+          responseRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          })
+        }
+      }, 100)
     } finally {
       setIsLoadingMore(false)
     }
@@ -98,7 +131,7 @@ export function ProgressiveResponse({ content, className = "", responseStyle = "
   })
 
   return (
-    <div className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 ${className}`}>
+    <div ref={responseRef} className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 ${className}`}>
       <div className="flex justify-between items-center mb-3">
         <div className="text-cyan-400 text-sm font-semibold">AI RESPONSE:</div>
         <Button 
