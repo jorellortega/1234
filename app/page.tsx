@@ -123,7 +123,7 @@ export default function AIPromptPage() {
 
   // Conversational signup handlers
   const handleSignupYes = () => {
-    setOutput(`Great! Let's get started. What's your email address?`)
+    setOutput(`Great! Let's get started - what's your email address?`)
     setSignupFlow('collecting')
     setSignupStep('email')
     setSignupData({ name: '', email: '', phone: '', password: '' })
