@@ -1632,7 +1632,7 @@ Please provide a ${responseStyle} answer.`
                     signupFlow === 'collecting' && signupStep === 'email'
                       ? "Tell me your email here"
                       : signupFlow === 'collecting' && signupStep === 'name'
-                        ? "Tell me your full name here"
+                        ? "Tell me your name here"
                         : signupFlow === 'collecting' && signupStep === 'phone'
                           ? "Tell me your phone number here (optional)"
                           : signupFlow === 'collecting' && signupStep === 'password'
