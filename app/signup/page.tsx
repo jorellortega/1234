@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,27 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
+
+  // Pre-fill form from localStorage if available
+  useEffect(() => {
+    const storedData = localStorage.getItem('signupData')
+    if (storedData) {
+      try {
+        const data = JSON.parse(storedData)
+        if (data.name) setName(data.name)
+        if (data.email) setEmail(data.email)
+        if (data.phone) setPhone(data.phone)
+        if (data.password) {
+          setPassword(data.password)
+          setConfirmPassword(data.password)
+        }
+        // Clear the stored data after using it
+        localStorage.removeItem('signupData')
+      } catch (error) {
+        console.error('Error parsing signup data:', error)
+      }
+    }
+  }, [])
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()

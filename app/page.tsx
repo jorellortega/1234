@@ -30,6 +30,11 @@ export default function AIPromptPage() {
   // Panel visibility state
   const [showPanels, setShowPanels] = useState(false)
   
+  // Conversational signup state
+  const [signupFlow, setSignupFlow] = useState<'idle' | 'asking' | 'collecting'>('idle')
+  const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', password: '' })
+  const [signupStep, setSignupStep] = useState<'name' | 'email' | 'phone' | 'password'>('name')
+  
   // Check authentication status
   useEffect(() => {
     const getUser = async () => {
@@ -114,6 +119,54 @@ export default function AIPromptPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
+  }
+
+  // Conversational signup handlers
+  const handleSignupYes = () => {
+    setOutput(`Great! Let's get started. I'll collect a bit of information from you.
+
+What's your full name?`)
+    setSignupFlow('collecting')
+    setSignupStep('name')
+    setSignupData({ name: '', email: '', phone: '', password: '' })
+  }
+
+  const handleSignupNo = () => {
+    setOutput(`No worries! When you're ready to create an account, just click the "login/signup" button in the top right corner.
+
+Is there anything else I can help you with?`)
+    setSignupFlow('idle')
+    setOutput('')
+  }
+
+  const handleSignupInput = async (userInput: string) => {
+    if (signupStep === 'name') {
+      const newData = { ...signupData, name: userInput }
+      setSignupData(newData)
+      setOutput(`Nice to meet you, ${userInput}! 
+
+What's your email address?`)
+      setSignupStep('email')
+    } else if (signupStep === 'email') {
+      const newData = { ...signupData, email: userInput }
+      setSignupData(newData)
+      setOutput(`Got it! 
+
+What's your phone number? (optional - you can say "skip" if you prefer)`)
+      setSignupStep('phone')
+    } else if (signupStep === 'phone') {
+      const newData = { ...signupData, phone: userInput === 'skip' ? '' : userInput }
+      setSignupData(newData)
+      setOutput(`Perfect! Last step - what would you like your password to be? (at least 6 characters)`)
+      setSignupStep('password')
+    } else if (signupStep === 'password') {
+      const newData = { ...signupData, password: userInput }
+      setSignupData(newData)
+      
+      // Store in localStorage and redirect to signup
+      localStorage.setItem('signupData', JSON.stringify(newData))
+      window.location.href = '/signup'
+    }
   }
 
   // Generate audio from text using ElevenLabs
@@ -538,6 +591,13 @@ export default function AIPromptPage() {
   async function handleTransmit() {
     if (!prompt.trim()) return
     
+    // Handle signup flow if active
+    if (signupFlow === 'collecting') {
+      handleSignupInput(prompt)
+      setPrompt('')
+      return
+    }
+    
     // For image mode, check if an image is uploaded
     if (isVisionModel && !selectedImage) {
       setError("Please upload an image first to use image mode. Use the image upload section above.")
@@ -548,7 +608,8 @@ export default function AIPromptPage() {
     if (!user) {
       setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
 
-I can help you sign up! What's your email?`)
+Do you want me to help you create an account?`)
+      setSignupFlow('asking')
       setError(null)
       return
     }
@@ -559,7 +620,8 @@ I can help you sign up! What's your email?`)
       if (!session) {
         setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
 
-I can help you sign up! What's your email?`)
+Do you want me to help you create an account?`)
+        setSignupFlow('asking')
         setError(null)
         return
       }
@@ -1820,6 +1882,24 @@ Make sure to use proper spacing between paragraphs for readability.`
                 }}
                 className={`w-full max-w-3xl mt-4 ${glowEnabled ? 'glow' : ''}`}
               />
+              
+              {/* YES/NO buttons for signup flow */}
+              {signupFlow === 'asking' && (
+                <div className="flex gap-4 justify-center mt-4">
+                  <Button
+                    onClick={handleSignupYes}
+                    className="bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-2"
+                  >
+                    YES
+                  </Button>
+                  <Button
+                    onClick={handleSignupNo}
+                    className="bg-red-600 hover:bg-red-700 text-white font-semibold px-8 py-2"
+                  >
+                    NO
+                  </Button>
+                </div>
+              )}
               </div>
             )}
           </div>
