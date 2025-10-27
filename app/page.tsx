@@ -1041,13 +1041,15 @@ Please provide a ${responseStyle} answer.`
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <Link
-              href="/memory-core"
-              className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-            >
-              <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">Memory Core</span>
-            </Link>
+            {user && (
+              <Link
+                href="/memory-core"
+                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              >
+                <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="hidden sm:inline text-sm">Memory Core</span>
+              </Link>
+            )}
             {user ? (
               <>
                 <Link
