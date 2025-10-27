@@ -91,23 +91,33 @@ export default function SignupPage() {
         // Animate filling in the fields
         setTimeout(() => {
           setCurrentField('name')
-          if (data.name) setName(data.name)
+          if (data.name) {
+            setName(data.name)
+            console.log('Set name:', data.name)
+          }
         }, 1000)
         
         setTimeout(() => {
           setCurrentField('email')
-          if (data.email) setEmail(data.email)
+          if (data.email) {
+            setEmail(data.email)
+            console.log('Set email:', data.email)
+          }
         }, 2000)
         
         setTimeout(() => {
           setCurrentField('phone')
-          if (data.phone) setPhone(data.phone)
+          if (data.phone) {
+            setPhone(data.phone)
+            console.log('Set phone:', data.phone)
+          }
         }, 3000)
         
         setTimeout(() => {
           if (data.password) {
             setPassword(data.password)
             setConfirmPassword(data.password)
+            console.log('Set password')
           }
         }, 4000)
         
@@ -118,11 +128,12 @@ export default function SignupPage() {
         // Auto-submit after animation
         setTimeout(() => {
           setShowAiDialog(false)
-          // Use setTimeout with 0 to ensure state updates have been applied
+          // Use longer timeout to ensure state updates have been applied
           setTimeout(() => {
+            console.log('Submitting with data:', { name, email, phone, password: password ? '***' : 'empty' })
             const fakeEvent = { preventDefault: () => {} } as React.FormEvent
             handleSignup(fakeEvent)
-          }, 100)
+          }, 1000)
         }, 6000)
         
         // Clear the stored data after using it
