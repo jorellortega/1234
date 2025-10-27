@@ -138,6 +138,14 @@ Is there anything else I can help you with?`)
     setOutput('')
   }
 
+  const handleSkipPhone = () => {
+    const newData = { ...signupData, phone: '' }
+    setSignupData(newData)
+    setOutput(`Perfect! Last step - what would you like your password to be? (at least 6 characters)`)
+    setPrompt('') // Clear prompt for next step
+    setSignupStep('password')
+  }
+
   const handleSignupInput = async (userInput: string) => {
     if (signupStep === 'email') {
       const newData = { ...signupData, email: userInput }
@@ -1901,6 +1909,18 @@ Make sure to use proper spacing between paragraphs for readability.`
                     className="bg-red-600 hover:bg-red-700 text-white font-semibold px-8 py-2"
                   >
                     NO
+                  </Button>
+                </div>
+              )}
+
+              {/* Skip button for phone step */}
+              {signupFlow === 'collecting' && signupStep === 'phone' && (
+                <div className="flex gap-4 justify-center mt-4">
+                  <Button
+                    onClick={handleSkipPhone}
+                    className="bg-slate-600 hover:bg-slate-700 text-white font-semibold px-8 py-2"
+                  >
+                    Skip
                   </Button>
                 </div>
               )}
