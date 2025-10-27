@@ -1629,15 +1629,23 @@ Please provide a ${responseStyle} answer.`
 
                 <textarea
                   placeholder={
-                    isProcessingDocument 
-                      ? "Processing document..." 
-                      : isVisionModel 
-                        ? selectedImage 
-                          ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
-                          : "Ask about an image or describe what you see... (upload image first)"
-                        : processedDocumentData 
-                          ? "AI ready to help with questions about this document" 
-                          : "Ask question or drop file"
+                    signupFlow === 'collecting' && signupStep === 'email'
+                      ? "Tell me your email here"
+                      : signupFlow === 'collecting' && signupStep === 'name'
+                        ? "Tell me your full name here"
+                        : signupFlow === 'collecting' && signupStep === 'phone'
+                          ? "Tell me your phone number here (optional)"
+                          : signupFlow === 'collecting' && signupStep === 'password'
+                            ? "Tell me your password here (at least 6 characters)"
+                            : isProcessingDocument 
+                              ? "Processing document..." 
+                              : isVisionModel 
+                                ? selectedImage 
+                                  ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
+                                  : "Ask about an image or describe what you see... (upload image first)"
+                                : processedDocumentData 
+                                  ? "AI ready to help with questions about this document" 
+                                  : "Ask question or drop file"
                   }
                   className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
                     isVisionModel 
@@ -1646,7 +1654,7 @@ Please provide a ${responseStyle} answer.`
                   } ${isVisionModel ? 'h-40' : 'h-32'}`}
                   value={prompt}
                   onChange={handlePromptChange}
-                  disabled={isProcessingDocument || (signupFlow === 'asking') || (signupFlow === 'collecting')}
+                  disabled={isProcessingDocument || signupFlow === 'asking'}
                 />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
