@@ -355,6 +355,10 @@ export function ProgressiveResponse({
           const imageMatch = content.match(/\[IMAGE_DISPLAY:(.*?)\]/);
           const imageUrl = imageMatch ? imageMatch[1] : null;
           
+          console.log('ProgressiveResponse content:', content);
+          console.log('Image match:', imageMatch);
+          console.log('Image URL:', imageUrl);
+          
           if (imageUrl) {
             return (
               <div className="mb-4 p-3 bg-black/10 rounded border border-cyan-500/30">
@@ -367,6 +371,7 @@ export function ProgressiveResponse({
                     console.error('Failed to load image:', imageUrl);
                     e.currentTarget.style.display = 'none';
                   }}
+                  onLoad={() => console.log('Image loaded successfully:', imageUrl)}
                 />
               </div>
             );
