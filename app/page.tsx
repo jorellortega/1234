@@ -124,6 +124,7 @@ export default function AIPromptPage() {
   // Conversational signup handlers
   const handleSignupYes = () => {
     setOutput(`Great! Let's get started - what's your email address?`)
+    setPrompt('') // Clear the prompt so placeholder shows
     setSignupFlow('collecting')
     setSignupStep('email')
     setSignupData({ name: '', email: '', phone: '', password: '' })
@@ -141,21 +142,20 @@ Is there anything else I can help you with?`)
     if (signupStep === 'email') {
       const newData = { ...signupData, email: userInput }
       setSignupData(newData)
-      setOutput(`Got it! 
-
-What's your full name?`)
+      setOutput(`Got it! What's your full name?`)
+      setPrompt('') // Clear prompt for next step
       setSignupStep('name')
     } else if (signupStep === 'name') {
       const newData = { ...signupData, name: userInput }
       setSignupData(newData)
-      setOutput(`Nice to meet you, ${userInput}! 
-
-What's your phone number? (optional - you can say "skip" if you prefer)`)
+      setOutput(`Nice to meet you, ${userInput}! What's your phone number? (optional - you can say "skip" if you prefer)`)
+      setPrompt('') // Clear prompt for next step
       setSignupStep('phone')
     } else if (signupStep === 'phone') {
       const newData = { ...signupData, phone: userInput === 'skip' ? '' : userInput }
       setSignupData(newData)
       setOutput(`Perfect! Last step - what would you like your password to be? (at least 6 characters)`)
+      setPrompt('') // Clear prompt for next step
       setSignupStep('password')
     } else if (signupStep === 'password') {
       const newData = { ...signupData, password: userInput }
