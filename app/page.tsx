@@ -1564,14 +1564,8 @@ Please provide a ${responseStyle} answer.`
                 )}
 
                 {!user ? (
-                  <div className="w-full h-32 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-blue-500/30 rounded-lg bg-black/10">
-                    <p className="text-blue-300 mb-2">Please sign in to use INFINITO AI</p>
-                    <Link 
-                      href="/login" 
-                      className="text-cyan-400 hover:text-cyan-300 font-semibold underline"
-                    >
-                      Sign In / Up
-                    </Link>
+                  <div className="w-full h-32 flex flex-col items-center justify-center text-center p-4">
+                    <p className="text-blue-300 mb-2">Please <Link href="/login" className="text-cyan-400 hover:text-cyan-300 font-semibold underline">login</Link> to use INFINITO AI</p>
                   </div>
                 ) : (
                   <textarea
