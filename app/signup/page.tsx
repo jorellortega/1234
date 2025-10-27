@@ -28,10 +28,12 @@ export default function SignupPage() {
 
   const handleSignup = React.useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('handleSignup called with state:', { name, email, phone, password: password ? '***' : 'empty', confirmPassword: confirmPassword ? '***' : 'empty' })
     setLoading(true)
     setError(null)
 
     if (!name.trim()) {
+      console.error('Name is empty in handleSignup!')
       setError("Name is required")
       setLoading(false)
       return
