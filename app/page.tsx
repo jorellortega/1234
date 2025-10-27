@@ -1646,7 +1646,7 @@ Please provide a ${responseStyle} answer.`
                   } ${isVisionModel ? 'h-40' : 'h-32'}`}
                   value={prompt}
                   onChange={handlePromptChange}
-                  disabled={isProcessingDocument}
+                  disabled={isProcessingDocument || (signupFlow === 'asking') || (signupFlow === 'collecting')}
                 />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
