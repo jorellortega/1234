@@ -273,7 +273,7 @@ export async function POST(req: Request) {
                   const imageUrl = dalleData.data?.[0]?.url;
                   
                                   if (imageUrl) {
-                  output = `[AiO Image Generated] ${prompt}\n\nImage URL: ${imageUrl}\n\n[IMAGE_DISPLAY:${imageUrl}]\n\nYou can also view the full image by clicking the URL above.`;
+                  output = `Here's your image!\n\n[IMAGE_DISPLAY:${imageUrl}]`;
                 } else {
                   output = `[AiO Error] No image URL received from DALL-E API`;
                 }

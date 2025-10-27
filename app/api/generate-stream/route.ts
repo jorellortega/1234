@@ -188,7 +188,7 @@ export async function POST(req: Request) {
               console.log('Extracted Image URL:', imageUrl); // Debug log
               
               if (imageUrl) {
-                const imageResponse = `[AiO Image Generated] ${prompt}\n\nImage URL: ${imageUrl}\n\n[IMAGE_DISPLAY:${imageUrl}]\n\nYou can also view the full image by clicking the URL above.`;
+                const imageResponse = `Here's your image!\n\n[IMAGE_DISPLAY:${imageUrl}]`;
                 console.log('Sending Image Response:', imageResponse); // Debug log
                 // Send the complete response as one piece to avoid breaking the image marker
                 send(imageResponse);
