@@ -1243,7 +1243,7 @@ Please provide a ${responseStyle} answer.`
           )}
 
           {/* Center Panel - Main Interaction */}
-          <div className={`flex flex-col justify-center items-center h-full ${showPanels && isAdmin ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
+          <div className={`flex flex-col justify-center items-center h-full -mt-20 ${showPanels && isAdmin ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             {/* Hide logo/title when AI response is shown */}
             {!output && (
               <div className="w-full max-w-3xl text-center mb-6 flex flex-col justify-center">
