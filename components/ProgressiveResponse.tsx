@@ -370,16 +370,18 @@ export function ProgressiveResponse({
             return (
               <div className="mb-4 p-3 bg-black/10 rounded border border-cyan-500/30">
                 <div className="text-cyan-400 text-sm font-semibold mb-2">Generated Image:</div>
-                <img 
-                  src={imageUrl} 
-                  alt="Generated image" 
-                  className="max-w-full h-auto rounded-lg border border-cyan-500/50"
-                  onError={(e) => {
-                    console.error('Failed to load image:', imageUrl);
-                    e.currentTarget.style.display = 'none';
-                  }}
-                  onLoad={() => console.log('Image loaded successfully:', imageUrl)}
-                />
+                <div className="flex justify-center">
+                  <img 
+                    src={imageUrl} 
+                    alt="Generated image" 
+                    className="max-w-[500px] max-h-[500px] w-auto h-auto rounded-lg border border-cyan-500/50 object-contain"
+                    onError={(e) => {
+                      console.error('Failed to load image:', imageUrl);
+                      e.currentTarget.style.display = 'none';
+                    }}
+                    onLoad={() => console.log('Image loaded successfully:', imageUrl)}
+                  />
+                </div>
               </div>
             );
           }
