@@ -163,6 +163,7 @@ export async function POST(req: Request) {
           if (wantsImage) {
             // Use DALL-E for image generation (non-streaming response)
             try {
+              console.log('Sending to DALL-E:', prompt);
               const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
