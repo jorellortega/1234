@@ -1110,7 +1110,7 @@ Please provide a ${responseStyle} answer.`
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             {user && (
@@ -1195,7 +1195,7 @@ Please provide a ${responseStyle} answer.`
           </div>
         </header>
 
-        <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8">
           {/* Left Panel */}
           {showPanels && isAdmin && (
             <div className="hidden lg:block lg:col-span-3 space-y-6">
@@ -1246,14 +1246,14 @@ Please provide a ${responseStyle} answer.`
           <div className={`flex flex-col justify-center items-center h-full ${showPanels && isAdmin ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             {/* Hide logo/title when AI response is shown */}
             {!output && (
-              <div className="w-full max-w-3xl text-center flex flex-col justify-center">
+              <div className="w-full max-w-3xl text-center mb-6 flex flex-col justify-center">
                 {response ? (
                   <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
                     {response}
                   </h2>
                 ) : (
                   <>
-                    <svg className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-4 infinity-symbol" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <svg className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-2 infinity-symbol" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M151.483 66.667C180.05 66.667 193.75 89.133 193.75 100c0 10.867-13.7 33.333-42.267 33.333-21.158 0-37.583-12.3-49.4-29.517l-1.983-2.875 1.983-2.883c11.817-17.133 28.242-29.391 49.4-29.391zm0 12.5c-15.25 0-28.6 8.208-39.108 20.833 10.508 12.625 23.858 20.833 39.108 20.833 21.158 0 29.767-14.133 29.767-20.833 0-6.7-8.609-20.833-29.767-20.833zm-102.966 0c-21.158 0-29.767 14.133-29.767 20.833 0 6.7 8.609 20.833 29.767 20.833 15.25 0 28.6-8.208 39.108-20.833-10.508-12.625-23.858-20.833-39.108-20.833zm0-12.5c21.158 0 37.583 12.258 49.4 29.516l1.983 2.875-1.983 2.884c-11.817 17.216-28.242 29.391-49.4 29.391C19.95 133.333 6.25 110.867 6.25 100c0-10.867 13.7-33.333 42.267-33.333z" 
                             fill="url(#infinito-main-gradient)" 
                             stroke="url(#infinito-stroke-gradient)" 
@@ -1275,7 +1275,7 @@ Please provide a ${responseStyle} answer.`
                         </linearGradient>
                       </defs>
                     </svg>
-                    <h2 className="text-5xl md:text-6xl font-bold mb-2 tracking-widest infinito-gradient">
+                    <h2 className="text-5xl md:text-6xl font-bold mb-1 tracking-widest infinito-gradient">
                       INFINITO
                     </h2>
                     <p className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 tracking-[0.3em] uppercase text-sm">The AI of Infinite Possibilities</p>
