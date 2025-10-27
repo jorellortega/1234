@@ -1041,10 +1041,6 @@ Please provide a ${responseStyle} answer.`
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <Link href="/library" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10">
-              <BookUser className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">Library</span>
-            </Link>
             <Link
               href="/memory-core"
               className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
@@ -1070,33 +1066,27 @@ Please provide a ${responseStyle} answer.`
                 </button>
               </>
             ) : (
-              <>
-                <Link
-                  href="/login"
-                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-                >
-                  <span className="text-sm">Sign In</span>
-                </Link>
-                <Link
-                  href="/signup"
-                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-                >
-                  <span className="text-sm">Sign Up</span>
-                </Link>
-              </>
+              <Link
+                href="/login"
+                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              >
+                <span className="text-sm">login/signup</span>
+              </Link>
             )}
           </div>
           
           {/* Mobile: Stack controls vertically */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowPanels(!showPanels)}
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-              >
-                {showPanels ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
-                <span className="hidden sm:inline text-sm">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowPanels(!showPanels)}
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                >
+                  {showPanels ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
+                  <span className="hidden sm:inline text-sm">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
+                </button>
+              )}
               
               <Link
                 href="/credits"
@@ -1123,14 +1113,13 @@ Please provide a ${responseStyle} answer.`
                   {userCredits}
                 </Link>
               </div>
-              <p>V.1.0</p>
             </div>
           </div>
         </header>
 
         <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
           {/* Left Panel */}
-          {showPanels && (
+          {showPanels && isAdmin && (
             <div className="hidden lg:block lg:col-span-3 space-y-6">
             <HudPanel title="System Core">
               <p className="flex items-center gap-2">
@@ -1176,7 +1165,7 @@ Please provide a ${responseStyle} answer.`
           )}
 
           {/* Center Panel - Main Interaction */}
-          <div className={`flex flex-col justify-center items-center h-full ${showPanels ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
+          <div className={`flex flex-col justify-center items-center h-full ${showPanels && isAdmin ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             {/* Hide logo/title when AI response is shown */}
             {!output && (
               <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
@@ -1824,7 +1813,7 @@ Make sure to use proper spacing between paragraphs for readability.`
           </div>
 
           {/* Right Panel */}
-          {showPanels && (
+          {showPanels && isAdmin && (
             <div className="hidden lg:block lg:col-span-3 space-y-6">
             <HudPanel title="Security Matrix">
               <p className="flex items-center gap-2">
@@ -1898,7 +1887,7 @@ Make sure to use proper spacing between paragraphs for readability.`
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-4">
-          <p>Developed by JOR • Powered by Covion Studio © 2025</p>
+          <p>Developed by JOR • Powered by Covion Studio © 2025 • V.1.0</p>
         </footer>
 
         {/* Document Review Window - Inline below console */}
