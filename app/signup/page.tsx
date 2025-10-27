@@ -131,8 +131,26 @@ export default function SignupPage() {
           // Use longer timeout to ensure state updates have been applied
           setTimeout(() => {
             console.log('Submitting with data:', { name, email, phone, password: password ? '***' : 'empty' })
-            const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-            handleSignup(fakeEvent)
+            // Create the signup data from the collected values
+            const signupDataToSubmit = {
+              name: data.name,
+              email: data.email,
+              phone: data.phone || '',
+              password: data.password
+            }
+            
+            // Set state to the collected values to ensure they're current
+            setName(data.name)
+            setEmail(data.email)
+            setPhone(data.phone || '')
+            setPassword(data.password)
+            setConfirmPassword(data.password)
+            
+            // Wait a bit more then submit
+            setTimeout(() => {
+              const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+              handleSignup(fakeEvent)
+            }, 500)
           }, 1000)
         }, 6000)
         
