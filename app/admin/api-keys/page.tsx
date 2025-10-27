@@ -27,7 +27,8 @@ import {
   Users,
   Crown,
   Trash2,
-  Edit
+  Edit,
+  Video
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
@@ -50,7 +51,7 @@ interface AIService {
   name: string
   description: string
   icon: React.ReactNode
-  category: 'llm' | 'vision' | 'audio' | 'multimodal'
+  category: 'llm' | 'vision' | 'audio' | 'video' | 'multimodal'
   required: boolean
   apiKey?: APIKey
 }
@@ -77,6 +78,14 @@ export default function AdminAPIKeysPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
 
   const aiServices: AIService[] = [
+    {
+      id: 'runwayml',
+      name: 'Runway ML',
+      description: 'Video generation AI',
+      icon: <Video className="h-5 w-5" />,
+      category: 'video',
+      required: false
+    },
     {
       id: 'openai',
       name: 'OpenAI',
@@ -641,15 +650,16 @@ export default function AdminAPIKeysPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="llm" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
+            <Tabs defaultValue="video" className="w-full">
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="video">Video AI</TabsTrigger>
                 <TabsTrigger value="llm">Language Models</TabsTrigger>
                 <TabsTrigger value="vision">Vision & Image</TabsTrigger>
                 <TabsTrigger value="audio">Audio & Speech</TabsTrigger>
                 <TabsTrigger value="multimodal">Multimodal</TabsTrigger>
               </TabsList>
 
-              {['llm', 'vision', 'audio', 'multimodal'].map((category) => (
+              {['video', 'llm', 'vision', 'audio', 'multimodal'].map((category) => (
                 <TabsContent key={category} value={category} className="mt-6">
                   <div className="grid gap-4">
                     {getCategoryServices(category).map((service) => {
