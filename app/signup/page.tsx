@@ -26,6 +26,58 @@ export default function SignupPage() {
   const [currentField, setCurrentField] = useState('')
   const router = useRouter()
 
+  const handleSignup = React.useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    if (!name.trim()) {
+      setError("Name is required")
+      setLoading(false)
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match")
+      setLoading(false)
+      return
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters")
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            phone: phone,
+            full_name: name
+          }
+        }
+      })
+
+      if (error) {
+        setError(error.message)
+      } else {
+        setSuccess(true)
+        // Since email confirmation is disabled, user is automatically logged in
+        setTimeout(() => {
+          router.push("/")
+          router.refresh()
+        }, 2000)
+      }
+    } catch (err) {
+      setError("An unexpected error occurred")
+    } finally {
+      setLoading(false)
+    }
+  }, [name, email, phone, password, confirmPassword, router])
+
   // Pre-fill form from localStorage if available
   useEffect(() => {
     const storedData = localStorage.getItem('signupData')
@@ -80,58 +132,6 @@ export default function SignupPage() {
       }
     }
   }, [handleSignup])
-
-  const handleSignup = React.useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
-    if (!name.trim()) {
-      setError("Name is required")
-      setLoading(false)
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      setLoading(false)
-      return
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters")
-      setLoading(false)
-      return
-    }
-
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            phone: phone,
-            full_name: name
-          }
-        }
-      })
-
-      if (error) {
-        setError(error.message)
-      } else {
-        setSuccess(true)
-        // Since email confirmation is disabled, user is automatically logged in
-        setTimeout(() => {
-          router.push("/")
-          router.refresh()
-        }, 2000)
-      }
-    } catch (err) {
-      setError("An unexpected error occurred")
-    } finally {
-      setLoading(false)
-    }
-  }, [name, email, phone, password, confirmPassword, router])
 
   if (success) {
     return (
