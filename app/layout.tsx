@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "INFINITO AI - The AI of Infinite Possibilities",
+  title: "Infinito",
   description: "The AI of Infinite Possibilities",
     generator: 'v0.dev'
 }
