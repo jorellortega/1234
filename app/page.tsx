@@ -777,6 +777,7 @@ Please provide a ${responseStyle} answer.`
     })
 
     console.log("sending mode:", mode)
+    console.log("Enhanced prompt being sent:", enhancedPrompt)
 
     try {
       if (!stream) {
