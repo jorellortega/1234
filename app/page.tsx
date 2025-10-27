@@ -33,7 +33,7 @@ export default function AIPromptPage() {
   // Conversational signup state
   const [signupFlow, setSignupFlow] = useState<'idle' | 'asking' | 'collecting'>('idle')
   const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', password: '' })
-  const [signupStep, setSignupStep] = useState<'name' | 'email' | 'phone' | 'password'>('name')
+  const [signupStep, setSignupStep] = useState<'email' | 'name' | 'phone' | 'password'>('email')
   
   // Check authentication status
   useEffect(() => {
@@ -123,11 +123,11 @@ export default function AIPromptPage() {
 
   // Conversational signup handlers
   const handleSignupYes = () => {
-    setOutput(`Great! Let's get started. I'll collect a bit of information from you.
+    setOutput(`Great! Let's get started.
 
-What's your full name?`)
+What's your email address?`)
     setSignupFlow('collecting')
-    setSignupStep('name')
+    setSignupStep('email')
     setSignupData({ name: '', email: '', phone: '', password: '' })
   }
 
@@ -140,17 +140,17 @@ Is there anything else I can help you with?`)
   }
 
   const handleSignupInput = async (userInput: string) => {
-    if (signupStep === 'name') {
-      const newData = { ...signupData, name: userInput }
-      setSignupData(newData)
-      setOutput(`Nice to meet you, ${userInput}! 
-
-What's your email address?`)
-      setSignupStep('email')
-    } else if (signupStep === 'email') {
+    if (signupStep === 'email') {
       const newData = { ...signupData, email: userInput }
       setSignupData(newData)
       setOutput(`Got it! 
+
+What's your full name?`)
+      setSignupStep('name')
+    } else if (signupStep === 'name') {
+      const newData = { ...signupData, name: userInput }
+      setSignupData(newData)
+      setOutput(`Nice to meet you, ${userInput}! 
 
 What's your phone number? (optional - you can say "skip" if you prefer)`)
       setSignupStep('phone')
