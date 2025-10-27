@@ -1573,7 +1573,7 @@ Please provide a ${responseStyle} answer.`
                           : "Ask about an image or describe what you see... (upload image first)"
                         : processedDocumentData 
                           ? "AI ready to help with questions about this document" 
-                          : "INITIATE QUERY... (or drop a document here)"
+                          : "Ask question or drop file"
                   }
                   className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
                     isVisionModel 
