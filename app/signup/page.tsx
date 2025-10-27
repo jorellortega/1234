@@ -80,6 +80,61 @@ export default function SignupPage() {
     }
   }, [name, email, phone, password, confirmPassword, router])
 
+  // Direct signup handler that uses provided data instead of state
+  const handleSignupDirect = async (signupData: any, e: React.FormEvent) => {
+    e.preventDefault()
+    console.log('handleSignupDirect called with data:', signupData)
+    setLoading(true)
+    setError(null)
+
+    if (!signupData.name || !signupData.name.trim()) {
+      console.error('Name is empty in handleSignupDirect!')
+      setError("Name is required")
+      setLoading(false)
+      return
+    }
+
+    if (signupData.password !== signupData.password) {
+      setError("Passwords do not match")
+      setLoading(false)
+      return
+    }
+
+    if (signupData.password.length < 6) {
+      setError("Password must be at least 6 characters")
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: signupData.email,
+        password: signupData.password,
+        options: {
+          data: {
+            phone: signupData.phone || '',
+            full_name: signupData.name
+          }
+        }
+      })
+
+      if (error) {
+        setError(error.message)
+      } else {
+        setSuccess(true)
+        // Since email confirmation is disabled, user is automatically logged in
+        setTimeout(() => {
+          router.push("/")
+          router.refresh()
+        }, 2000)
+      }
+    } catch (err) {
+      setError("An unexpected error occurred")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Pre-fill form from localStorage if available
   useEffect(() => {
     const storedData = localStorage.getItem('signupData')
@@ -148,10 +203,12 @@ export default function SignupPage() {
             setPassword(data.password)
             setConfirmPassword(data.password)
             
-            // Wait a bit more then submit
+            // Wait a bit more then submit - need to pass data directly since state might not be updated
             setTimeout(() => {
               const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-              handleSignup(fakeEvent)
+              // Call handleSignup with the data from storage, not from state
+              console.log('About to submit with stored data:', data)
+              handleSignupDirect(data, fakeEvent)
             }, 500)
           }, 1000)
         }, 6000)
