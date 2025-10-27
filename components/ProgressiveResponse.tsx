@@ -67,8 +67,15 @@ export function ProgressiveResponse({
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
     // NEVER truncate image responses - they need the full URL
+    // Remove IMAGE_DISPLAY tags from displayed text but keep for image extraction
+    let displayContent = content;
+    if (content.includes('[IMAGE_DISPLAY:')) {
+      // Remove the IMAGE_DISPLAY tag from the text
+      displayContent = content.replace(/\[IMAGE_DISPLAY:[^\]]+\]/g, '').trim();
+    }
+    
     if (content.includes('[IMAGE_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
-      return { concisePart: content, detailedPart: null }
+      return { concisePart: displayContent, detailedPart: null }
     }
     
     // For concise mode, always show 1-2 complete sentences
