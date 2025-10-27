@@ -97,7 +97,7 @@ export default function AIPromptPage() {
   const checkAdminStatus = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      if (!session || !user) {
         setIsAdmin(false)
         return
       }
