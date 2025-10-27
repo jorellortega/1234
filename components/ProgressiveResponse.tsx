@@ -367,9 +367,37 @@ export function ProgressiveResponse({
           console.log('Image URL:', imageUrl);
           
           if (imageUrl) {
+            const handleDownload = async () => {
+              try {
+                const response = await fetch(imageUrl);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `infinito-image-${Date.now()}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+              } catch (error) {
+                console.error('Failed to download image:', error);
+              }
+            };
+
             return (
               <div className="mb-4 p-3 bg-black/10 rounded border border-cyan-500/30">
-                <div className="text-cyan-400 text-sm font-semibold mb-2">Generated Image:</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-cyan-400 text-sm font-semibold">Generated Image:</div>
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
+                  >
+                    <Download className="h-3 w-3 mr-1" />
+                    Download
+                  </Button>
+                </div>
                 <div className="flex justify-center">
                   <img 
                     src={imageUrl} 
