@@ -369,16 +369,8 @@ export function ProgressiveResponse({
           if (imageUrl) {
             const handleDownload = async () => {
               try {
-                const response = await fetch(imageUrl);
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `infinito-image-${Date.now()}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+                // Use API proxy to avoid CORS issues
+                window.open(`/api/download-image?url=${encodeURIComponent(imageUrl)}`, '_blank');
               } catch (error) {
                 console.error('Failed to download image:', error);
               }
