@@ -546,7 +546,7 @@ export default function AIPromptPage() {
     
     // Check if user is authenticated
     if (!user) {
-      setError("Please sign in to use INFINITO AI")
+      setError("Please sign in to use INFINITO AI. Would you like help signing up for an account?")
       return
     }
     
@@ -554,7 +554,7 @@ export default function AIPromptPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        setError("Please sign in to use INFINITO AI")
+        setError("Please sign in to use INFINITO AI. Would you like help signing up for an account?")
         return
       }
       
@@ -1563,33 +1563,27 @@ Please provide a ${responseStyle} answer.`
                   </div>
                 )}
 
-                {!user ? (
-                  <div className="w-full h-32 flex flex-col items-center justify-center text-center p-4">
-                    <p className="text-blue-300 mb-2">Please <Link href="/login" className="text-cyan-400 hover:text-cyan-300 font-semibold underline">login</Link> to use INFINITO AI</p>
-                  </div>
-                ) : (
-                  <textarea
-                    placeholder={
-                      isProcessingDocument 
-                        ? "Processing document..." 
-                        : isVisionModel 
-                          ? selectedImage 
-                            ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
-                            : "Ask about an image or describe what you see... (upload image first)"
-                          : processedDocumentData 
-                            ? "AI ready to help with questions about this document" 
-                            : "Ask question or drop file"
-                    }
-                    className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
-                      isVisionModel 
-                        ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
-                        : 'text-blue-300 placeholder-blue-700'
-                    } ${isVisionModel ? 'h-40' : 'h-32'}`}
-                    value={prompt}
-                    onChange={handlePromptChange}
-                    disabled={isProcessingDocument}
-                  />
-                )}
+                <textarea
+                  placeholder={
+                    isProcessingDocument 
+                      ? "Processing document..." 
+                      : isVisionModel 
+                        ? selectedImage 
+                          ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
+                          : "Ask about an image or describe what you see... (upload image first)"
+                        : processedDocumentData 
+                          ? "AI ready to help with questions about this document" 
+                          : "Ask question or drop file"
+                  }
+                  className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
+                    isVisionModel 
+                      ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
+                      : 'text-blue-300 placeholder-blue-700'
+                  } ${isVisionModel ? 'h-40' : 'h-32'}`}
+                  value={prompt}
+                  onChange={handlePromptChange}
+                  disabled={isProcessingDocument}
+                />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
                   {/* Mobile: Stack buttons vertically */}
