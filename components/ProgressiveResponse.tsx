@@ -67,7 +67,7 @@ export function ProgressiveResponse({
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
     // NEVER truncate image responses - they need the full URL
-    if (content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
+    if (content.includes('[IMAGE_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
       return { concisePart: content, detailedPart: null }
     }
     
