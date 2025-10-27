@@ -606,9 +606,7 @@ What's your phone number? (optional - you can say "skip" if you prefer)`)
     
     // Check if user is authenticated
     if (!user) {
-      setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
-
-Do you want me to help you create an account?`)
+      setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. I can help you sign up.`)
       setSignupFlow('asking')
       setError(null)
       return
@@ -618,9 +616,7 @@ Do you want me to help you create an account?`)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
-
-Do you want me to help you create an account?`)
+        setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. I can help you sign up.`)
         setSignupFlow('asking')
         setError(null)
         return
