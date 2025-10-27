@@ -35,6 +35,10 @@ export default function AIPromptPage() {
   const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', password: '' })
   const [signupStep, setSignupStep] = useState<'email' | 'name' | 'phone' | 'password'>('email')
   
+  // Voice recognition state
+  const [isListening, setIsListening] = useState(false)
+  const [recognition, setRecognition] = useState<any>(null)
+  
   // Check authentication status
   useEffect(() => {
     const getUser = async () => {
@@ -285,6 +289,49 @@ Is there anything else I can help you with?`)
     check()
     return () => { cancelled = true }
   }, [mode])
+
+  // Initialize voice recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition
+      const recognitionInstance = new SpeechRecognition()
+      recognitionInstance.continuous = false
+      recognitionInstance.interimResults = false
+      recognitionInstance.lang = 'en-US'
+      
+      recognitionInstance.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript
+        setPrompt(prev => prev + transcript)
+        setIsListening(false)
+      }
+      
+      recognitionInstance.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error)
+        setIsListening(false)
+      }
+      
+      recognitionInstance.onend = () => {
+        setIsListening(false)
+      }
+      
+      setRecognition(recognitionInstance)
+    }
+  }, [])
+
+  const handleVoiceInput = () => {
+    if (isListening) {
+      recognition?.stop()
+      setIsListening(false)
+    } else {
+      try {
+        recognition?.start()
+        setIsListening(true)
+      } catch (error) {
+        console.error('Failed to start speech recognition:', error)
+        setError('Voice recognition not available in this browser')
+      }
+    }
+  }
 
   const handlePromptChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
@@ -1680,7 +1727,9 @@ Please provide a ${responseStyle} answer.`
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white h-10 w-10"
+                      onClick={handleVoiceInput}
+                      className={`h-10 w-10 ${isListening ? 'bg-red-900/20 text-red-400 animate-pulse' : 'text-cyan-400 hover:bg-cyan-400/10 hover:text-white'}`}
+                      title={isListening ? 'Listening... Click to stop' : 'Voice input'}
                     >
                       <Mic className="h-5 w-5" />
                     </Button>
