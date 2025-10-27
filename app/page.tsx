@@ -88,7 +88,7 @@ export default function AIPromptPage() {
       
       setUserCredits(profile?.credits || 0)
     } catch (error) {
-      console.error('Error fetching credits:', error)
+      // Silently fail - user may not be authenticated
       setUserCredits(0)
     }
   }
@@ -115,7 +115,7 @@ export default function AIPromptPage() {
         setIsAdmin(false)
       }
     } catch (error) {
-      console.error('Error checking admin status:', error)
+      // Silently fail - user may not be authenticated or not admin
       setIsAdmin(false)
     }
   }
