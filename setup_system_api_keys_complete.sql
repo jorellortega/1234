@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.ai_services (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    category VARCHAR(20) NOT NULL CHECK (category IN ('llm', 'vision', 'audio', 'multimodal')),
+    category VARCHAR(20) NOT NULL CHECK (category IN ('llm', 'vision', 'audio', 'video', 'multimodal')),
     icon_name VARCHAR(50),
     is_required BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
@@ -28,6 +28,9 @@ INSERT INTO public.ai_services (id, name, description, category, icon_name, is_r
 
 -- Audio & Speech
 ('elevenlabs', 'ElevenLabs', 'Text-to-speech, voice cloning', 'audio', 'Zap', FALSE, TRUE),
+
+-- Video AI
+('runwayml', 'Runway ML', 'Video generation AI', 'video', 'Video', FALSE, TRUE),
 
 -- Multimodal
 ('perplexity', 'Perplexity', 'Mixtral, CodeLlama, Llama', 'multimodal', 'Search', FALSE, TRUE),
