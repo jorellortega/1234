@@ -66,8 +66,11 @@ export default function SignupPage() {
         // Auto-submit after animation
         setTimeout(() => {
           setShowAiDialog(false)
-          const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-          handleSignup(fakeEvent)
+          // Use setTimeout with 0 to ensure state updates have been applied
+          setTimeout(() => {
+            const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+            handleSignup(fakeEvent)
+          }, 100)
         }, 6000)
         
         // Clear the stored data after using it
@@ -76,7 +79,7 @@ export default function SignupPage() {
         console.error('Error parsing signup data:', error)
       }
     }
-  }, [])
+  }, [handleSignup])
 
   const handleSignup = React.useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
