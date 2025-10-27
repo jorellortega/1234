@@ -22,6 +22,8 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [showAiDialog, setShowAiDialog] = useState(false)
+  const [currentField, setCurrentField] = useState('')
   const router = useRouter()
 
   // Pre-fill form from localStorage if available
@@ -30,13 +32,44 @@ export default function SignupPage() {
     if (storedData) {
       try {
         const data = JSON.parse(storedData)
-        if (data.name) setName(data.name)
-        if (data.email) setEmail(data.email)
-        if (data.phone) setPhone(data.phone)
-        if (data.password) {
-          setPassword(data.password)
-          setConfirmPassword(data.password)
-        }
+        
+        // Show the AI dialog animation
+        setShowAiDialog(true)
+        
+        // Animate filling in the fields
+        setTimeout(() => {
+          setCurrentField('name')
+          if (data.name) setName(data.name)
+        }, 1000)
+        
+        setTimeout(() => {
+          setCurrentField('email')
+          if (data.email) setEmail(data.email)
+        }, 2000)
+        
+        setTimeout(() => {
+          setCurrentField('phone')
+          if (data.phone) setPhone(data.phone)
+        }, 3000)
+        
+        setTimeout(() => {
+          if (data.password) {
+            setPassword(data.password)
+            setConfirmPassword(data.password)
+          }
+        }, 4000)
+        
+        setTimeout(() => {
+          setCurrentField('creating')
+        }, 5000)
+        
+        // Auto-submit after animation
+        setTimeout(() => {
+          setShowAiDialog(false)
+          const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+          handleSignup(fakeEvent)
+        }, 6000)
+        
         // Clear the stored data after using it
         localStorage.removeItem('signupData')
       } catch (error) {
@@ -45,7 +78,7 @@ export default function SignupPage() {
     }
   }, [])
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = React.useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
@@ -95,7 +128,7 @@ export default function SignupPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [name, email, phone, password, confirmPassword, router])
 
   if (success) {
     return (
@@ -129,6 +162,57 @@ export default function SignupPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to INFINITO
         </Link>
+
+        {/* AI Dialog Overlay */}
+        {showAiDialog && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <Card className="bg-black/90 backdrop-blur-md border-cyan-500/50 shadow-2xl shadow-cyan-500/20 max-w-md w-full mx-4">
+              <CardHeader className="text-center">
+                <div className="flex items-center justify-center mb-4">
+                  <Brain className="h-12 w-12 text-cyan-400 animate-pulse" />
+                </div>
+                <CardTitle className="text-2xl font-bold text-cyan-400">AI is Creating Your Account</CardTitle>
+                <CardDescription className="text-slate-300 mt-2">
+                  I'm filling in your details and creating your account now...
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className={`flex items-center gap-2 p-3 rounded border ${currentField === 'name' ? 'border-cyan-400 bg-cyan-900/20' : 'border-slate-700 bg-slate-800/30'}`}>
+                    <div className={`w-2 h-2 rounded-full ${currentField === 'name' ? 'bg-cyan-400 animate-pulse' : currentField !== '' ? 'bg-green-400' : 'bg-slate-500'}`} />
+                    <span className={currentField === 'name' ? 'text-cyan-400 font-semibold' : 'text-slate-300'}>
+                      {name ? `✓ Name: ${name}` : 'Adding your name...'}
+                    </span>
+                  </div>
+                  
+                  <div className={`flex items-center gap-2 p-3 rounded border ${currentField === 'email' ? 'border-cyan-400 bg-cyan-900/20' : 'border-slate-700 bg-slate-800/30'}`}>
+                    <div className={`w-2 h-2 rounded-full ${currentField === 'email' ? 'bg-cyan-400 animate-pulse' : currentField !== '' && currentField !== 'name' ? 'bg-green-400' : 'bg-slate-500'}`} />
+                    <span className={currentField === 'email' ? 'text-cyan-400 font-semibold' : 'text-slate-300'}>
+                      {email ? `✓ Email: ${email}` : 'Adding your email...'}
+                    </span>
+                  </div>
+                  
+                  <div className={`flex items-center gap-2 p-3 rounded border ${currentField === 'phone' ? 'border-cyan-400 bg-cyan-900/20' : 'border-slate-700 bg-slate-800/30'}`}>
+                    <div className={`w-2 h-2 rounded-full ${currentField === 'phone' ? 'bg-cyan-400 animate-pulse' : currentField !== '' && currentField !== 'name' && currentField !== 'email' ? 'bg-green-400' : 'bg-slate-500'}`} />
+                    <span className={currentField === 'phone' ? 'text-cyan-400 font-semibold' : 'text-slate-300'}>
+                      {phone ? `✓ Phone: ${phone}` : 'Adding your phone...'}
+                    </span>
+                  </div>
+                  
+                  {currentField === 'creating' && (
+                    <div className="flex items-center gap-2 p-3 rounded border border-green-400 bg-green-900/20 animate-pulse">
+                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-green-400 font-semibold">
+                        Creating your account now...
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
 
         <Card className="bg-black/40 backdrop-blur-md border-cyan-500/30 shadow-2xl shadow-cyan-500/20">
           <CardHeader className="text-center">
