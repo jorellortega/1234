@@ -546,7 +546,10 @@ export default function AIPromptPage() {
     
     // Check if user is authenticated
     if (!user) {
-      setError("Please sign in to use INFINITO AI. Would you like help signing up for an account?")
+      setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
+
+Would you like help creating an account? Just click the "login/signup" button in the top right corner to get started. It's quick and easy!`)
+      setError(null)
       return
     }
     
@@ -554,7 +557,10 @@ export default function AIPromptPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        setError("Please sign in to use INFINITO AI. Would you like help signing up for an account?")
+        setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
+
+Would you like help creating an account? Just click the "login/signup" button in the top right corner to get started. It's quick and easy!`)
+        setError(null)
         return
       }
       
