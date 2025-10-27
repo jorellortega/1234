@@ -163,7 +163,15 @@ export async function POST(req: Request) {
           if (wantsImage) {
             // Use DALL-E for image generation (non-streaming response)
             try {
-              console.log('Sending to DALL-E:', prompt);
+              // Extract just the user's image request from the enhanced prompt
+              // Look for "Question: <image request>" pattern and extract the question part
+              let imagePrompt = prompt;
+              const questionMatch = prompt.match(/Question:\s*(.+?)(?:\n|$)/);
+              if (questionMatch && questionMatch[1]) {
+                imagePrompt = questionMatch[1].trim();
+              }
+              
+              console.log('Sending to DALL-E (cleaned):', imagePrompt);
               const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
@@ -171,7 +179,7 @@ export async function POST(req: Request) {
                   "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                  prompt: prompt,
+                  prompt: imagePrompt,
                   n: 1,
                   size: "1024x1024",
                   response_format: "url"
