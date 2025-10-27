@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import { supabase } from "@/lib/supabase-client";
 import Link from "next/link";
 import TagEditor from "@/components/TagEditor";
@@ -25,7 +25,10 @@ type Child = {
   created_at: string;
 };
 
-export default function GenerationDetail({ params }: { params: { id: string } }) {
+export default function GenerationDetail({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params Promise using React.use()
+  const { id } = use(params);
+  
   const [row, setRow] = useState<Row | null>(null);
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +59,7 @@ export default function GenerationDetail({ params }: { params: { id: string } })
         const { data: generation, error: fetchError } = await supabase
           .from("generations")
           .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
-          .eq("id", params.id)
+          .eq("id", id)
           .eq("user_id", user.id)
           .single();
 
@@ -71,7 +74,7 @@ export default function GenerationDetail({ params }: { params: { id: string } })
         const { data: childrenData } = await supabase
           .from("generations")
           .select("id, created_at")
-          .eq("parent_id", params.id)
+          .eq("parent_id", id)
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(50);
@@ -85,7 +88,7 @@ export default function GenerationDetail({ params }: { params: { id: string } })
     };
 
     fetchData();
-  }, [params.id, router]);
+  }, [id, router]);
 
   if (loading) {
     return (

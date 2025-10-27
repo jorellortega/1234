@@ -15,11 +15,13 @@ import { supabase } from "@/lib/supabase-client"
 
 export default function AIPromptPage() {
   const [prompt, setPrompt] = useState("")
+  const [lastPrompt, setLastPrompt] = useState("")
   const [response, setResponse] = useState("")
   const [mode, setMode] = useState("openai")
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
+  const isImageGenModel = mode === "dalle_image" || mode === "runway_image"
   const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph"
   
   // Authentication state
@@ -291,6 +293,11 @@ Is there anything else I can help you with?`)
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
   const [videoRatio, setVideoRatio] = useState<string>('1280:720')
   const videoFileInputRef = useRef<HTMLInputElement>(null)
+  
+  // RunwayML Image Generation state
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null)
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const [imageGenerationProgress, setImageGenerationProgress] = useState<string>('')
 
   const JOR_BINARY = "010010100100111101010010"
 
@@ -510,6 +517,46 @@ Is there anything else I can help you with?`)
     }
   }
 
+  // Convert generated image to video
+  const handleConvertImageToVideo = async (imageUrl: string) => {
+    try {
+      setError(null)
+      
+      // Fetch the image and convert to File
+      const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageUrl)}`)
+      if (!response.ok) throw new Error('Failed to fetch image')
+      
+      const blob = await response.blob()
+      const file = new File([blob], 'generated-image.png', { type: 'image/png' })
+      
+      // Create image preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setVideoImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+      
+      // Set the video image
+      setVideoImage(file)
+      
+      // Switch to video mode (gen4_turbo as default)
+      setMode('gen4_turbo')
+      
+      // Set a helpful prompt
+      setPrompt('Add motion and animation to this image')
+      
+      // Scroll to top to show video generation UI
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      
+      // Show success message
+      setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
+      
+    } catch (error) {
+      console.error('Error converting image to video:', error)
+      setError('Failed to load image for video generation')
+    }
+  }
+
   // NEW: Image drag and drop handlers
   const handleImageDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -683,47 +730,95 @@ Is there anything else I can help you with?`)
     }
   }
 
-  // Handler to convert AI-generated image to video
-  const handleConvertImageToVideo = async (imageUrl: string) => {
+  // Video generation handler
+  const handleGenerateImage = async () => {
+    if (!prompt.trim()) {
+      setError('Please enter a prompt for image generation')
+      return
+    }
+
+    // Check authentication
+    if (!user) {
+      setError('Please log in to generate images')
+      return
+    }
+
     try {
+      setIsGeneratingImage(true)
       setError(null)
-      
-      // Fetch the image and convert to File
-      const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageUrl)}`)
-      if (!response.ok) throw new Error('Failed to fetch image')
-      
-      const blob = await response.blob()
-      const file = new File([blob], 'generated-image.png', { type: 'image/png' })
-      
-      // Create image preview
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setVideoImagePreview(e.target?.result as string)
+      setGeneratedImageUrl(null)
+      setImageGenerationProgress('Preparing your image generation...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
       }
-      reader.readAsDataURL(file)
+
+      // Check credits - DALL-E costs 13 credits, RunwayML costs 16 credits
+      const requiredCredits = mode === 'dalle_image' ? 13 : 16
+      const creditResponse = await fetch('/api/credits/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          requiredCredits: requiredCredits,
+          operation: 'check_and_deduct'
+        })
+      })
+
+      const creditData = await creditResponse.json()
+      if (!creditData.success) {
+        setError(creditData.message || `Insufficient credits. Image generation costs ${requiredCredits} credits.`)
+        return
+      }
+
+      setUserCredits(creditData.credits)
+
+      // Determine which API to use
+      const apiEndpoint = mode === 'dalle_image' ? '/api/dalle-image' : '/api/runway-image'
+      const modelName = mode === 'dalle_image' ? 'DALL-E 3' : 'RunwayML Gen-4'
       
-      // Set the video image
-      setVideoImage(file)
+      setImageGenerationProgress(`Sending request to ${modelName}...`)
+
+      // Send to backend
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Image generation failed')
+      }
+
+      const data = await response.json()
       
-      // Switch to video mode (gen4_turbo as default)
-      setMode('gen4_turbo')
-      
-      // Set a helpful prompt
-      setPrompt('Add motion and animation to this image')
-      
-      // Scroll to top to show video generation UI
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      
-      // Show success message
-      setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
-      
-    } catch (error) {
-      console.error('Error converting image to video:', error)
-      setError('Failed to load image for video generation')
+      if (data.success && data.url) {
+        setImageGenerationProgress('Image generated successfully!')
+        setLastPrompt(prompt) // Save prompt for later use
+        setPrompt('') // Clear prompt
+        // Use IMAGE_DISPLAY format so it appears in the AI response
+        setOutput(`[IMAGE_DISPLAY:${data.url}]`)
+      } else {
+        throw new Error('No image URL returned')
+      }
+
+    } catch (error: any) {
+      console.error('Image generation error:', error)
+      setError(error.message || 'Failed to generate image')
+      setImageGenerationProgress('')
+    } finally {
+      setIsGeneratingImage(false)
     }
   }
 
-  // Video generation handler
   const handleGenerateVideo = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt for video generation')
@@ -746,7 +841,7 @@ Is there anything else I can help you with?`)
       setIsGeneratingVideo(true)
       setError(null)
       setVideoUrl(null)
-      setVideoGenerationProgress('Preparing your video generation...')
+      setVideoGenerationProgress('INFINITO is preparing your video...')
 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -785,7 +880,7 @@ Is there anything else I can help you with?`)
         formData.append('file', videoImage)
       }
 
-      setVideoGenerationProgress('Sending request to RunwayML...')
+      setVideoGenerationProgress('INFINITO is processing your video...')
 
       // Send to backend
       const response = await fetch('/api/runway', {
@@ -803,8 +898,10 @@ Is there anything else I can help you with?`)
       if (data.success && data.url) {
         setVideoUrl(data.url)
         setVideoGenerationProgress('Video generated successfully!')
+        setLastPrompt(prompt) // Save prompt for later use
         setPrompt('') // Clear prompt
-        setOutput(`Video generated successfully using ${mode}!\n\nPrompt: ${prompt}\nDuration: ${videoDuration}s\nRatio: ${videoRatio}`)
+        // Use VIDEO_DISPLAY format so it appears in the AI response
+        setOutput(`[VIDEO_DISPLAY:${data.url}]`)
       } else {
         throw new Error('No video URL returned')
       }
@@ -825,6 +922,12 @@ Is there anything else I can help you with?`)
     // Handle video generation mode
     if (isVideoModel) {
       await handleGenerateVideo()
+      return
+    }
+    
+    // Handle image generation mode (RunwayML)
+    if (isImageGenModel) {
+      await handleGenerateImage()
       return
     }
     
@@ -1553,17 +1656,19 @@ Please provide a ${responseStyle} answer.`
                 {/* Image Mode - Mobile: Full width, Desktop: Right side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
-                  <Select value={mode === "blip" || mode === "llava" ? mode : ""} onValueChange={(value) => {
-                    if (value === "blip" || value === "llava") {
+                  <Select value={mode === "blip" || mode === "llava" || mode === "dalle_image" || mode === "runway_image" ? mode : ""} onValueChange={(value) => {
+                    if (value === "blip" || value === "llava" || value === "dalle_image" || value === "runway_image") {
                       setMode(value)
                     }
                   }}>
-                    <SelectTrigger className="w-full sm:w-40 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
-                      <SelectValue placeholder="Select Vision Model" />
+                    <SelectTrigger className="w-full sm:w-56 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue placeholder="Select Image Model" />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
-                      <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One"</SelectItem>
-                      <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos"</SelectItem>
+                      <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One" (BLIP)</SelectItem>
+                      <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos" (LLAVA)</SelectItem>
+                      <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">DALL-E 3</SelectItem>
+                      <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN-4</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1799,9 +1904,9 @@ Please provide a ${responseStyle} answer.`
 
                 {/* Video Mode - integrated into prompt area */}
                 {isVideoModel && (
-                  <div className="mb-3 p-3 bg-pink-900/20 border border-pink-500/30 rounded-lg transition-all duration-300">
+                  <div data-video-section className="mb-3 p-3 bg-pink-900/20 border border-pink-500/30 rounded-lg transition-all duration-300">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-pink-400 text-sm font-medium">🎬 Video Generation: {mode.toUpperCase()}</span>
+                      <span className="text-pink-400 text-sm font-medium">🎬 Video Generation</span>
                       {videoImage && (
                         <Button 
                           variant="ghost" 
@@ -1889,7 +1994,17 @@ Please provide a ${responseStyle} answer.`
                       </div>
                     )}
 
-                    {/* Generation Progress */}
+                    {/* Image Generation Progress */}
+                    {isGeneratingImage && (
+                      <div className="bg-black/30 p-3 rounded border border-purple-500/30 mb-3">
+                        <div className="flex items-center gap-2 text-purple-400">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-400"></div>
+                          <span className="text-sm">{imageGenerationProgress}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Video Generation Progress */}
                     {isGeneratingVideo && (
                       <div className="bg-black/30 p-3 rounded border border-pink-500/30 mb-3">
                         <div className="flex items-center gap-2 text-pink-400">
@@ -1899,47 +2014,6 @@ Please provide a ${responseStyle} answer.`
                       </div>
                     )}
 
-                    {/* Generated Video Display */}
-                    {videoUrl && (
-                      <div className="bg-black/30 p-3 rounded border border-pink-500/30">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-green-400 text-sm font-medium">✅ Video Generated!</p>
-                          <Button
-                            onClick={async () => {
-                              try {
-                                const response = await fetch(videoUrl)
-                                const blob = await response.blob()
-                                const url = window.URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = url
-                                a.download = `infinito-video-${Date.now()}.mp4`
-                                document.body.appendChild(a)
-                                a.click()
-                                window.URL.revokeObjectURL(url)
-                                document.body.removeChild(a)
-                              } catch (error) {
-                                console.error('Failed to download video:', error)
-                              }
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
-                          >
-                            <Download className="h-3 w-3 mr-1" />
-                            Download Video
-                          </Button>
-                        </div>
-                        <video 
-                          src={videoUrl} 
-                          controls 
-                          className="w-full rounded border border-pink-500/50"
-                          autoPlay
-                          loop
-                        >
-                          Your browser does not support the video tag.
-                        </video>
-                      </div>
-                    )}
 
                     <p className="text-pink-300 text-xs mt-2">
                       💰 Cost: 26 credits per video • ⏱️ Generation time: 1-5 minutes
@@ -2117,13 +2191,17 @@ Please provide a ${responseStyle} answer.`
                   >
                     {isGeneratingVideo
                       ? "GENERATING VIDEO..."
-                      : loading 
-                        ? (stream ? "STREAMING..." : "PROCESSING...") 
-                        : isVideoModel
-                          ? "GENERATE VIDEO"
-                          : isVisionModel 
-                            ? "ANALYZE IMAGE" 
-                            : "TRANSMIT"
+                      : isGeneratingImage
+                        ? "GENERATING IMAGE..."
+                        : loading 
+                          ? (stream ? "STREAMING..." : "PROCESSING...") 
+                          : isVideoModel
+                            ? "GENERATE VIDEO"
+                            : isImageGenModel
+                              ? "GENERATE IMAGE"
+                              : isVisionModel 
+                                ? "ANALYZE IMAGE" 
+                                : "TRANSMIT"
                     }
                   </Button>
                 </div>
@@ -2261,6 +2339,8 @@ Please provide a ${responseStyle} answer.`
                 audioError={audioError || undefined}
                 onGenerateAudio={generateAudio}
                 onConvertToVideo={handleConvertImageToVideo}
+                prompt={lastPrompt}
+                model={mode}
                 onShowMore={async (topic: string) => {
                   // Make a follow-up API call asking for more details
                   const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
