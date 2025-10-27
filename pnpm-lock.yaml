@@ -92,6 +92,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: 1.1.6
         version: 1.1.6(@types/react-dom@19.1.6(@types/react@19.1.8))(@types/react@19.1.8)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@runwayml/sdk':
+        specifier: ^3.5.0
+        version: 3.5.0
       '@supabase/ssr':
         specifier: ^0.7.0
         version: 0.7.0(@supabase/supabase-js@2.55.0)
@@ -1089,6 +1092,10 @@ packages:
 
   '@radix-ui/rect@1.1.0':
     resolution: {integrity: sha512-A9+lCBZoaMJlVKcRBz2YByCG+Cp2t6nAnMnNba+XiWxnj6r4JUFqfsgwocMBZU9LPtdxC6wB56ySYpc7LQIoJg==}
+
+  '@runwayml/sdk@3.5.0':
+    resolution: {integrity: sha512-mnnQyS+nJwjSUvmf7LW5QTlyTG/dBancEaiNrYPEVolXM/cRdhd3dyTdCFYtH4/89A+tMoSWejoONdFkRDIc2A==}
+    hasBin: true
 
   '@supabase/auth-js@2.71.1':
     resolution: {integrity: sha512-mMIQHBRc+SKpZFRB2qtupuzulaUhFYupNyxqDj5Jp/LyPvcWvjaJzZzObv6URtL/O6lPxkanASnotGtNpS3H2Q==}
@@ -3426,6 +3433,8 @@ snapshots:
       '@types/react-dom': 19.1.6(@types/react@19.1.8)
 
   '@radix-ui/rect@1.1.0': {}
+
+  '@runwayml/sdk@3.5.0': {}
 
   '@supabase/auth-js@2.71.1':
     dependencies:

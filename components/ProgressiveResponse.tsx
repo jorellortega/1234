@@ -14,6 +14,8 @@ interface ProgressiveResponseProps {
   isGeneratingAudio?: boolean
   audioError?: string
   onGenerateAudio?: (text: string) => void
+  // Video conversion props
+  onConvertToVideo?: (imageUrl: string) => void
 }
 
 export function ProgressiveResponse({ 
@@ -24,7 +26,8 @@ export function ProgressiveResponse({
   audioUrl,
   isGeneratingAudio = false,
   audioError,
-  onGenerateAudio
+  onGenerateAudio,
+  onConvertToVideo
 }: ProgressiveResponseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -380,15 +383,28 @@ export function ProgressiveResponse({
               <div className="mb-4 p-3 bg-black/10 rounded border border-cyan-500/30">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-cyan-400 text-sm font-semibold">Generated Image:</div>
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
-                  >
-                    <Download className="h-3 w-3 mr-1" />
-                    Download
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleDownload}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      Download
+                    </Button>
+                    {onConvertToVideo && (
+                      <Button
+                        onClick={() => onConvertToVideo(imageUrl)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        Convert to Video
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-center">
                   <img 

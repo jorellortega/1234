@@ -4,7 +4,7 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
@@ -20,6 +20,7 @@ export default function AIPromptPage() {
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
+  const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph"
   
   // Authentication state
   const [user, setUser] = useState<any>(null)
@@ -97,10 +98,13 @@ export default function AIPromptPage() {
   const checkAdminStatus = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session || !user) {
+      if (!session?.user) {
+        console.log('❌ No session or user found for admin check')
         setIsAdmin(false)
         return
       }
+
+      console.log('🔍 Checking admin status for user:', session.user.email)
 
       const response = await fetch('/api/admin/check-role', {
         headers: {
@@ -108,14 +112,19 @@ export default function AIPromptPage() {
         }
       })
 
+      console.log('📡 Admin check response status:', response.status)
+
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Admin check result:', data)
         setIsAdmin(data.isAdmin || false)
       } else {
+        const errorText = await response.text()
+        console.error('❌ Admin check failed:', response.status, errorText)
         setIsAdmin(false)
       }
     } catch (error) {
-      // Silently fail - user may not be authenticated or not admin
+      console.error('❌ Admin check error:', error)
       setIsAdmin(false)
     }
   }
@@ -272,6 +281,16 @@ Is there anything else I can help you with?`)
   const [showThreadView, setShowThreadView] = useState(false)
   const consoleRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Video generation state
+  const [videoImage, setVideoImage] = useState<File | null>(null)
+  const [videoImagePreview, setVideoImagePreview] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
+  const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
+  const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [videoRatio, setVideoRatio] = useState<string>('1280:720')
+  const videoFileInputRef = useRef<HTMLInputElement>(null)
 
   const JOR_BINARY = "010010100100111101010010"
 
@@ -467,6 +486,30 @@ Is there anything else I can help you with?`)
     }
   }
 
+  // Video image upload handler
+  const handleVideoImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setVideoImage(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setVideoImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+      setError(null)
+    } else {
+      setError('Please select a valid image file')
+    }
+  }
+
+  const clearVideoImage = () => {
+    setVideoImage(null)
+    setVideoImagePreview(null)
+    if (videoFileInputRef.current) {
+      videoFileInputRef.current.value = ''
+    }
+  }
+
   // NEW: Image drag and drop handlers
   const handleImageDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -640,9 +683,150 @@ Is there anything else I can help you with?`)
     }
   }
 
+  // Handler to convert AI-generated image to video
+  const handleConvertImageToVideo = async (imageUrl: string) => {
+    try {
+      setError(null)
+      
+      // Fetch the image and convert to File
+      const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageUrl)}`)
+      if (!response.ok) throw new Error('Failed to fetch image')
+      
+      const blob = await response.blob()
+      const file = new File([blob], 'generated-image.png', { type: 'image/png' })
+      
+      // Create image preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setVideoImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+      
+      // Set the video image
+      setVideoImage(file)
+      
+      // Switch to video mode (gen4_turbo as default)
+      setMode('gen4_turbo')
+      
+      // Set a helpful prompt
+      setPrompt('Add motion and animation to this image')
+      
+      // Scroll to top to show video generation UI
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      
+      // Show success message
+      setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
+      
+    } catch (error) {
+      console.error('Error converting image to video:', error)
+      setError('Failed to load image for video generation')
+    }
+  }
+
+  // Video generation handler
+  const handleGenerateVideo = async () => {
+    if (!prompt.trim()) {
+      setError('Please enter a prompt for video generation')
+      return
+    }
+
+    // Check if model requires an image
+    if ((mode === 'gen4_turbo' || mode === 'gen3a_turbo') && !videoImage) {
+      setError(`${mode} requires an image input`)
+      return
+    }
+
+    // Check authentication
+    if (!user) {
+      setError('Please log in to generate videos')
+      return
+    }
+
+    try {
+      setIsGeneratingVideo(true)
+      setError(null)
+      setVideoUrl(null)
+      setVideoGenerationProgress('Preparing your video generation...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      // Check credits (video generation costs 26 credits - 60% markup on API cost)
+      const creditResponse = await fetch('/api/credits/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          requiredCredits: 26,
+          operation: 'check_and_deduct'
+        })
+      })
+
+      const creditData = await creditResponse.json()
+      if (!creditData.success) {
+        setError(creditData.message || 'Insufficient credits. Video generation costs 26 credits.')
+        return
+      }
+
+      setUserCredits(creditData.credits)
+
+      // Prepare form data
+      const formData = new FormData()
+      formData.append('prompt', prompt)
+      formData.append('model', mode)
+      formData.append('duration', videoDuration.toString())
+      formData.append('ratio', videoRatio)
+      
+      if (videoImage) {
+        formData.append('file', videoImage)
+      }
+
+      setVideoGenerationProgress('Sending request to RunwayML...')
+
+      // Send to backend
+      const response = await fetch('/api/runway', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Video generation failed')
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.url) {
+        setVideoUrl(data.url)
+        setVideoGenerationProgress('Video generated successfully!')
+        setPrompt('') // Clear prompt
+        setOutput(`Video generated successfully using ${mode}!\n\nPrompt: ${prompt}\nDuration: ${videoDuration}s\nRatio: ${videoRatio}`)
+      } else {
+        throw new Error('No video URL returned')
+      }
+
+    } catch (error: any) {
+      console.error('Video generation error:', error)
+      setError(error.message || 'Failed to generate video')
+      setVideoGenerationProgress('')
+    } finally {
+      setIsGeneratingVideo(false)
+    }
+  }
+
   // NEW: Handle TRANSMIT button click
   async function handleTransmit() {
     if (!prompt.trim()) return
+    
+    // Handle video generation mode
+    if (isVideoModel) {
+      await handleGenerateVideo()
+      return
+    }
     
     // Handle signup flow if active
     if (signupFlow === 'collecting') {
@@ -1383,6 +1567,25 @@ Please provide a ${responseStyle} answer.`
                     </SelectContent>
                   </Select>
                 </div>
+                
+                {/* Video Mode - Mobile: Full width, Desktop: Right side */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                  <span className="text-pink-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">VIDEO MODE:</span>
+                  <Select value={isVideoModel ? mode : ""} onValueChange={(value) => {
+                    if (value === "gen4_turbo" || value === "gen3a_turbo" || value === "gen4_aleph") {
+                      setMode(value)
+                    }
+                  }}>
+                    <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400 focus:border-pink-400 focus:ring-pink-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue placeholder="Select Video Model" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md">
+                      <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 TURBO</SelectItem>
+                      <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-3A TURBO</SelectItem>
+                      <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
 
@@ -1594,6 +1797,156 @@ Please provide a ${responseStyle} answer.`
                   </div>
                 )}
 
+                {/* Video Mode - integrated into prompt area */}
+                {isVideoModel && (
+                  <div className="mb-3 p-3 bg-pink-900/20 border border-pink-500/30 rounded-lg transition-all duration-300">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-pink-400 text-sm font-medium">🎬 Video Generation: {mode.toUpperCase()}</span>
+                      {videoImage && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={clearVideoImage}
+                          className="text-pink-400 hover:text-pink-300 hover:bg-pink-500/20 text-xs px-2 py-1"
+                        >
+                          ✕ Clear Image
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {/* Video Settings */}
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="text-pink-400 text-xs block mb-1">Duration (seconds)</label>
+                        <select
+                          value={videoDuration}
+                          onChange={(e) => setVideoDuration(parseInt(e.target.value) as 5 | 10)}
+                          className="w-full bg-black/30 border border-pink-500/30 rounded px-2 py-1 text-pink-300 text-sm"
+                        >
+                          <option value="5">5 seconds</option>
+                          <option value="10">10 seconds</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-pink-400 text-xs block mb-1">Aspect Ratio</label>
+                        <select
+                          value={videoRatio}
+                          onChange={(e) => setVideoRatio(e.target.value)}
+                          className="w-full bg-black/30 border border-pink-500/30 rounded px-2 py-1 text-pink-300 text-sm"
+                        >
+                          <option value="1280:720">16:9 Landscape (1280:720)</option>
+                          <option value="720:1280">9:16 Portrait (720:1280)</option>
+                          <option value="960:960">1:1 Square (960:960)</option>
+                          <option value="1104:832">4:3 Landscape (1104:832)</option>
+                          <option value="832:1104">3:4 Portrait (832:1104)</option>
+                          <option value="1584:672">Ultra Wide (1584:672)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Image Upload for Image-to-Video models */}
+                    {(mode === 'gen4_turbo' || mode === 'gen3a_turbo' || (mode === 'gen4_aleph' && !videoImage)) && (
+                      <div className="mb-3">
+                        <label className="text-pink-400 text-xs block mb-2">
+                          {mode === 'gen4_aleph' ? 'Starting Image (optional)' : 'Starting Image (required)'}
+                        </label>
+                        {!videoImage ? (
+                          <div className="text-center">
+                            <input
+                              ref={videoFileInputRef}
+                              type="file"
+                              accept="image/*"
+                              onChange={handleVideoImageUpload}
+                              className="hidden"
+                            />
+                            <Button 
+                              onClick={() => videoFileInputRef.current?.click()}
+                              className="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded text-sm"
+                            >
+                              🖼️ Upload Starting Image
+                            </Button>
+                            <p className="text-pink-300 text-xs mt-2">
+                              {mode === 'gen4_aleph' 
+                                ? 'Optional: Upload an image as the starting frame for your video' 
+                                : 'Required: Upload an image as the starting frame for your video'}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3 bg-black/30 p-2 rounded border border-pink-500/30">
+                            {videoImagePreview && (
+                              <img 
+                                src={videoImagePreview} 
+                                alt="Video starting frame" 
+                                className="w-16 h-16 object-cover rounded border border-pink-500/50"
+                              />
+                            )}
+                            <div className="flex-1">
+                              <p className="text-pink-300 text-sm font-medium">{videoImage.name}</p>
+                              <p className="text-pink-400 text-xs">{(videoImage.size / 1024 / 1024).toFixed(2)} MB • Ready</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Generation Progress */}
+                    {isGeneratingVideo && (
+                      <div className="bg-black/30 p-3 rounded border border-pink-500/30 mb-3">
+                        <div className="flex items-center gap-2 text-pink-400">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-400"></div>
+                          <span className="text-sm">{videoGenerationProgress}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Generated Video Display */}
+                    {videoUrl && (
+                      <div className="bg-black/30 p-3 rounded border border-pink-500/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-green-400 text-sm font-medium">✅ Video Generated!</p>
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(videoUrl)
+                                const blob = await response.blob()
+                                const url = window.URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `infinito-video-${Date.now()}.mp4`
+                                document.body.appendChild(a)
+                                a.click()
+                                window.URL.revokeObjectURL(url)
+                                document.body.removeChild(a)
+                              } catch (error) {
+                                console.error('Failed to download video:', error)
+                              }
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            Download Video
+                          </Button>
+                        </div>
+                        <video 
+                          src={videoUrl} 
+                          controls 
+                          className="w-full rounded border border-pink-500/50"
+                          autoPlay
+                          loop
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                      </div>
+                    )}
+
+                    <p className="text-pink-300 text-xs mt-2">
+                      💰 Cost: 26 credits per video • ⏱️ Generation time: 1-5 minutes
+                    </p>
+                  </div>
+                )}
+
                 {/* Thread View - Only show when expanded */}
                 {showThreadView && (
                   <div className={`mb-2 bg-black/30 rounded border border-cyan-500/20 ${glowEnabled ? 'glow' : ''}`}>
@@ -1695,6 +2048,8 @@ Please provide a ${responseStyle} answer.`
                             ? "Tell me your password here (at least 6 characters)"
                             : isProcessingDocument 
                               ? "Processing document..." 
+                              : isVideoModel
+                                ? "Describe the video you want to generate... (e.g., 'A cat playing with a ball', 'Ocean waves at sunset')"
                               : isVisionModel 
                                 ? selectedImage 
                                   ? `Ask ${mode.toUpperCase()} about this image... (e.g., "What do you see?", "Describe this image", "What objects are visible?")`
@@ -1704,13 +2059,15 @@ Please provide a ${responseStyle} answer.`
                                   : "Ask question or drop file"
                   }
                   className={`w-full bg-transparent text-lg resize-none border-none focus:ring-0 p-4 transition-all duration-300 ${
-                    isVisionModel 
-                      ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
-                      : 'text-blue-300 placeholder-blue-700'
-                  } ${isVisionModel ? 'h-40' : 'h-32'}`}
+                    isVideoModel
+                      ? 'text-pink-300 placeholder-pink-600 border-pink-500/30'
+                      : isVisionModel 
+                        ? 'text-purple-300 placeholder-purple-600 border-purple-500/30' 
+                        : 'text-blue-300 placeholder-blue-700'
+                  } ${isVisionModel || isVideoModel ? 'h-40' : 'h-32'}`}
                   value={prompt}
                   onChange={handlePromptChange}
-                  disabled={isProcessingDocument || signupFlow === 'asking'}
+                  disabled={isProcessingDocument || signupFlow === 'asking' || isGeneratingVideo}
                 />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-3 p-3 sm:p-2 border-t border-blue-500/30">
@@ -1750,15 +2107,23 @@ Please provide a ${responseStyle} answer.`
                   {/* Transmit Button - Mobile: Full width, Desktop: Right */}
                   <Button 
                     onClick={handleTransmit}
-                    disabled={loading}
+                    disabled={loading || isGeneratingVideo}
                     title={needsOllama && ollamaOk === false ? "May fail while Ollama is down." : undefined}
-                    className="w-full sm:w-auto bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-6 sm:px-8 py-3 text-base sm:text-lg tracking-widest transition-all disabled:opacity-50"
+                    className={`w-full sm:w-auto ${
+                      isVideoModel
+                        ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-purple-500'
+                        : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500'
+                    } text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-6 sm:px-8 py-3 text-base sm:text-lg tracking-widest transition-all disabled:opacity-50`}
                   >
-                    {loading 
-                      ? (stream ? "STREAMING..." : "PROCESSING...") 
-                      : isVisionModel 
-                        ? "ANALYZE IMAGE" 
-                        : "TRANSMIT"
+                    {isGeneratingVideo
+                      ? "GENERATING VIDEO..."
+                      : loading 
+                        ? (stream ? "STREAMING..." : "PROCESSING...") 
+                        : isVideoModel
+                          ? "GENERATE VIDEO"
+                          : isVisionModel 
+                            ? "ANALYZE IMAGE" 
+                            : "TRANSMIT"
                     }
                   </Button>
                 </div>
@@ -1888,14 +2253,15 @@ Please provide a ${responseStyle} answer.`
             {/* AI Response Window - Only show when thread is closed */}
             {output && !showThreadView && (
               <div className="w-full max-w-3xl mx-auto pb-8">
-                <ProgressiveResponse 
-                  content={output} 
-                  responseStyle={responseStyle}
-                  audioUrl={audioUrl || undefined}
-                  isGeneratingAudio={isGeneratingAudio}
-                  audioError={audioError || undefined}
-                  onGenerateAudio={generateAudio}
-                  onShowMore={async (topic: string) => {
+              <ProgressiveResponse 
+                content={output} 
+                responseStyle={responseStyle}
+                audioUrl={audioUrl || undefined}
+                isGeneratingAudio={isGeneratingAudio}
+                audioError={audioError || undefined}
+                onGenerateAudio={generateAudio}
+                onConvertToVideo={handleConvertImageToVideo}
+                onShowMore={async (topic: string) => {
                   // Make a follow-up API call asking for more details
                   const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
 
@@ -2046,6 +2412,27 @@ Make sure to use proper spacing between paragraphs for readability.`
                 <p className="text-xs text-purple-500 mt-1">
                   Upload an image to begin
                 </p>
+              </HudPanel>
+            )}
+            
+            {/* Video Model Status */}
+            {isVideoModel && (
+              <HudPanel title="Video Generation Active">
+                <div className="flex items-center gap-2 text-pink-400">
+                  <div className="w-3 h-3 bg-pink-400 rounded-full animate-pulse" />
+                  <span className="text-sm font-semibold">{mode.toUpperCase()}</span>
+                </div>
+                <p className="text-xs text-pink-300 mt-1">
+                  {isGeneratingVideo ? 'Generating video...' : 'Ready for video generation'}
+                </p>
+                <p className="text-xs text-pink-500 mt-1">
+                  {isGeneratingVideo ? videoGenerationProgress : 'Configure settings and prompt'}
+                </p>
+                {videoUrl && (
+                  <p className="text-xs text-green-400 mt-2">
+                    ✅ Video ready!
+                  </p>
+                )}
               </HudPanel>
             )}
           </div>
