@@ -1110,7 +1110,7 @@ Please provide a ${responseStyle} answer.`
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2">
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             {user && (
@@ -1195,7 +1195,7 @@ Please provide a ${responseStyle} answer.`
           </div>
         </header>
 
-        <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
+        <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Panel */}
           {showPanels && isAdmin && (
             <div className="hidden lg:block lg:col-span-3 space-y-6">
@@ -1246,7 +1246,7 @@ Please provide a ${responseStyle} answer.`
           <div className={`flex flex-col justify-center items-center h-full ${showPanels && isAdmin ? 'col-span-1 lg:col-span-6' : 'col-span-1 lg:col-span-12'}`}>
             {/* Hide logo/title when AI response is shown */}
             {!output && (
-              <div className="w-full max-w-3xl text-center mb-12 flex flex-col justify-center">
+              <div className="w-full max-w-3xl text-center flex flex-col justify-center">
                 {response ? (
                   <h2 className="text-6xl md:text-7xl font-bold tracking-widest infinito-gradient">
                     {response}
