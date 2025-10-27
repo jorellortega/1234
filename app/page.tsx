@@ -1088,32 +1088,36 @@ Please provide a ${responseStyle} answer.`
                 </button>
               )}
               
-              <Link
-                href="/credits"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-              >
-                <CreditCard className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="hidden sm:inline text-sm">Purchase Credits</span>
-              </Link>
+              {user && (
+                <Link
+                  href="/credits"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                >
+                  <CreditCard className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline text-sm">Purchase Credits</span>
+                </Link>
+              )}
               
             </div>
             
-            <div className="text-right text-cyan-400 text-xs sm:text-sm">
-              <div className="flex items-center gap-2 mb-1">
-                <Link 
-                  href="/credits" 
-                  className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer hover:underline"
-                >
-                  CREDITS:
-                </Link>
-                <Link 
-                  href="/credits" 
-                  className="text-amber-400 font-bold hover:text-amber-300 transition-colors cursor-pointer hover:underline"
-                >
-                  {userCredits}
-                </Link>
+            {user && (
+              <div className="text-right text-cyan-400 text-xs sm:text-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <Link 
+                    href="/credits" 
+                    className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer hover:underline"
+                  >
+                    CREDITS:
+                  </Link>
+                  <Link 
+                    href="/credits" 
+                    className="text-amber-400 font-bold hover:text-amber-300 transition-colors cursor-pointer hover:underline"
+                  >
+                    {userCredits}
+                  </Link>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </header>
 
