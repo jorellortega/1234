@@ -548,7 +548,7 @@ export default function AIPromptPage() {
     if (!user) {
       setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
 
-Would you like help creating an account? Just click the "login/signup" button in the top right corner to get started. It's quick and easy!`)
+I can help you sign up! What's your email?`)
       setError(null)
       return
     }
@@ -559,7 +559,7 @@ Would you like help creating an account? Just click the "login/signup" button in
       if (!session) {
         setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI. 
 
-Would you like help creating an account? Just click the "login/signup" button in the top right corner to get started. It's quick and easy!`)
+I can help you sign up! What's your email?`)
         setError(null)
         return
       }
