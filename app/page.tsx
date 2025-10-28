@@ -4,7 +4,7 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
@@ -159,6 +159,22 @@ Is there anything else I can help you with?`)
     setOutput(`Perfect! Last step - what would you like your password to be? (at least 6 characters)`)
     setPrompt('') // Clear prompt for next step
     setSignupStep('password')
+  }
+
+  const handleBackStep = () => {
+    if (signupStep === 'name') {
+      setSignupStep('email')
+      setOutput(`Let's start over. What's your email address?`)
+      setPrompt(signupData.email || '') // Restore previous email
+    } else if (signupStep === 'phone') {
+      setSignupStep('name')
+      setOutput(`Got it! What's your full name?`)
+      setPrompt(signupData.name || '') // Restore previous name
+    } else if (signupStep === 'password') {
+      setSignupStep('phone')
+      setOutput(`Nice to meet you, ${signupData.name}! What's your phone number? (optional - you can say "skip" if you prefer)`)
+      setPrompt(signupData.phone || '') // Restore previous phone
+    }
   }
 
   const handleSignupInput = async (userInput: string) => {
@@ -2141,6 +2157,16 @@ Please provide a ${responseStyle} answer.`
                   } ${isVisionModel || isVideoModel ? 'h-40' : 'h-32'}`}
                   value={prompt}
                   onChange={handlePromptChange}
+                  onKeyDown={(e) => {
+                    // Trigger handleTransmit on Enter (without Shift)
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault() // Prevent new line
+                      if (!loading && !isGeneratingVideo && !isProcessingDocument && signupFlow !== 'asking') {
+                        handleTransmit()
+                      }
+                    }
+                    // Allow Shift+Enter for new line (default behavior)
+                  }}
                   disabled={isProcessingDocument || signupFlow === 'asking' || isGeneratingVideo}
                 />
                 
@@ -2178,7 +2204,7 @@ Please provide a ${responseStyle} answer.`
                     </Button>
                   )}
                   
-                  {/* Transmit Button - Mobile: Full width, Desktop: Right */}
+                  {/* Process Button - Mobile: Full width, Desktop: Right */}
                   <Button 
                     onClick={handleTransmit}
                     disabled={loading || isGeneratingVideo}
@@ -2194,14 +2220,14 @@ Please provide a ${responseStyle} answer.`
                       : isGeneratingImage
                         ? "GENERATING IMAGE..."
                         : loading 
-                          ? (stream ? "STREAMING..." : "PROCESSING...") 
+                          ? "PROCESSING..." 
                           : isVideoModel
                             ? "GENERATE VIDEO"
                             : isImageGenModel
                               ? "GENERATE IMAGE"
                               : isVisionModel 
                                 ? "ANALYZE IMAGE" 
-                                : "TRANSMIT"
+                                : "PROCESS"
                     }
                   </Button>
                 </div>
@@ -2215,109 +2241,111 @@ Please provide a ${responseStyle} answer.`
               </div>
             )}
 
-            {/* NEW: Advanced Settings Toggle */}
-            <div className="w-full max-w-3xl mt-4">
-              {/* Advanced Settings Toggle Button */}
-              <div className="flex items-center justify-center mb-3">
-                <button
-                  onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                  className="flex items-center gap-2 text-xs sm:text-sm text-cyan-400 hover:text-cyan-300 transition-colors px-4 py-2 rounded border border-cyan-500/30 hover:border-cyan-400/50 touch-manipulation"
-                >
-                  <Settings className="h-4 w-4" />
-                  <span>{showAdvancedSettings ? "Hide Advanced" : "Advanced Settings"}</span>
-                  <span className={`transform transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}>
-                    ▼
-                  </span>
-                </button>
-              </div>
-              
-              {/* All Settings (Conditional) */}
-              {showAdvancedSettings && (
-                <div className="space-y-4 p-4 bg-black/10 rounded-lg border border-cyan-500/20">
-                  {/* Stream, Glow, Response Controls - Mobile: Stack vertically */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-sm text-cyan-400">
-                    <div className="flex flex-wrap gap-4">
-                      <label className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          checked={stream} 
-                          onChange={(e) => setStream(e.target.checked)}
-                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
-                        />
-                        <span>Stream tokens</span>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          checked={glowEnabled} 
-                          onChange={(e) => setGlowEnabled(e.target.checked)}
-                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
-                        />
-                        <span>Glow effect</span>
-                      </label>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                      <span>Response:</span>
-                      <select
-                        value={responseStyle}
-                        onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
-                        className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-3 py-2 text-sm focus:ring-cyan-500 w-full sm:w-auto"
-                      >
-                        <option value="concise">Concise</option>
-                        <option value="detailed">Detailed</option>
-                      </select>
-                      <span className={`text-xs px-3 py-1 rounded ${
-                        responseStyle === "concise" 
-                          ? "bg-green-500/20 text-green-400 border border-green-500/30" 
-                          : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                      }`}>
-                        {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* Temperature, Top-K, Max Controls - Mobile: Stack vertically */}
-                  <div className="flex flex-col sm:flex-row gap-4 text-xs text-cyan-400">
-                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                      <span>Temp:</span>
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <input
-                          type="range" min={0.1} max={1.5} step={0.05}
-                          value={temperature}
-                          onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                          className="flex-1 sm:w-16"
-                        />
-                        <span className="w-12 text-center">{temperature.toFixed(2)}</span>
-                      </div>
-                    </label>
-                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                      <span>Top-K:</span>
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <input
-                          type="range" min={0} max={200} step={5}
-                          value={topK}
-                          onChange={(e) => setTopK(parseInt(e.target.value))}
-                          className="flex-1 sm:w-16"
-                        />
-                        <span className="w-12 text-center">{topK}</span>
-                      </div>
-                    </label>
-                    <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                      <span>Max:</span>
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <input
-                          type="range" min={50} max={2048} step={50}
-                          value={maxTokens}
-                          onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                          className="flex-1 sm:w-16"
-                        />
-                        <span className="w-12 text-center">{maxTokens}</span>
-                      </div>
-                    </label>
-                  </div>
+            {/* NEW: Advanced Settings Toggle - Only visible to admins */}
+            {isAdmin && (
+              <div className="w-full max-w-3xl mt-4">
+                {/* Advanced Settings Toggle Button */}
+                <div className="flex items-center justify-center mb-3">
+                  <button
+                    onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                    className="flex items-center gap-2 text-xs sm:text-sm text-cyan-400 hover:text-cyan-300 transition-colors px-4 py-2 rounded border border-cyan-500/30 hover:border-cyan-400/50 touch-manipulation"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>{showAdvancedSettings ? "Hide Advanced" : "Advanced Settings"}</span>
+                    <span className={`transform transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}>
+                      ▼
+                    </span>
+                  </button>
                 </div>
-              )}
-            </div>
+                
+                {/* All Settings (Conditional) */}
+                {showAdvancedSettings && (
+                  <div className="space-y-4 p-4 bg-black/10 rounded-lg border border-cyan-500/20">
+                    {/* Stream, Glow, Response Controls - Mobile: Stack vertically */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-sm text-cyan-400">
+                      <div className="flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={stream} 
+                            onChange={(e) => setStream(e.target.checked)}
+                            className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                          />
+                          <span>Stream tokens</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={glowEnabled} 
+                            onChange={(e) => setGlowEnabled(e.target.checked)}
+                            className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                          />
+                          <span>Glow effect</span>
+                        </label>
+                      </div>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+                        <span>Response:</span>
+                        <select
+                          value={responseStyle}
+                          onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
+                          className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-3 py-2 text-sm focus:ring-cyan-500 w-full sm:w-auto"
+                        >
+                          <option value="concise">Concise</option>
+                          <option value="detailed">Detailed</option>
+                        </select>
+                        <span className={`text-xs px-3 py-1 rounded ${
+                          responseStyle === "concise" 
+                            ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                            : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                        }`}>
+                          {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Temperature, Top-K, Max Controls - Mobile: Stack vertically */}
+                    <div className="flex flex-col sm:flex-row gap-4 text-xs text-cyan-400">
+                      <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+                        <span>Temp:</span>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="range" min={0.1} max={1.5} step={0.05}
+                            value={temperature}
+                            onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                            className="flex-1 sm:w-16"
+                          />
+                          <span className="w-12 text-center">{temperature.toFixed(2)}</span>
+                        </div>
+                      </label>
+                      <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+                        <span>Top-K:</span>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="range" min={0} max={200} step={5}
+                            value={topK}
+                            onChange={(e) => setTopK(parseInt(e.target.value))}
+                            className="flex-1 sm:w-16"
+                          />
+                          <span className="w-12 text-center">{topK}</span>
+                        </div>
+                      </label>
+                      <label className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+                        <span>Max:</span>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="range" min={50} max={2048} step={50}
+                            value={maxTokens}
+                            onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                            className="flex-1 sm:w-16"
+                          />
+                          <span className="w-12 text-center">{maxTokens}</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* NEW: Output display */}
             {error && (
@@ -2409,15 +2437,27 @@ Make sure to use proper spacing between paragraphs for readability.`
                 </div>
               )}
 
-              {/* Skip button for phone step */}
-              {signupFlow === 'collecting' && signupStep === 'phone' && (
+              {/* Back and Skip buttons for signup flow */}
+              {signupFlow === 'collecting' && signupStep !== 'email' && (
                 <div className="flex gap-4 justify-center mt-4">
+                  {/* Back button - show for name, phone, and password steps */}
                   <Button
-                    onClick={handleSkipPhone}
-                    className="bg-slate-600 hover:bg-slate-700 text-white font-semibold px-8 py-2"
+                    onClick={handleBackStep}
+                    className="bg-slate-600 hover:bg-slate-700 text-white font-semibold px-6 py-2 flex items-center gap-2"
                   >
-                    Skip
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
                   </Button>
+                  
+                  {/* Skip button - only show for phone step */}
+                  {signupStep === 'phone' && (
+                    <Button
+                      onClick={handleSkipPhone}
+                      className="bg-slate-600 hover:bg-slate-700 text-white font-semibold px-8 py-2"
+                    >
+                      Skip
+                    </Button>
+                  )}
                 </div>
               )}
               </div>
