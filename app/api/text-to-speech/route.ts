@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, voice_id = "21m00Tcm4TlvDq8ikWAM", model_id = "eleven_monolingual_v1" } = await req.json();
+    const bodyParams = await req.json();
+    const { text } = bodyParams;
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
@@ -35,6 +36,32 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { persistSession: false } }
     );
+
+    // Get admin preferences for audio settings
+    const { data: adminPrefs } = await supabase
+      .from('admin_preferences')
+      .select(`
+        elevenlabs_voice_id,
+        elevenlabs_model_id,
+        elevenlabs_stability,
+        elevenlabs_similarity_boost,
+        elevenlabs_style,
+        elevenlabs_use_speaker_boost,
+        audio_output_format,
+        audio_optimize_streaming_latency
+      `)
+      .eq('id', '00000000-0000-0000-0000-000000000001')
+      .single();
+
+    // Use body params if provided, otherwise use admin preferences, otherwise use defaults
+    const voice_id = bodyParams.voice_id || adminPrefs?.elevenlabs_voice_id || "EXAVITQu4vr4xnSDxMaL";
+    const model_id = bodyParams.model_id || adminPrefs?.elevenlabs_model_id || "eleven_multilingual_v2";
+    const stability = bodyParams.stability ?? adminPrefs?.elevenlabs_stability ?? 0.50;
+    const similarity_boost = bodyParams.similarity_boost ?? adminPrefs?.elevenlabs_similarity_boost ?? 0.75;
+    const style = bodyParams.style ?? adminPrefs?.elevenlabs_style ?? 0.00;
+    const use_speaker_boost = bodyParams.use_speaker_boost ?? adminPrefs?.elevenlabs_use_speaker_boost ?? true;
+    const output_format = bodyParams.output_format || adminPrefs?.audio_output_format || "mp3_44100_128";
+    const optimize_streaming_latency = bodyParams.optimize_streaming_latency ?? adminPrefs?.audio_optimize_streaming_latency ?? 0;
 
     // Get ElevenLabs API key - first try user's personal key, then system-wide key
     let apiKeyData = null;
@@ -85,11 +112,13 @@ export async function POST(req: NextRequest) {
         text: text,
         model_id: model_id,
         voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.5,
-          style: 0.0,
-          use_speaker_boost: true
-        }
+          stability: stability,
+          similarity_boost: similarity_boost,
+          style: style,
+          use_speaker_boost: use_speaker_boost
+        },
+        output_format: output_format,
+        optimize_streaming_latency: optimize_streaming_latency
       })
     });
 
@@ -102,11 +131,40 @@ export async function POST(req: NextRequest) {
 
     // Get the audio data
     const audioBuffer = await response.arrayBuffer();
-    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+    
+    // Upload to Supabase Storage
+    const fileName = `audio-${Date.now()}.mp3`;
+    const { data: uploadData, error: uploadError } = await supabase
+      .storage
+      .from('generations')
+      .upload(fileName, audioBuffer, {
+        contentType: 'audio/mpeg',
+        cacheControl: '3600',
+      });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      // Fall back to base64 if upload fails
+      const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+      return NextResponse.json({
+        success: true,
+        audio: `data:audio/mpeg;base64,${audioBase64}`,
+        text: text,
+        voice_id: voice_id,
+        model_id: model_id
+      });
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase
+      .storage
+      .from('generations')
+      .getPublicUrl(fileName);
 
     return NextResponse.json({
       success: true,
-      audio: `data:audio/mpeg;base64,${audioBase64}`,
+      audioUrl: publicUrl,
+      audio: publicUrl, // Legacy support
       text: text,
       voice_id: voice_id,
       model_id: model_id

@@ -159,3 +159,18 @@ body {
 .animate-icon-pulse {
   animation: pulse-icon 4s ease-in-out infinite;
 }
+
+/* Shimmer animation for loading states */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+  }
+  100% {
+    transform: translateX(200%) skewX(-15deg);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+  width: 50%;
+}

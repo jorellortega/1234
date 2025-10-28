@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     const model = formData.get('model') as string
     const duration = parseInt(formData.get('duration') as string) || 5
     const file = formData.get('file') as File | null
-    const ratio = formData.get('ratio') as string || '1280:768'
+    const ratio = formData.get('ratio') as string || '768:1280' // Default to portrait
 
     if (!prompt) {
       return NextResponse.json(
@@ -96,44 +96,26 @@ export async function POST(req: NextRequest) {
 
     // Handle different model types
     try {
-      switch (model) {
+      // Map gen4_aleph to gen3a_turbo since gen4_aleph is not available in the API
+      const actualModel = model === 'gen4_aleph' ? 'gen3a_turbo' : model
+      
+      switch (actualModel) {
         case 'gen4_turbo':
         case 'gen3a_turbo':
           // These models require an image
           if (!imageBase64) {
             return NextResponse.json(
-              { error: `${model} requires an image input` },
+              { error: `${actualModel} requires an image input` },
               { status: 400 }
             )
           }
           result = await runway.imageToVideo.create({
-            model: model as 'gen4_turbo' | 'gen3a_turbo',
+            model: actualModel as 'gen4_turbo' | 'gen3a_turbo',
             promptImage: imageBase64,
             promptText: prompt,
             duration: duration as 5 | 10,
             ratio: ratio as any,
           })
-          break
-
-        case 'gen4_aleph':
-          // Gen4 Aleph can work with or without image
-          if (imageBase64) {
-            result = await runway.imageToVideo.create({
-              model: 'gen4_aleph',
-              promptImage: imageBase64,
-              promptText: prompt,
-              duration: duration as 5 | 10,
-              ratio: ratio as any,
-            })
-          } else {
-            // Text-to-video
-            result = await runway.imageToVideo.create({
-              model: 'gen4_aleph',
-              promptText: prompt,
-              duration: duration as 5 | 10,
-              ratio: ratio as any,
-            })
-          }
           break
 
         default:

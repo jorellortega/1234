@@ -223,7 +223,9 @@ export async function POST(req: Request) {
               messages: [
                 {
                   role: "system",
-                  content: `You are a helpful AI assistant. Provide ${response_style} responses.`
+                  content: response_style === 'concise' 
+                    ? `You are INFINITO, a helpful AI assistant. Provide ONLY 1-2 direct sentences answering the question. Be concise and to the point. Do NOT provide examples, code, or detailed explanations.`
+                    : `You are INFINITO, a helpful AI assistant. Provide detailed, comprehensive responses with 3-4 well-structured paragraphs. Focus on clear explanations with relevant examples. Only include code if the question specifically asks for programming help. Keep responses natural and conversational.`
                 },
                 {
                   role: "user",

@@ -401,7 +401,7 @@ Is there anything else I can help you with?`)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
-  const [videoRatio, setVideoRatio] = useState<string>('1280:720')
+  const [videoRatio, setVideoRatio] = useState<string>('768:1280') // Default to portrait (valid for RunwayML)
   const videoFileInputRef = useRef<HTMLInputElement>(null)
   
   // RunwayML Image Generation state
@@ -482,18 +482,21 @@ Is there anything else I can help you with?`)
   }
 
   const handleModelChange = async (value: string, modelType: 'text' | 'image' | 'video' | 'audio') => {
-    setMode(value)
-    console.log("mode:", value)
-    
-    // Update the appropriate model selection state
+    // Only update the global 'mode' for text models
+    // Image, video, and audio models have their own separate state
     if (modelType === 'text') {
+      setMode(value)
       setSelectedTextModel(value)
+      console.log("Text model changed to:", value)
     } else if (modelType === 'image') {
       setSelectedImageModel(value)
+      console.log("Image model changed to:", value)
     } else if (modelType === 'video') {
       setSelectedVideoModel(value)
+      console.log("Video model changed to:", value)
     } else if (modelType === 'audio') {
       setSelectedAudioModel(value)
+      console.log("Audio model changed to:", value)
     }
     
     // Save model selection to admin preferences if admin
@@ -549,8 +552,34 @@ Is there anything else I can help you with?`)
     
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0) {
-      // Automatically process and save the dropped document
-      await processAndSaveDocument(files[0])
+      const file = files[0]
+      
+      // Smart image handling - import image and let user decide what to do with it
+      if (file.type.startsWith('image/')) {
+        // Import the image for both vision and video use
+        setSelectedImage(file)
+        setVideoImage(file)
+        
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const imageData = e.target?.result as string
+          setImagePreview(imageData)
+          setVideoImagePreview(imageData)
+        }
+        reader.readAsDataURL(file)
+        setError(null)
+        
+        // Show helpful message
+        setOutput('✅ Image loaded! You can now:\n• Ask me questions about this image\n• Type "generate video" or "animate this" to create a video from it')
+        return
+      }
+      
+      // Handle documents
+      if (file.type === 'application/pdf' || file.type.includes('text/') || file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+        await processAndSaveDocument(file)
+      } else {
+        setError('Please drop a valid image or document file')
+      }
     }
   }
 
@@ -734,6 +763,38 @@ Is there anything else I can help you with?`)
         const reader = new FileReader()
         reader.onload = (e) => {
           setImagePreview(e.target?.result as string)
+        }
+        reader.readAsDataURL(file)
+        setError(null)
+      } else {
+        setError('Please drop a valid image file')
+      }
+    }
+  }
+
+  // Video image drag and drop handlers
+  const handleVideoImageDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleVideoImageDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleVideoImageDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      const file = files[0]
+      if (file.type.startsWith('image/')) {
+        setVideoImage(file)
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setVideoImagePreview(e.target?.result as string)
         }
         reader.readAsDataURL(file)
         setError(null)
@@ -973,15 +1034,18 @@ Is there anything else I can help you with?`)
     }
   }
 
-  const handleGenerateVideo = async () => {
+  // Helper function to handle video generation with a specific model
+  const handleGenerateVideoWithModel = async (videoModel: string) => {
+    const modelToUse = videoModel
+    
     if (!prompt.trim()) {
       setError('Please enter a prompt for video generation')
       return
     }
 
     // Check if model requires an image
-    if ((mode === 'gen4_turbo' || mode === 'gen3a_turbo') && !videoImage) {
-      setError(`${mode} requires an image input`)
+    if ((modelToUse === 'gen4_turbo' || modelToUse === 'gen3a_turbo') && !videoImage) {
+      setError(`${modelToUse} requires an image input`)
       return
     }
 
@@ -1026,7 +1090,7 @@ Is there anything else I can help you with?`)
       // Prepare form data
       const formData = new FormData()
       formData.append('prompt', prompt)
-      formData.append('model', mode)
+      formData.append('model', modelToUse)
       formData.append('duration', videoDuration.toString())
       formData.append('ratio', videoRatio)
       
@@ -1065,23 +1129,66 @@ Is there anything else I can help you with?`)
       setError(error.message || 'Failed to generate video')
       setVideoGenerationProgress('')
     } finally {
+      console.log('Video generation completed, setting isGeneratingVideo to false')
       setIsGeneratingVideo(false)
     }
   }
 
+  // Original handler that uses the current mode
+  const handleGenerateVideo = async () => {
+    await handleGenerateVideoWithModel(mode)
+  }
+
   // NEW: Handle TRANSMIT button click
   async function handleTransmit() {
-    if (!prompt.trim()) return
+    console.log('handleTransmit called, prompt:', prompt, 'isVideoModel:', isVideoModel, 'isGeneratingVideo:', isGeneratingVideo)
+    if (!prompt.trim()) {
+      console.log('Prompt is empty, returning')
+      return
+    }
     
     // Handle video generation mode
     if (isVideoModel) {
+      console.log('In video mode, calling handleGenerateVideo')
       await handleGenerateVideo()
       return
     }
     
-    // Handle image generation mode (RunwayML)
+    // Handle image generation mode (RunwayML/DALL-E)
     if (isImageGenModel) {
       await handleGenerateImage()
+      return
+    }
+    
+    // Smart video detection - if user has an image loaded and asks for video
+    const videoKeywords = ['video', 'animate', 'animation', 'make it move', 'bring to life', 'make it come alive', 'generate video', 'create video', 'turn into video', 'video from', 'motion', 'come to life']
+    const wantsVideo = videoImage && videoKeywords.some(keyword => 
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    )
+    
+    if (wantsVideo && selectedVideoModel) {
+      // User wants to create video from the loaded image
+      // Switch to video mode to show the video generation panel
+      setMode(selectedVideoModel)
+      setOutput('✅ Ready to generate video! Please review the video settings below (duration, aspect ratio) and click the "GENERATE VIDEO" button.')
+      return
+    }
+    
+    // Auto-detect image generation requests in text prompts
+    // Check if user is asking for image generation
+    const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize', 'illustration', 'painting', 'sketch', 'artwork']
+    const wantsImage = prompt.length < 500 && imageKeywords.some(keyword => 
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    )
+    
+    // If user wants an image and has selected an image model, use it
+    if (wantsImage && selectedImageModel && (selectedImageModel === 'dalle_image' || selectedImageModel === 'runway_image')) {
+      // Temporarily switch to image generation mode
+      const originalMode = mode
+      setMode(selectedImageModel)
+      await handleGenerateImage()
+      // Switch back to original mode after generation
+      setMode(originalMode)
       return
     }
     
@@ -1092,9 +1199,9 @@ Is there anything else I can help you with?`)
       return
     }
     
-    // For image mode, check if an image is uploaded
+    // For vision models (image analysis), check if an image is uploaded
     if (isVisionModel && !selectedImage) {
-      setError("Please upload an image first to use image mode. Use the image upload section above.")
+      setError("Please upload an image first to use image analysis. Use the image upload section above.")
       return
     }
     
@@ -1807,9 +1914,9 @@ Please provide a ${responseStyle} answer.`
                   </Select>
                 </div>
                 
-                {/* Image Mode - Mobile: Full width, Desktop: Right side */}
+                {/* Image Model - Mobile: Full width, Desktop: Right side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
+                  <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODEL:</span>
                   <Select value={selectedImageModel || ""} onValueChange={(value) => handleModelChange(value, 'image')}>
                     <SelectTrigger className="w-full sm:w-56 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Image Model" />
@@ -1823,9 +1930,9 @@ Please provide a ${responseStyle} answer.`
                   </Select>
                 </div>
                 
-                {/* Video Mode - Mobile: Full width, Desktop: Right side */}
+                {/* Video Model - Mobile: Full width, Desktop: Right side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  <span className="text-pink-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">VIDEO MODE:</span>
+                  <span className="text-pink-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">VIDEO MODEL:</span>
                   <Select value={selectedVideoModel || ""} onValueChange={(value) => handleModelChange(value, 'video')}>
                     <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400 focus:border-pink-400 focus:ring-pink-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Video Model" />
@@ -1859,8 +1966,8 @@ Please provide a ${responseStyle} answer.`
                 <div className="absolute inset-0 flex items-center justify-center bg-cyan-900/50 backdrop-blur-sm rounded-lg z-20">
                   <div className="text-center text-cyan-400">
                     <Upload className="h-16 w-16 mx-auto mb-4 animate-bounce" />
-                    <p className="text-xl font-bold">Drop Document Here</p>
-                    <p className="text-sm">PDF, Word, or Text files</p>
+                    <p className="text-xl font-bold">Drop File Here</p>
+                    <p className="text-sm">Images or Documents (PDF, Word, Text)</p>
                   </div>
                 </div>
               )}
@@ -1963,6 +2070,42 @@ Please provide a ${responseStyle} answer.`
               </div>
             )}
                 
+                {/* Universal Image Preview - shows for any loaded image */}
+                {(selectedImage || videoImage) && !isVisionModel && (
+                  <div className="mb-3 p-3 bg-gradient-to-r from-cyan-900/20 via-purple-900/20 to-pink-900/20 border border-cyan-500/30 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-cyan-400 text-sm font-medium">🖼️ Loaded Image</span>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          setSelectedImage(null)
+                          setImagePreview(null)
+                          setVideoImage(null)
+                          setVideoImagePreview(null)
+                        }}
+                        className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/20 text-xs px-2 py-1"
+                      >
+                        ✕ Clear
+                      </Button>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      {(imagePreview || videoImagePreview) && (
+                        <img 
+                          src={imagePreview || videoImagePreview || ''} 
+                          alt="Loaded image" 
+                          className="w-32 h-32 object-cover rounded border border-cyan-500/50 shadow-lg"
+                        />
+                      )}
+                      <div className="flex-1">
+                        <p className="text-cyan-300 text-sm font-medium">{selectedImage?.name || videoImage?.name}</p>
+                        <p className="text-cyan-400 text-xs mb-2">{((selectedImage?.size || videoImage?.size || 0) / 1024 / 1024).toFixed(2)} MB</p>
+                        <p className="text-green-400 text-xs">✅ Ready! You can ask questions about it or generate a video from it.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Image Mode Image Upload - integrated into prompt area */}
                 {isVisionModel && (
                   <div 
@@ -2085,22 +2228,22 @@ Please provide a ${responseStyle} answer.`
                           onChange={(e) => setVideoRatio(e.target.value)}
                           className="w-full bg-black/30 border border-pink-500/30 rounded px-2 py-1 text-pink-300 text-sm"
                         >
-                          <option value="1280:720">16:9 Landscape (1280:720)</option>
-                          <option value="720:1280">9:16 Portrait (720:1280)</option>
-                          <option value="960:960">1:1 Square (960:960)</option>
-                          <option value="1104:832">4:3 Landscape (1104:832)</option>
-                          <option value="832:1104">3:4 Portrait (832:1104)</option>
-                          <option value="1584:672">Ultra Wide (1584:672)</option>
+                          <option value="768:1280">Portrait (768:1280)</option>
+                          <option value="1280:768">Landscape (1280:768)</option>
                         </select>
                       </div>
                     </div>
 
                     {/* Image Upload for Image-to-Video models */}
                     {(mode === 'gen4_turbo' || mode === 'gen3a_turbo' || (mode === 'gen4_aleph' && !videoImage)) && (
-                      <div className="mb-3">
-                        <label className="text-pink-400 text-xs block mb-2">
-                          {mode === 'gen4_aleph' ? 'Starting Image (optional)' : 'Starting Image (required)'}
-                        </label>
+                      <div 
+                        className={`mb-3 p-3 bg-pink-900/20 border border-pink-500/30 rounded-lg transition-all duration-300 relative ${
+                          isDragOver ? 'scale-105 border-2 border-dashed border-pink-400 bg-pink-900/40' : ''
+                        }`}
+                        onDragOver={handleVideoImageDragOver}
+                        onDragLeave={handleVideoImageDragLeave}
+                        onDrop={handleVideoImageDrop}
+                      >
                         {!videoImage ? (
                           <div className="text-center">
                             <input
@@ -2110,6 +2253,18 @@ Please provide a ${responseStyle} answer.`
                               onChange={handleVideoImageUpload}
                               className="hidden"
                             />
+                            
+                            {/* Drag Overlay */}
+                            {isDragOver && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-pink-900/50 backdrop-blur-sm rounded-lg z-20">
+                                <div className="text-center text-pink-400">
+                                  <Upload className="h-12 w-12 mx-auto mb-2 animate-bounce" />
+                                  <p className="text-lg font-bold">Drop Image Here</p>
+                                  <p className="text-sm">For video generation</p>
+                                </div>
+                              </div>
+                            )}
+                            
                             <Button 
                               onClick={() => videoFileInputRef.current?.click()}
                               className="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded text-sm"
@@ -2120,6 +2275,9 @@ Please provide a ${responseStyle} answer.`
                               {mode === 'gen4_aleph' 
                                 ? 'Optional: Upload an image as the starting frame for your video' 
                                 : 'Required: Upload an image as the starting frame for your video'}
+                            </p>
+                            <p className="text-pink-400 text-xs mt-1">
+                              Or drag and drop an image file here
                             </p>
                           </div>
                         ) : (
@@ -2142,27 +2300,29 @@ Please provide a ${responseStyle} answer.`
 
                     {/* Image Generation Progress */}
                     {isGeneratingImage && (
-                      <div className="bg-black/30 p-3 rounded border border-purple-500/30 mb-3">
-                        <div className="flex items-center gap-2 text-purple-400">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-400"></div>
-                          <span className="text-sm">{imageGenerationProgress}</span>
+                      <div className="relative overflow-hidden bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 p-5 rounded-md border-2 border-cyan-400/60 mb-3">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                        <div className="relative flex items-center justify-center gap-3">
+                          <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/40 border-t-white"></div>
+                          <span className="text-white/80 text-lg sm:text-xl font-bold tracking-[0.2em] uppercase">{imageGenerationProgress || 'GENERATING IMAGE...'}</span>
                         </div>
                       </div>
                     )}
 
                     {/* Video Generation Progress */}
                     {isGeneratingVideo && (
-                      <div className="bg-black/30 p-3 rounded border border-pink-500/30 mb-3">
-                        <div className="flex items-center gap-2 text-pink-400">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-400"></div>
-                          <span className="text-sm">{videoGenerationProgress}</span>
+                      <div className="relative overflow-hidden bg-gradient-to-r from-pink-600 via-purple-600 to-pink-700 p-5 rounded-md border-2 border-pink-400/60 mb-3">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                        <div className="relative flex items-center justify-center gap-3">
+                          <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/40 border-t-white"></div>
+                          <span className="text-white/80 text-lg sm:text-xl font-bold tracking-[0.2em] uppercase">{videoGenerationProgress || 'GENERATING VIDEO...'}</span>
                         </div>
                       </div>
                     )}
 
 
                     <p className="text-pink-300 text-xs mt-2">
-                      💰 Cost: 26 credits per video • ⏱️ Generation time: 1-5 minutes
+                      💰 Cost: 26 credits per video
                     </p>
                   </div>
                 )}
@@ -2337,28 +2497,38 @@ Please provide a ${responseStyle} answer.`
                   {/* Process Button - Mobile: Full width, Desktop: Right */}
                   <Button 
                     onClick={handleTransmit}
-                    disabled={loading || isGeneratingVideo}
+                    disabled={loading || isGeneratingVideo || isGeneratingImage}
                     title={needsOllama && ollamaOk === false ? "May fail while Ollama is down." : undefined}
-                    className={`w-full sm:w-auto ${
+                    className={`relative overflow-hidden w-full sm:w-auto ${
                       isVideoModel
                         ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-purple-500'
                         : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500'
-                    } text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-6 sm:px-8 py-3 text-base sm:text-lg tracking-widest transition-all disabled:opacity-50`}
+                    } text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-purple-400/50 rounded-lg px-6 sm:px-8 py-3 text-base sm:text-lg tracking-widest transition-all disabled:opacity-80`}
                   >
-                    {isGeneratingVideo
-                      ? "GENERATING VIDEO..."
-                      : isGeneratingImage
-                        ? "GENERATING IMAGE..."
-                        : loading 
-                          ? "PROCESSING..." 
-                          : isVideoModel
-                            ? "GENERATE VIDEO"
-                            : isImageGenModel
-                              ? "GENERATE IMAGE"
-                              : isVisionModel 
-                                ? "ANALYZE IMAGE" 
-                                : "PROCESS"
-                    }
+                    {(loading || isGeneratingVideo || isGeneratingImage) && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                    )}
+                    <div className="relative flex items-center justify-center gap-2">
+                      {(loading || isGeneratingVideo || isGeneratingImage) && (
+                        <div className="animate-spin rounded-full h-5 w-5 border-3 border-white/40 border-t-white"></div>
+                      )}
+                      <span>
+                        {isGeneratingVideo
+                          ? "GENERATING VIDEO..."
+                          : isGeneratingImage
+                            ? "GENERATING IMAGE..."
+                            : loading 
+                              ? "PROCESSING..." 
+                              : isVideoModel
+                                ? "GENERATE VIDEO"
+                                : isImageGenModel
+                                  ? "GENERATE IMAGE"
+                                  : isVisionModel 
+                                    ? "ANALYZE IMAGE" 
+                                    : "PROCESS"
+                        }
+                      </span>
+                    </div>
                   </Button>
                 </div>
               </div>
@@ -2368,7 +2538,19 @@ Please provide a ${responseStyle} answer.`
             {isAdmin && (
               <div className="w-full max-w-3xl mt-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  <span className="text-orange-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">AUDIO MODE:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-orange-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">AUDIO MODEL:</span>
+                    <Link href="/audio-ai-settings">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 transition-all"
+                        title="Audio AI Settings"
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </div>
                   <Select value={selectedAudioModel || ""} onValueChange={(value) => handleModelChange(value, 'audio')}>
                     <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-orange-500/50 text-orange-300 hover:border-orange-400 focus:border-orange-400 focus:ring-orange-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Audio Model" />

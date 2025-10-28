@@ -654,32 +654,6 @@ export function ProgressiveResponse({
             isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="pt-2 border-t border-cyan-500/20">
-              {/* Copy button for detailed content */}
-              <div className="flex justify-end mb-2">
-                <Button
-                  onClick={async () => {
-                    try {
-                      const contentToCopy = detailedContent || detailedPart || ""
-                      await navigator.clipboard.writeText(contentToCopy)
-                      // Show brief feedback
-                      const btn = document.activeElement as HTMLButtonElement
-                      if (btn) {
-                        const originalText = btn.innerHTML
-                        btn.innerHTML = '<span class="text-xs">Copied!</span>'
-                        setTimeout(() => { btn.innerHTML = originalText }, 1000)
-                      }
-                    } catch (err) {
-                      console.error('Failed to copy detailed content:', err)
-                    }
-                  }}
-                  variant="ghost"
-                  size="sm"
-                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-6 px-2 text-xs"
-                >
-                  Copy Details
-                </Button>
-              </div>
-              
               {/* Format the detailed content with proper paragraphs */}
               {(() => {
                 const content = detailedContent || detailedPart
@@ -705,6 +679,58 @@ export function ProgressiveResponse({
                   </div>
                 ))
               })()}
+              
+              {/* Action buttons at the BOTTOM of detailed content */}
+              <div className="flex justify-end items-center gap-2 mt-4 pt-3 border-t border-cyan-500/20">
+                {/* Audio Button */}
+                {onGenerateAudio && !audioUrl && !isGeneratingAudio && (
+                  <Button 
+                    onClick={handleGenerateAudio}
+                    variant="ghost" 
+                    size="sm"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 px-3 text-xs"
+                  >
+                    <Volume2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                    Audio
+                  </Button>
+                )}
+                
+                {/* PDF Button */}
+                <Button 
+                  onClick={handleExportPDF}
+                  variant="ghost" 
+                  size="sm"
+                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 px-3 text-xs"
+                >
+                  <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                  PDF
+                </Button>
+                
+                {/* Copy Button */}
+                <Button
+                  onClick={async () => {
+                    try {
+                      const contentToCopy = detailedContent || detailedPart || ""
+                      await navigator.clipboard.writeText(contentToCopy)
+                      // Show brief feedback
+                      const btn = document.activeElement as HTMLButtonElement
+                      if (btn) {
+                        const originalText = btn.innerHTML
+                        btn.innerHTML = '<span class="text-xs">Copied!</span>'
+                        setTimeout(() => { btn.innerHTML = originalText }, 1000)
+                      }
+                    } catch (err) {
+                      console.error('Failed to copy detailed content:', err)
+                    }
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 px-3 text-xs"
+                >
+                  <Copy className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                  Copy
+                </Button>
+              </div>
             </div>
           </div>
         )}
