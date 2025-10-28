@@ -136,27 +136,27 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
   return (
     <>
       <div className={cn("relative w-full flex", side === "left" ? "justify-start" : "justify-end")}>
-        <div className="absolute left-1/2 -translate-x-1/2 top-8 h-0.5 w-1/2 bg-cyan-500/30" />
-        <div className="absolute left-1/2 -translate-x-1/2 top-8 h-4 w-4 rounded-full bg-cyan-500 glow" />
+        <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-8 h-0.5 w-1/2 bg-cyan-500/30" />
+        <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-8 h-4 w-4 rounded-full bg-cyan-500 glow" />
 
-        <div className="w-[calc(50%-2rem)] aztec-panel backdrop-blur-sm p-4 group transition-all hover:border-cyan-400">
-          <div className="flex justify-between items-start">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-cyan-600 font-mono">{memory.timestamp}</span>
-              <span className="text-xs text-cyan-400">
+        <div className="w-full md:w-[calc(50%-2rem)] aztec-panel backdrop-blur-sm p-4 group transition-all hover:border-cyan-400 overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1">
+              <span className="text-xs text-cyan-600 font-mono break-all">{memory.timestamp}</span>
+              <span className="text-xs text-cyan-400 break-words">
                 {getCategoryIcon(memory.memory_category)} {memory.memory_category}
                 {hasImage && <span className="ml-1 text-purple-400">🖼️</span>}
                 {hasDocument && !hasImage && <span className="ml-1 text-blue-400">📄</span>}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-xs text-gray-400">SALIENCE</span>
               <div className={cn("h-2 w-2 rounded-full glow", salienceColor)} />
               <span className="font-bold text-white">{memory.salience.toFixed(2)}</span>
             </div>
           </div>
 
-          <h4 className="text-lg font-bold text-green-400 mt-2">{memory.concept}</h4>
+          <h4 className="text-lg font-bold text-green-400 mt-2 break-words">{memory.concept}</h4>
           
           {/* Image Thumbnail */}
           {hasImage && (
@@ -195,13 +195,13 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             </div>
           )}
           
-          <p className="text-gray-300 mt-2 text-sm">{memory.data}</p>
+          <p className="text-gray-300 mt-2 text-sm break-words overflow-wrap-anywhere">{memory.data}</p>
 
           <div className="mt-4 border-t border-cyan-500/20 pt-3">
             <p className="text-xs text-cyan-400 mb-2">CONNECTIONS:</p>
             <div className="flex flex-wrap gap-2">
               {memory.connections.map((tag) => (
-                <span key={tag} className="text-xs bg-cyan-900/50 text-cyan-300 px-2 py-1 rounded">
+                <span key={tag} className="text-xs bg-cyan-900/50 text-cyan-300 px-2 py-1 rounded break-words">
                   #{tag}
                 </span>
               ))}

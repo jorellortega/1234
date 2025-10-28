@@ -107,23 +107,23 @@ export default function LibraryPage() {
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <header className="flex flex-row justify-between items-start gap-2 sm:gap-4 mb-6 sm:mb-8">
           {/* Navigation */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <Link href="/" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10">
+          <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+            <Link href="/" className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10">
               <Home className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="hidden sm:inline text-sm">Home</span>
             </Link>
             <Link
               href="/memory-core"
-              className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
             >
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="hidden sm:inline text-sm">Memory Core</span>
             </Link>
             <Link
               href="/ai-settings"
-              className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+              className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
             >
               <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="hidden sm:inline text-sm">AI Settings</span>
@@ -132,47 +132,47 @@ export default function LibraryPage() {
 
           {/* User Actions */}
           {user ? (
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-1 sm:gap-2">
               <Link
                 href="/profile"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
               >
                 <User className="h-4 w-4" />
                 <span className="hidden sm:inline text-sm">Profile</span>
               </Link>
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline text-sm">Sign Out</span>
               </button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-1 sm:gap-2">
               <Link
                 href="/login"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
               >
-                <span className="text-sm">Sign In</span>
+                <span className="text-xs sm:text-sm">Sign In</span>
               </Link>
               <Link
                 href="/signup"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
               >
-                <span className="text-sm">Sign Up</span>
+                <span className="text-xs sm:text-sm">Sign Up</span>
               </Link>
             </div>
           )}
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 space-y-6">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+        <main className="flex-1 space-y-4 sm:space-y-6">
+          <div className="text-center mb-4 sm:mb-8">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 sm:mb-4">
               <span className="text-cyan-400">Library</span>
             </h1>
-            <p className="text-gray-300 text-lg">
+            <p className="text-gray-300 text-sm sm:text-base md:text-lg">
               Your AI generation archive
             </p>
           </div>

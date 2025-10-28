@@ -328,17 +328,17 @@ export function ProgressiveResponse({
   // Debug logging removed to prevent console spam
 
   return (
-    <div ref={responseRef} className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-4 ${className}`}>
-      <div className="flex justify-between items-center mb-3">
-        <div className="flex items-center gap-2">
+    <div ref={responseRef} className={`aztec-panel backdrop-blur-md shadow-2xl shadow-cyan-500/20 p-3 sm:p-4 overflow-hidden ${className}`}>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <div className="text-cyan-400 text-sm font-semibold">AI RESPONSE:</div>
           <div className="text-cyan-400/40 text-xs font-mono tracking-wider flex items-center gap-1">
             <span className="text-[10px]">∞</span>
-            <span>INFINITO</span>
+            <span className="hidden sm:inline">INFINITO</span>
             <span className="text-[10px]">∞</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-2 w-full sm:w-auto">
           {/* Audio Controls - Only show for text responses */}
           {onGenerateAudio && !hasMediaContent && (
             <div className="flex items-center gap-1">
@@ -347,10 +347,10 @@ export function ProgressiveResponse({
                   onClick={handleGenerateAudio}
                   variant="ghost" 
                   size="sm"
-                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
                 >
-                  <Volume2 className="h-4 w-4 mr-1" />
-                  <span className="text-xs">Audio</span>
+                  <Volume2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                  <span className="text-xs hidden sm:inline">Audio</span>
                 </Button>
               )}
               
@@ -359,10 +359,10 @@ export function ProgressiveResponse({
                   variant="ghost" 
                   size="sm"
                   disabled
-                  className="text-cyan-400 h-8 px-3"
+                  className="text-cyan-400 h-7 sm:h-8 px-2 sm:px-3"
                 >
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  <span className="text-xs">Generating...</span>
+                  <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1 animate-spin" />
+                  <span className="text-xs hidden sm:inline">Generating...</span>
                 </Button>
               )}
               
@@ -372,17 +372,17 @@ export function ProgressiveResponse({
                     onClick={togglePlayPause}
                     variant="ghost" 
                     size="sm"
-                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-2"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
                   >
-                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    {isPlaying ? <Pause className="h-3 w-3 sm:h-4 sm:w-4" /> : <Play className="h-3 w-3 sm:h-4 sm:w-4" />}
                   </Button>
                   <Button 
                     onClick={downloadAudio}
                     variant="ghost" 
                     size="sm"
-                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-2"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
                   >
-                    <Download className="h-4 w-4" />
+                    <Download className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                 </>
               )}
@@ -399,10 +399,10 @@ export function ProgressiveResponse({
               onClick={handleExportPDF}
               variant="ghost" 
               size="sm"
-              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
             >
-              <FileText className="h-4 w-4 mr-1" />
-              <span className="text-xs">PDF</span>
+              <FileText className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+              <span className="text-xs hidden sm:inline">PDF</span>
             </Button>
           )}
           
@@ -436,10 +436,10 @@ export function ProgressiveResponse({
               }}
               variant="ghost" 
               size="sm"
-              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
             >
-              <Download className="h-4 w-4 mr-1" />
-              <span className="text-xs">Download</span>
+              <Download className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+              <span className="text-xs hidden sm:inline">Download</span>
             </Button>
           )}
           
@@ -448,17 +448,17 @@ export function ProgressiveResponse({
             onClick={handleCopy}
             variant="ghost" 
             size="sm"
-            className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+            className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
           >
             {copied ? (
               <>
-                <Check className="h-4 w-4 mr-1" />
-                <span className="text-xs">Copied!</span>
+                <Check className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                <span className="text-xs hidden sm:inline">Copied!</span>
               </>
             ) : (
               <>
-                <Copy className="h-4 w-4 mr-1" />
-                <span className="text-xs">Copy</span>
+                <Copy className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                <span className="text-xs hidden sm:inline">Copy</span>
               </>
             )}
           </Button>
@@ -468,7 +468,7 @@ export function ProgressiveResponse({
       {/* Audio Element */}
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" />}
       
-      <div className="text-gray-100 whitespace-pre-wrap border border-cyan-500/20 rounded p-3 bg-black/20">
+      <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
         {/* Concise part - always visible */}
         <div className="mb-3">
           {concisePart}
@@ -494,18 +494,18 @@ export function ProgressiveResponse({
             };
 
             return (
-              <div className="mb-4 p-3 bg-black/10 rounded border border-cyan-500/30">
-                <div className="flex items-center justify-between mb-2">
+              <div className="mb-4 p-2 sm:p-3 bg-black/10 rounded border border-cyan-500/30 overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                   <div className="text-cyan-400 text-sm font-semibold">Generated Image:</div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-1 sm:gap-2">
                     <Button
                       onClick={handleDownload}
                       variant="outline"
                       size="sm"
                       className="h-7 px-2 text-xs border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
                     >
-                      <Download className="h-3 w-3 mr-1" />
-                      Download
+                      <Download className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Download</span>
                     </Button>
                     {onConvertToVideo && (
                       <Button
@@ -514,8 +514,8 @@ export function ProgressiveResponse({
                         size="sm"
                         className="h-7 px-2 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
                       >
-                        <Play className="h-3 w-3 mr-1" />
-                        Convert to Video
+                        <Play className="h-3 w-3 sm:mr-1" />
+                        <span className="hidden sm:inline">Convert to Video</span>
                       </Button>
                     )}
                     <Button
@@ -527,31 +527,31 @@ export function ProgressiveResponse({
                     >
                       {saveStatus === 'saving' ? (
                         <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          Saving...
+                          <Loader2 className="h-3 w-3 sm:mr-1 animate-spin" />
+                          <span className="hidden sm:inline">Saving...</span>
                         </>
                       ) : saveStatus === 'saved' ? (
                         <>
-                          <Check className="h-3 w-3 mr-1" />
-                          Saved!
+                          <Check className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Saved!</span>
                         </>
                       ) : (
                         <>
-                          <Save className="h-3 w-3 mr-1" />
-                          Save
+                          <Save className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Save</span>
                         </>
                       )}
                     </Button>
                   </div>
                 </div>
                 {saveError && (
-                  <div className="text-red-400 text-xs mb-2">❌ {saveError}</div>
+                  <div className="text-red-400 text-xs mb-2 break-words">❌ {saveError}</div>
                 )}
-                <div className="flex justify-center">
+                <div className="flex justify-center overflow-hidden">
                   <img 
                     src={imageUrl} 
                     alt="Generated image" 
-                    className="max-w-[500px] max-h-[500px] w-auto h-auto rounded-lg border border-cyan-500/50 object-contain"
+                    className="w-full max-w-full sm:max-w-[500px] h-auto max-h-[300px] sm:max-h-[500px] rounded-lg border border-cyan-500/50 object-contain"
                     onError={(e) => {
                       console.error('Failed to load image:', imageUrl);
                       e.currentTarget.style.display = 'none';
@@ -589,18 +589,18 @@ export function ProgressiveResponse({
             };
 
             return (
-              <div className="mb-4 p-3 bg-black/10 rounded border border-pink-500/30">
-                <div className="flex items-center justify-between mb-2">
+              <div className="mb-4 p-2 sm:p-3 bg-black/10 rounded border border-pink-500/30 overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                   <div className="text-pink-400 text-sm font-semibold">Generated Video:</div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-1 sm:gap-2">
                     <Button
                       onClick={handleDownloadVideo}
                       variant="outline"
                       size="sm"
                       className="h-7 px-2 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
                     >
-                      <Download className="h-3 w-3 mr-1" />
-                      Download
+                      <Download className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Download</span>
                     </Button>
                     <Button
                       onClick={() => handleSaveMedia(videoUrl, 'video')}
@@ -611,33 +611,33 @@ export function ProgressiveResponse({
                     >
                       {saveStatus === 'saving' ? (
                         <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          Saving...
+                          <Loader2 className="h-3 w-3 sm:mr-1 animate-spin" />
+                          <span className="hidden sm:inline">Saving...</span>
                         </>
                       ) : saveStatus === 'saved' ? (
                         <>
-                          <Check className="h-3 w-3 mr-1" />
-                          Saved!
+                          <Check className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Saved!</span>
                         </>
                       ) : (
                         <>
-                          <Save className="h-3 w-3 mr-1" />
-                          Save
+                          <Save className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Save</span>
                         </>
                       )}
                     </Button>
                   </div>
                 </div>
                 {saveError && (
-                  <div className="text-red-400 text-xs mb-2">❌ {saveError}</div>
+                  <div className="text-red-400 text-xs mb-2 break-words">❌ {saveError}</div>
                 )}
-                <div className="flex justify-center">
+                <div className="flex justify-center overflow-hidden">
                   <video 
                     src={videoUrl} 
                     controls
                     autoPlay
                     loop
-                    className="max-w-[600px] max-h-[600px] w-auto h-auto rounded-lg border border-pink-500/50"
+                    className="w-full max-w-full sm:max-w-[600px] h-auto max-h-[400px] sm:max-h-[600px] rounded-lg border border-pink-500/50"
                   >
                     Your browser does not support the video tag.
                   </video>

@@ -181,71 +181,71 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
   return (
     <div className="space-y-4">
       {/* Controls */}
-      <div className="grid gap-3 sm:grid-cols-9">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-9">
         <input
           placeholder="Search prompt/output…"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none sm:col-span-3"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none sm:col-span-2 lg:col-span-3 text-white"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
         <input
           placeholder="Model"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
         <input
           placeholder="Temp min"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={tmin}
           onChange={(e) => setTmin(e.target.value)}
         />
         <input
           placeholder="Temp max"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={tmax}
           onChange={(e) => setTmax(e.target.value)}
         />
         <input
           placeholder="TopK min"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={kmin}
           onChange={(e) => setKmin(e.target.value)}
         />
         <input
           placeholder="TopK max"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={kmax}
           onChange={(e) => setKmax(e.target.value)}
         />
         <input
           type="date"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={from}
           onChange={(e) => setFrom(e.target.value)}
           placeholder="From date"
         />
         <input
           type="date"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={to}
           onChange={(e) => setTo(e.target.value)}
           placeholder="To date"
         />
         <input
           placeholder="Tag (exact)"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none"
+          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
           value={tag}
           onChange={(e) => setTag(e.target.value)}
         />
       </div>
 
       {/* Export Controls */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm opacity-80">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="text-xs sm:text-sm opacity-80">
           Showing {rows.length} rows • Selected {selectedIds.length}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => {
               const next: Record<string, boolean> = {};
@@ -253,26 +253,26 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
               if (!allSelected) filteredIds.forEach(id => (next[id] = true));
               setSelected(allSelected ? {} : next);
             }}
-            className="px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
+            className="px-2 sm:px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs sm:text-sm whitespace-nowrap"
           >
-            {filteredIds.every(id => selected[id]) ? "Clear selection" : "Select all (filtered)"}
+            {filteredIds.every(id => selected[id]) ? "Clear" : "Select all"}
           </button>
           <button
             onClick={bulkDelete}
             disabled={selectedIds.length === 0}
-            className="px-3 py-1 rounded-lg bg-red-600/80 hover:bg-red-600 disabled:opacity-50 text-sm"
+            className="px-2 sm:px-3 py-1 rounded-lg bg-red-600/80 hover:bg-red-600 disabled:opacity-50 text-xs sm:text-sm whitespace-nowrap"
           >
             Delete selected
           </button>
           <a
             href={exportHref}
-            className="px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
+            className="px-2 sm:px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs sm:text-sm whitespace-nowrap"
           >
             Export CSV
           </a>
           <a
             href={exportJsonHref}
-            className="px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
+            className="px-2 sm:px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs sm:text-sm whitespace-nowrap"
           >
             Export JSON
           </a>
@@ -280,11 +280,11 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-2xl border border-neutral-800">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border border-neutral-800 -mx-4 sm:mx-0">
+        <table className="w-full text-xs sm:text-sm">
           <thead className="bg-neutral-900">
             <tr>
-              <th className="text-left p-3">
+              <th className="text-left p-2 sm:p-3">
                 <input
                   type="checkbox"
                   aria-label="select all"
@@ -297,20 +297,20 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                   }}
                 />
               </th>
-              <th className="text-left p-3">Time</th>
-              <th className="text-left p-3">Prompt</th>
-              <th className="text-left p-3">Output</th>
-              <th className="text-left p-3">Tags</th>
-              <th className="text-left p-3">Notes</th>
-              <th className="text-left p-3">Model</th>
-              <th className="text-left p-3">Temp</th>
-              <th className="text-left p-3">Top-K</th>
+              <th className="text-left p-2 sm:p-3">Prompt</th>
+              <th className="text-left p-2 sm:p-3">Output</th>
+              <th className="text-left p-2 sm:p-3">Time</th>
+              <th className="text-left p-2 sm:p-3 hidden md:table-cell">Tags</th>
+              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Notes</th>
+              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Model</th>
+              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Temp</th>
+              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Top-K</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="border-t border-neutral-800 align-top">
-                <td className="p-3">
+              <tr key={r.id} className="border-t border-neutral-800 align-top hover:bg-neutral-900/50">
+                <td className="p-2 sm:p-3">
                   <input
                     type="checkbox"
                     checked={!!selected[r.id]}
@@ -318,16 +318,8 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                     aria-label={`select ${r.id}`}
                   />
                 </td>
-                <td className="p-3 whitespace-nowrap">
-                  <button 
-                    onClick={() => handlePreview(r)}
-                    className="text-cyan-400 hover:underline cursor-pointer"
-                  >
-                    {new Date(r.created_at).toLocaleString()}
-                  </button>
-                </td>
-                <td className="p-3 max-w-[420px]">{t(r.prompt, 160)}</td>
-                <td className="p-3 max-w-[520px] text-neutral-300">
+                <td className="p-2 sm:p-3 max-w-[200px] sm:max-w-[320px]">{t(r.prompt, 120)}</td>
+                <td className="p-2 sm:p-3 max-w-[200px] sm:max-w-[420px] text-neutral-300">
                   {(() => {
                     // Check if output contains media display tags
                     const imageMatch = r.output?.match(/\[IMAGE_DISPLAY:(.*?)\]/);
@@ -338,15 +330,15 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                       return (
                         <button 
                           onClick={() => handlePreview(r)}
-                          className="flex items-center gap-2 hover:opacity-80 cursor-pointer"
+                          className="flex items-center gap-1 sm:gap-2 hover:opacity-80 cursor-pointer"
                         >
                           <img 
                             src={imageUrl} 
                             alt="Generated" 
-                            className="w-16 h-16 object-cover rounded border border-cyan-500/30"
+                            className="w-10 h-10 sm:w-16 sm:h-16 object-cover rounded border border-cyan-500/30"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
                           />
-                          <span className="text-cyan-400 text-xs">🖼️ Image</span>
+                          <span className="text-cyan-400 text-xs">🖼️</span>
                         </button>
                       );
                     } else if (videoMatch) {
@@ -354,34 +346,47 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                       return (
                         <button 
                           onClick={() => handlePreview(r)}
-                          className="flex items-center gap-2 hover:opacity-80 cursor-pointer"
+                          className="flex items-center gap-1 sm:gap-2 hover:opacity-80 cursor-pointer"
                         >
                           <video 
                             src={videoUrl} 
-                            className="w-16 h-16 object-cover rounded border border-pink-500/30"
+                            className="w-10 h-10 sm:w-16 sm:h-16 object-cover rounded border border-pink-500/30"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
                           />
-                          <span className="text-pink-400 text-xs">🎬 Video</span>
+                          <span className="text-pink-400 text-xs">🎬</span>
                         </button>
                       );
                     } else {
-                      return t(r.output, 240);
+                      return t(r.output, 180);
                     }
                   })()}
                 </td>
-                <td className="p-3 max-w-[220px]">
+                <td className="p-2 sm:p-3 whitespace-nowrap text-xs sm:text-sm">
+                  <button 
+                    onClick={() => handlePreview(r)}
+                    className="text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    {new Date(r.created_at).toLocaleString(undefined, { 
+                      month: 'short', 
+                      day: 'numeric', 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </button>
+                </td>
+                <td className="p-2 sm:p-3 max-w-[220px] hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {(r.tags ?? []).map(t => (
                       <span key={t} className="px-2 py-0.5 rounded-lg bg-neutral-800 text-xs">#{t}</span>
                     ))}
                   </div>
                 </td>
-                <td className="p-3 max-w-[220px]">
+                <td className="p-2 sm:p-3 max-w-[220px] hidden lg:table-cell">
                   {r.notes ? <span className="px-2 py-0.5 rounded-lg bg-neutral-800 text-xs">📝 notes</span> : ""}
                 </td>
-                <td className="p-3">{r.model ?? "mini_llm"}</td>
-                <td className="p-3">{r.temperature ?? ""}</td>
-                <td className="p-3">{r.top_k ?? ""}</td>
+                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.model ?? "mini_llm"}</td>
+                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.temperature ?? ""}</td>
+                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.top_k ?? ""}</td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -394,7 +399,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
       {/* Preview Modal */}
       {previewItem && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4"
           onClick={handleClosePreview}
         >
           <div 
@@ -402,41 +407,44 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="sticky top-0 bg-neutral-900 border-b border-cyan-500/30 p-4 flex items-center justify-between">
-              <div className="flex-1">
+            <div className="sticky top-0 bg-neutral-900 border-b border-cyan-500/30 p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-0">
+              <div className="flex-1 w-full sm:w-auto">
                 {isRenaming ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <input
                       type="text"
                       value={newPrompt}
                       onChange={(e) => setNewPrompt(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-neutral-800 border border-cyan-500/30 rounded text-white"
+                      className="flex-1 px-3 py-2 bg-neutral-800 border border-cyan-500/30 rounded text-white text-sm"
                       placeholder="Enter new prompt..."
                       autoFocus
                     />
-                    <Button
-                      onClick={handleRename}
-                      className="bg-cyan-600 hover:bg-cyan-700 text-white"
-                      size="sm"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      onClick={() => setIsRenaming(false)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Cancel
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleRename}
+                        className="bg-cyan-600 hover:bg-cyan-700 text-white flex-1 sm:flex-initial"
+                        size="sm"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        onClick={() => setIsRenaming(false)}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 sm:flex-initial"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-semibold text-white">{previewItem.prompt || 'Untitled'}</h2>
+                    <h2 className="text-base sm:text-xl font-semibold text-white break-words">{previewItem.prompt || 'Untitled'}</h2>
                     <Button
                       onClick={() => setIsRenaming(true)}
                       variant="ghost"
                       size="sm"
-                      className="text-cyan-400 hover:text-white"
+                      className="text-cyan-400 hover:text-white flex-shrink-0"
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -447,14 +455,14 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                 onClick={handleClosePreview}
                 variant="ghost"
                 size="sm"
-                className="text-gray-400 hover:text-white"
+                className="text-gray-400 hover:text-white self-end sm:self-auto"
               >
                 <X className="h-5 w-5" />
               </Button>
             </div>
 
             {/* Content */}
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {(() => {
                 const imageMatch = previewItem.output?.match(/\[IMAGE_DISPLAY:(.*?)\]/);
                 const videoMatch = previewItem.output?.match(/\[VIDEO_DISPLAY:(.*?)\]/);
@@ -487,14 +495,14 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
               })()}
 
               {/* Metadata */}
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 text-xs sm:text-sm">
                 <div>
                   <div className="text-cyan-400 text-xs">Model</div>
-                  <div className="text-white">{previewItem.model || 'N/A'}</div>
+                  <div className="text-white break-words">{previewItem.model || 'N/A'}</div>
                 </div>
                 <div>
                   <div className="text-cyan-400 text-xs">Date</div>
-                  <div className="text-white">{new Date(previewItem.created_at).toLocaleString()}</div>
+                  <div className="text-white text-xs sm:text-sm">{new Date(previewItem.created_at).toLocaleString()}</div>
                 </div>
                 <div>
                   <div className="text-cyan-400 text-xs">Temperature</div>
@@ -522,10 +530,11 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
             </div>
 
             {/* Actions */}
-            <div className="sticky bottom-0 bg-neutral-900 border-t border-cyan-500/30 p-4 flex items-center justify-end gap-3">
+            <div className="sticky bottom-0 bg-neutral-900 border-t border-cyan-500/30 p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 sm:gap-3">
               <Button
                 onClick={handleDownload}
                 className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                size="sm"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Download
@@ -534,12 +543,13 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                 onClick={handleDelete}
                 variant="outline"
                 className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                size="sm"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </Button>
-              <Link href={`/library/${previewItem.id}`}>
-                <Button variant="outline" className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10">
+              <Link href={`/library/${previewItem.id}`} className="w-full sm:w-auto">
+                <Button variant="outline" className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 w-full" size="sm">
                   View Details
                 </Button>
               </Link>

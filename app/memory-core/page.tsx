@@ -277,36 +277,36 @@ export default function MemoryCorePage() {
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col h-full p-4 md:p-6 lg:p-8">
-        <header className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-cyan-400 glow">JOR // MEMORY CORE</h1>
-          <div className="flex items-center gap-4">
-            <Link href="/ai-settings" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
-              <Settings className="h-5 w-5" />
-              <span className="hidden md:inline">AI Settings</span>
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-bold text-cyan-400 glow break-words">JOR // MEMORY CORE</h1>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/ai-settings" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors text-sm">
+              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden sm:inline">AI Settings</span>
             </Link>
-            <Link href="/" className="flex items-center gap-2 text-cyan-400 hover:text-white transition-colors">
-              <Home className="h-5 w-5" />
-              <span className="hidden md:inline">Return to Core</span>
+            <Link href="/" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors text-sm">
+              <Home className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden sm:inline">Return to Core</span>
             </Link>
           </div>
         </header>
 
         {/* Breadcrumb Navigation */}
         {breadcrumb.length > 0 && (
-          <div className="my-4 flex items-center gap-2 text-sm">
+          <div className="my-4 flex items-center gap-2 text-xs sm:text-sm overflow-x-auto">
             <Button
               variant="ghost"
               size="sm"
               onClick={goBack}
-              className="text-cyan-400 hover:text-white"
+              className="text-cyan-400 hover:text-white flex-shrink-0"
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back
             </Button>
-            <span className="text-gray-400">/</span>
+            <span className="text-gray-400 flex-shrink-0">/</span>
             {breadcrumb.map((memory, index) => (
-              <div key={memory.id} className="flex items-center gap-2">
-                <span className={`${getCategoryColor(memory.memory_category)} font-medium`}>
+              <div key={memory.id} className="flex items-center gap-2 flex-shrink-0">
+                <span className={`${getCategoryColor(memory.memory_category)} font-medium truncate max-w-[150px]`}>
                   {getCategoryIcon(memory.memory_category)} {memory.concept}
                 </span>
                 {index < breadcrumb.length - 1 && <span className="text-gray-400">/</span>}
@@ -336,32 +336,32 @@ export default function MemoryCorePage() {
           </div>
         </div>
 
-        <div className="my-6 flex justify-between items-center">
-          <div className="flex items-center gap-4">
+        <div className="my-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
             <Button 
               onClick={() => fetchMemories(currentParent?.id, selectedCategory)}
               disabled={loading}
-              className="bg-gradient-to-r from-blue-500/90 to-cyan-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-cyan-400/50 rounded-lg px-4 py-2 text-sm tracking-widest transition-all"
+              className="bg-gradient-to-r from-blue-500/90 to-cyan-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-cyan-400/50 rounded-lg px-4 py-2 text-xs sm:text-sm tracking-widest transition-all w-full sm:w-auto"
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               REFRESH
             </Button>
-            {loading && <span className="text-cyan-400 text-sm">Loading memories...</span>}
-            {error && <span className="text-red-400 text-sm">Error: {error}</span>}
+            {loading && <span className="text-cyan-400 text-xs sm:text-sm">Loading memories...</span>}
+            {error && <span className="text-red-400 text-xs sm:text-sm break-words">Error: {error}</span>}
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
             <Button 
               onClick={() => setShowDocumentUpload(true)}
-              className="bg-gradient-to-r from-purple-500/90 to-blue-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-blue-400/50 rounded-lg px-4 py-2 text-sm tracking-widest transition-all"
+              className="bg-gradient-to-r from-purple-500/90 to-blue-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-blue-400/50 rounded-lg px-4 py-2 text-xs sm:text-sm tracking-widest transition-all w-full sm:w-auto"
             >
               <FileText className="mr-2 h-4 w-4" />
               IMPORT DOC
             </Button>
             <Button 
               onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-green-500/90 to-cyan-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-cyan-400/50 rounded-lg px-6 py-2 text-md tracking-widest transition-all"
+              className="bg-gradient-to-r from-green-500/90 to-cyan-500/90 text-white font-bold hover:brightness-110 hover:shadow-lg hover:shadow-cyan-400/50 rounded-lg px-4 sm:px-6 py-2 text-xs sm:text-md tracking-widest transition-all w-full sm:w-auto"
             >
-              <PlusCircle className="mr-2 h-5 w-5" />
+              <PlusCircle className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
               IMPLANT MEMORY
             </Button>
           </div>
@@ -384,10 +384,10 @@ export default function MemoryCorePage() {
             </div>
           ) : (
             <div className="relative">
-              {/* Central Spine */}
-              <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-cyan-500/30 glow" />
+              {/* Central Spine - hidden on mobile */}
+              <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-cyan-500/30 glow" />
 
-              <div className="space-y-12">
+              <div className="space-y-6 md:space-y-12">
                 {memories.map((memory, index) => (
                   <MemoryNode 
                     key={memory.id} 

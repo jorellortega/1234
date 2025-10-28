@@ -18,6 +18,13 @@ export default function AIPromptPage() {
   const [lastPrompt, setLastPrompt] = useState("")
   const [response, setResponse] = useState("")
   const [mode, setMode] = useState("openai")
+  
+  // Separate state for each model type
+  const [selectedTextModel, setSelectedTextModel] = useState("openai")
+  const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null)
+  const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null)
+  const [selectedAudioModel, setSelectedAudioModel] = useState<string | null>(null)
+  
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
@@ -29,6 +36,9 @@ export default function AIPromptPage() {
   const [authLoading, setAuthLoading] = useState(true)
   const [userCredits, setUserCredits] = useState(0)
   const [isAdmin, setIsAdmin] = useState(false)
+  
+  // Admin preferences state
+  const [adminPreferences, setAdminPreferences] = useState<any>(null)
   
   // Panel visibility state
   const [showPanels, setShowPanels] = useState(false)
@@ -70,6 +80,8 @@ export default function AIPromptPage() {
       if (session?.user) {
         fetchUserCredits(session.user.id)
         checkAdminStatus()
+        // Also fetch universal model selections for all users
+        fetchAdminPreferences()
       } else {
         setUserCredits(0)
         setIsAdmin(false)
@@ -120,6 +132,9 @@ export default function AIPromptPage() {
         const data = await response.json()
         console.log('✅ Admin check result:', data)
         setIsAdmin(data.isAdmin || false)
+        
+        // Fetch preferences for all users (admin selections are universal defaults)
+        await fetchAdminPreferences()
       } else {
         const errorText = await response.text()
         console.error('❌ Admin check failed:', response.status, errorText)
@@ -129,6 +144,85 @@ export default function AIPromptPage() {
       console.error('❌ Admin check error:', error)
       setIsAdmin(false)
     }
+  }
+
+  // Fetch admin preferences
+  const fetchAdminPreferences = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const response = await fetch('/api/admin/preferences', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ Admin preferences:', data.preferences)
+        setAdminPreferences(data.preferences)
+        
+        // Load saved model selections
+        const prefs = data.preferences
+        if (prefs.selected_text_model) {
+          setSelectedTextModel(prefs.selected_text_model)
+          setMode(prefs.selected_text_model) // Set active mode to text model
+          console.log('📌 Restored text model:', prefs.selected_text_model)
+        }
+        if (prefs.selected_image_model) {
+          setSelectedImageModel(prefs.selected_image_model)
+          console.log('📌 Restored image model:', prefs.selected_image_model)
+        }
+        if (prefs.selected_video_model) {
+          setSelectedVideoModel(prefs.selected_video_model)
+          console.log('📌 Restored video model:', prefs.selected_video_model)
+        }
+        if (prefs.selected_audio_model) {
+          setSelectedAudioModel(prefs.selected_audio_model)
+          console.log('📌 Restored audio model:', prefs.selected_audio_model)
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching admin preferences:', error)
+    }
+  }
+
+  // Update admin preferences
+  const updateAdminPreferences = async (preferences: any) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const response = await fetch('/api/admin/preferences', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(preferences)
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setAdminPreferences(data.preferences)
+        console.log('✅ Preferences updated')
+      }
+    } catch (error) {
+      console.error('❌ Error updating preferences:', error)
+    }
+  }
+
+  // Check if a model is enabled (for non-admins) or always true for admins
+  const isModelEnabled = (modelKey: string) => {
+    // Admins can see all models regardless of preferences
+    if (isAdmin) return true
+    
+    // If no preferences loaded yet, show all models
+    if (!adminPreferences) return true
+    
+    // Check the specific model preference
+    return adminPreferences[`model_${modelKey}`] !== false
   }
 
   const handleSignOut = async () => {
@@ -387,9 +481,53 @@ Is there anything else I can help you with?`)
     }
   }
 
-  const handleModelChange = (value: string) => {
+  const handleModelChange = async (value: string, modelType: 'text' | 'image' | 'video' | 'audio') => {
     setMode(value)
     console.log("mode:", value)
+    
+    // Update the appropriate model selection state
+    if (modelType === 'text') {
+      setSelectedTextModel(value)
+    } else if (modelType === 'image') {
+      setSelectedImageModel(value)
+    } else if (modelType === 'video') {
+      setSelectedVideoModel(value)
+    } else if (modelType === 'audio') {
+      setSelectedAudioModel(value)
+    }
+    
+    // Save model selection to admin preferences if admin
+    if (isAdmin) {
+      const updatePayload: any = {}
+      
+      if (modelType === 'text') {
+        updatePayload.selected_text_model = value
+      } else if (modelType === 'image') {
+        updatePayload.selected_image_model = value
+      } else if (modelType === 'video') {
+        updatePayload.selected_video_model = value
+      } else if (modelType === 'audio') {
+        updatePayload.selected_audio_model = value
+      }
+      
+      // Save to preferences
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          await fetch('/api/admin/preferences', {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updatePayload)
+          })
+          console.log(`💾 Saved ${modelType} model:`, value)
+        }
+      } catch (error) {
+        console.error('Error saving model selection:', error)
+      }
+    }
   }
 
 
@@ -1461,7 +1599,7 @@ Please provide a ${responseStyle} answer.`
       <div className="animated-grid" />
 
       <div className="relative z-10 flex flex-col min-h-screen p-4 md:p-6 lg:p-8">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <header className="flex flex-row justify-between items-start gap-2 sm:gap-4">
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             {user && (
@@ -1500,8 +1638,8 @@ Please provide a ${responseStyle} answer.`
             )}
           </div>
           
-          {/* Mobile: Stack controls vertically */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
+          {/* Mobile: Keep controls on the right */}
+          <div className="flex flex-col items-end gap-2 sm:gap-3">
             <div className="flex items-center gap-2">
               {isAdmin && (
                 <button
@@ -1527,7 +1665,7 @@ Please provide a ${responseStyle} answer.`
             
             {user && (
               <div className="text-right text-cyan-400 text-xs sm:text-sm">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <Link 
                     href="/credits" 
                     className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer hover:underline"
@@ -1653,18 +1791,18 @@ Please provide a ${responseStyle} answer.`
                 {/* Main Model - Mobile: Full width, Desktop: Left side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">MODEL:</span>
-                  <Select value={mode} onValueChange={handleModelChange}>
+                  <Select value={selectedTextModel} onValueChange={(value) => handleModelChange(value, 'text')}>
                     <SelectTrigger className="w-full sm:w-32 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
-                      <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>
-                      <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>
-                      <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>
-                      <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>
-                      <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>
-                      <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>
-                      <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>
+                      {isModelEnabled('openai') && <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>}
+                      {isModelEnabled('gpt') && <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>}
+                      {isModelEnabled('llama') && <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>}
+                      {isModelEnabled('mistral') && <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>}
+                      {isModelEnabled('custom') && <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>}
+                      {isModelEnabled('rag') && <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>}
+                      {isModelEnabled('web') && <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1672,19 +1810,15 @@ Please provide a ${responseStyle} answer.`
                 {/* Image Mode - Mobile: Full width, Desktop: Right side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <span className="text-purple-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">IMAGE MODE:</span>
-                  <Select value={mode === "blip" || mode === "llava" || mode === "dalle_image" || mode === "runway_image" ? mode : ""} onValueChange={(value) => {
-                    if (value === "blip" || value === "llava" || value === "dalle_image" || value === "runway_image") {
-                      setMode(value)
-                    }
-                  }}>
+                  <Select value={selectedImageModel || ""} onValueChange={(value) => handleModelChange(value, 'image')}>
                     <SelectTrigger className="w-full sm:w-56 h-10 sm:h-8 bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400 focus:border-purple-400 focus:ring-purple-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Image Model" />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
-                      <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One" (BLIP)</SelectItem>
-                      <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos" (LLAVA)</SelectItem>
-                      <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">DALL-E 3</SelectItem>
-                      <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN-4</SelectItem>
+                      {isModelEnabled('blip') && <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One" (BLIP)</SelectItem>}
+                      {isModelEnabled('llava') && <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos" (LLAVA)</SelectItem>}
+                      {isModelEnabled('dalle_image') && <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">DALL-E 3</SelectItem>}
+                      {isModelEnabled('runway_image') && <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN-4</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1692,18 +1826,14 @@ Please provide a ${responseStyle} answer.`
                 {/* Video Mode - Mobile: Full width, Desktop: Right side */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <span className="text-pink-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">VIDEO MODE:</span>
-                  <Select value={isVideoModel ? mode : ""} onValueChange={(value) => {
-                    if (value === "gen4_turbo" || value === "gen3a_turbo" || value === "gen4_aleph") {
-                      setMode(value)
-                    }
-                  }}>
+                  <Select value={selectedVideoModel || ""} onValueChange={(value) => handleModelChange(value, 'video')}>
                     <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400 focus:border-pink-400 focus:ring-pink-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Video Model" />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md">
-                      <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 TURBO</SelectItem>
-                      <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-3A TURBO</SelectItem>
-                      <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH</SelectItem>
+                      {isModelEnabled('gen4_turbo') && <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 TURBO</SelectItem>}
+                      {isModelEnabled('gen3a_turbo') && <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-3A TURBO</SelectItem>}
+                      {isModelEnabled('gen4_aleph') && <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2234,6 +2364,26 @@ Please provide a ${responseStyle} answer.`
               </div>
             </div>
 
+            {/* Audio Model Selector - Admin Only - Below prompt window */}
+            {isAdmin && (
+              <div className="w-full max-w-3xl mt-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                  <span className="text-orange-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">AUDIO MODE:</span>
+                  <Select value={selectedAudioModel || ""} onValueChange={(value) => handleModelChange(value, 'audio')}>
+                    <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-orange-500/50 text-orange-300 hover:border-orange-400 focus:border-orange-400 focus:ring-orange-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue placeholder="Select Audio Model" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-orange-500/50 backdrop-blur-md">
+                      <SelectItem value="elevenlabs" className="text-orange-300 hover:bg-orange-500/20 focus:bg-orange-500/20 font-mono uppercase">ELEVENLABS</SelectItem>
+                      <SelectItem value="google_tts" className="text-orange-300 hover:bg-orange-500/20 focus:bg-orange-500/20 font-mono uppercase">GOOGLE TTS</SelectItem>
+                      <SelectItem value="amazon_polly" className="text-orange-300 hover:bg-orange-500/20 focus:bg-orange-500/20 font-mono uppercase">AMAZON POLLY</SelectItem>
+                      <SelectItem value="openai_tts" className="text-orange-300 hover:bg-orange-500/20 focus:bg-orange-500/20 font-mono uppercase">OPENAI TTS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
             {/* NEW: Document Processing Success Message */}
             {lastProcessedDocument && (
               <div className="w-full max-w-3xl mt-4 p-3 bg-green-900/20 border border-green-500/30 rounded-lg text-green-400 text-sm text-center">
@@ -2346,6 +2496,7 @@ Please provide a ${responseStyle} answer.`
                 )}
               </div>
             )}
+
 
             {/* NEW: Output display */}
             {error && (
