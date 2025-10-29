@@ -4,7 +4,7 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft, Library } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
@@ -28,8 +28,8 @@ export default function AIPromptPage() {
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
-  const isImageGenModel = mode === "dalle_image" || mode === "runway_image"
-  const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph"
+  const isImageGenModel = mode === "dalle_image" || mode === "runway_image" || mode === "gen4_image" || mode === "gen4_image_turbo" || mode === "gemini_2.5_flash" || mode === "gpt-image-1"
+  const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph" || mode === "veo3.1" || mode === "veo3.1_fast" || mode === "veo3"
   
   // Authentication state
   const [user, setUser] = useState<any>(null)
@@ -401,7 +401,7 @@ Is there anything else I can help you with?`)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
-  const [videoRatio, setVideoRatio] = useState<string>('768:1280') // Default to portrait (valid for RunwayML)
+  const [videoRatio, setVideoRatio] = useState<string>('720:1280') // Default to portrait (RunwayML compatible)
   const videoFileInputRef = useRef<HTMLInputElement>(null)
   
   // RunwayML Image Generation state
@@ -424,6 +424,22 @@ Is there anything else I can help you with?`)
     }
     check()
     return () => { cancelled = true }
+  }, [mode])
+
+  // Update video aspect ratio when mode changes to ensure compatibility
+  useEffect(() => {
+    // Set default aspect ratio based on video model
+    if (mode === 'veo3' || mode === 'veo3.1' || mode === 'veo3.1_fast') {
+      // VEO models support: 720:1280, 1280:720, 1080:1920, 1920:1080
+      if (!['720:1280', '1280:720', '1080:1920', '1920:1080'].includes(videoRatio)) {
+        setVideoRatio('720:1280') // Default to portrait for VEO
+      }
+    } else if (mode === 'gen3a_turbo' || mode === 'gen4_turbo' || mode === 'gen4_aleph') {
+      // GEN models support RunwayML's standard ratios
+      if (!['720:1280', '1280:720', '1104:832', '832:1104', '960:960', '1584:672'].includes(videoRatio)) {
+        setVideoRatio('720:1280') // Default to portrait for GEN
+      }
+    }
   }, [mode])
 
   // Initialize voice recognition
@@ -722,8 +738,11 @@ Is there anything else I can help you with?`)
       // Set the video image
       setVideoImage(file)
       
-      // Switch to video mode (gen4_turbo as default)
-      setMode('gen4_turbo')
+      // Switch to video mode - use current video model if already selected, otherwise default to gen4_turbo
+      const isCurrentlyVideoModel = ['gen4_turbo', 'gen3a_turbo', 'veo3.1', 'veo3.1_fast', 'veo3', 'gen4_aleph'].includes(mode)
+      if (!isCurrentlyVideoModel) {
+        setMode('gen4_turbo')
+      }
       
       // Set a helpful prompt
       setPrompt('Add motion and animation to this image')
@@ -946,11 +965,14 @@ Is there anything else I can help you with?`)
   }
 
   // Video generation handler
-  const handleGenerateImage = async () => {
+  const handleGenerateImage = async (forcedMode?: string) => {
     if (!prompt.trim()) {
       setError('Please enter a prompt for image generation')
       return
     }
+    
+    // Use forced mode if provided, otherwise use current mode
+    const activeMode = forcedMode || mode
 
     // Check authentication
     if (!user) {
@@ -969,8 +991,16 @@ Is there anything else I can help you with?`)
         throw new Error('No active session')
       }
 
-      // Check credits - DALL-E costs 13 credits, RunwayML costs 16 credits
-      const requiredCredits = mode === 'dalle_image' ? 13 : 16
+      // Check credits - Image generation with 60% markup on API costs
+      const imageCredits: Record<string, number> = {
+        'dalle_image': 40,           // OpenAI: ~$0.04 + 60% markup
+        'gpt-image-1': 40,           // OpenAI: ~$0.04 + 60% markup
+        'gen4_image': 8,             // RunwayML: 5 credits + 60% markup
+        'gen4_image_turbo': 3,       // RunwayML: 2 credits + 60% markup
+        'gemini_2.5_flash': 8,       // RunwayML: 5 credits + 60% markup
+        'runway_image': 8            // RunwayML: 5 credits + 60% markup (legacy)
+      }
+      const requiredCredits = imageCredits[activeMode] || 8 // Default to gen4_image pricing
       const creditResponse = await fetch('/api/credits/check', {
         method: 'POST',
         headers: {
@@ -985,15 +1015,49 @@ Is there anything else I can help you with?`)
 
       const creditData = await creditResponse.json()
       if (!creditData.success) {
-        setError(creditData.message || `Insufficient credits. Image generation costs ${requiredCredits} credits.`)
+        // Admin sees API costs, regular users don't
+        const adminCostInfo = isAdmin ? ` (API: ${
+          activeMode === 'dalle_image' ? 'OpenAI ~$0.04' :
+          activeMode === 'gpt-image-1' ? 'OpenAI ~$0.04' :
+          activeMode === 'gen4_image' ? 'RunwayML 5 credits/720p, 8 credits/1080p' :
+          activeMode === 'gen4_image_turbo' ? 'RunwayML 2 credits' :
+          activeMode === 'gemini_2.5_flash' ? 'RunwayML 5 credits' :
+          'RunwayML ~5 credits'
+        })` : ''
+        setError(creditData.message || `Insufficient credits. Image generation costs ${requiredCredits} INFINITO credits${adminCostInfo}.`)
         return
       }
 
-      setUserCredits(creditData.credits)
+      // Update credits and refresh from database to ensure accuracy
+      if (creditData.credits !== undefined) {
+        setUserCredits(creditData.credits)
+      }
+      // Also refresh credits after a short delay to ensure we have the latest
+      setTimeout(() => fetchUserCredits(), 500)
 
       // Determine which API to use
-      const apiEndpoint = mode === 'dalle_image' ? '/api/dalle-image' : '/api/runway-image'
-      const modelName = mode === 'dalle_image' ? 'DALL-E 3' : 'RunwayML Gen-4'
+      let apiEndpoint = '/api/runway-image' // Default to RunwayML
+      let modelName = 'RunwayML'
+      
+      if (activeMode === 'dalle_image') {
+        apiEndpoint = '/api/dalle-image'
+        modelName = 'DALL-E 3'
+      } else if (activeMode === 'gpt-image-1') {
+        apiEndpoint = '/api/dalle-image'
+        modelName = 'GPT Image 1'
+      } else if (activeMode === 'gen4_image') {
+        apiEndpoint = '/api/runway-image'
+        modelName = 'RunwayML Gen4 Image'
+      } else if (activeMode === 'gen4_image_turbo') {
+        apiEndpoint = '/api/runway-image'
+        modelName = 'RunwayML Gen4 Image Turbo'
+      } else if (activeMode === 'gemini_2.5_flash') {
+        apiEndpoint = '/api/runway-image'
+        modelName = 'Gemini 2.5 Flash'
+      } else if (activeMode === 'runway_image') {
+        apiEndpoint = '/api/runway-image'
+        modelName = 'RunwayML Gen-4 (Legacy)'
+      }
       
       setImageGenerationProgress(`Sending request to ${modelName}...`)
 
@@ -1005,6 +1069,7 @@ Is there anything else I can help you with?`)
         },
         body: JSON.stringify({
           prompt: prompt,
+          model: activeMode, // Pass the active model name to the API
         }),
       })
 
@@ -1036,18 +1101,27 @@ Is there anything else I can help you with?`)
 
   // Helper function to handle video generation with a specific model
   const handleGenerateVideoWithModel = async (videoModel: string) => {
+    console.log('🎬 handleGenerateVideoWithModel called with model:', videoModel)
+    console.log('📝 Current prompt:', prompt)
+    console.log('🖼️ Has videoImage:', !!videoImage)
+    console.log('⚙️ Current settings:', { videoDuration, videoRatio })
+    
     const modelToUse = videoModel
     
     if (!prompt.trim()) {
+      console.log('❌ ERROR: Prompt is empty')
       setError('Please enter a prompt for video generation')
       return
     }
 
     // Check if model requires an image
     if ((modelToUse === 'gen4_turbo' || modelToUse === 'gen3a_turbo') && !videoImage) {
+      console.log('❌ ERROR: Model requires image but no image provided')
       setError(`${modelToUse} requires an image input`)
       return
     }
+    
+    console.log('✅ Validation passed, proceeding with video generation...')
 
     // Check authentication
     if (!user) {
@@ -1066,7 +1140,17 @@ Is there anything else I can help you with?`)
         throw new Error('No active session')
       }
 
-      // Check credits (video generation costs 26 credits - 60% markup on API cost)
+      // Check credits (video generation - 60% markup on RunwayML API cost)
+      const videoCredits: Record<string, number> = {
+        'gen4_turbo': 40,        // RunwayML: 25 credits + 60% markup
+        'gen3a_turbo': 80,       // RunwayML: 50 credits + 60% markup
+        'veo3.1': 320,           // RunwayML: 200 credits + 60% markup
+        'veo3.1_fast': 160,      // RunwayML: 100 credits + 60% markup
+        'veo3': 512,             // RunwayML: 320 credits (8s) + 60% markup
+        'gen4_aleph': 120        // RunwayML: 75 credits + 60% markup
+      }
+      const requiredCredits = videoCredits[modelToUse] || 40 // Default to gen4_turbo pricing
+      
       const creditResponse = await fetch('/api/credits/check', {
         method: 'POST',
         headers: {
@@ -1074,18 +1158,23 @@ Is there anything else I can help you with?`)
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          requiredCredits: 26,
+          requiredCredits: requiredCredits,
           operation: 'check_and_deduct'
         })
       })
 
       const creditData = await creditResponse.json()
       if (!creditData.success) {
-        setError(creditData.message || 'Insufficient credits. Video generation costs 26 credits.')
+        setError(creditData.message || `Insufficient credits. Video generation costs ${requiredCredits} INFINITO credits.`)
         return
       }
 
-      setUserCredits(creditData.credits)
+      // Update credits and refresh from database to ensure accuracy
+      if (creditData.credits !== undefined) {
+        setUserCredits(creditData.credits)
+      }
+      // Also refresh credits after a short delay to ensure we have the latest
+      setTimeout(() => fetchUserCredits(), 500)
 
       // Prepare form data
       const formData = new FormData()
@@ -1108,7 +1197,19 @@ Is there anything else I can help you with?`)
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Video generation failed')
+        
+        // Update credit balance if refund occurred
+        if (errorData.refunded && errorData.newBalance !== undefined) {
+          setUserCredits(errorData.newBalance)
+          console.log(`✅ Credits refunded. New balance: ${errorData.newBalance}`)
+        }
+        
+        // Show refund message in error
+        const refundMessage = errorData.refunded 
+          ? ` Your ${requiredCredits} INFINITO credits have been refunded.` 
+          : ''
+        
+        throw new Error((errorData.error || 'Video generation failed') + refundMessage)
       }
 
       const data = await response.json()
@@ -1141,16 +1242,23 @@ Is there anything else I can help you with?`)
 
   // NEW: Handle TRANSMIT button click
   async function handleTransmit() {
-    console.log('handleTransmit called, prompt:', prompt, 'isVideoModel:', isVideoModel, 'isGeneratingVideo:', isGeneratingVideo)
+    console.log('🚀 handleTransmit called')
+    console.log('📝 Prompt:', prompt)
+    console.log('🎬 isVideoModel:', isVideoModel)
+    console.log('🎯 selectedVideoModel:', selectedVideoModel)
+    console.log('📊 Current mode:', mode)
+    console.log('🔄 isGeneratingVideo:', isGeneratingVideo)
+    console.log('⏳ loading:', loading)
+    
     if (!prompt.trim()) {
-      console.log('Prompt is empty, returning')
+      console.log('❌ Prompt is empty, returning')
       return
     }
     
-    // Handle video generation mode
-    if (isVideoModel) {
-      console.log('In video mode, calling handleGenerateVideo')
-      await handleGenerateVideo()
+    // Handle video generation mode - if we're already in video mode (panel is showing), generate!
+    if (isVideoModel && mode) {
+      console.log('✅ Video mode active, calling handleGenerateVideo with mode:', mode)
+      await handleGenerateVideoWithModel(mode)
       return
     }
     
@@ -1160,35 +1268,32 @@ Is there anything else I can help you with?`)
       return
     }
     
-    // Smart video detection - if user has an image loaded and asks for video
-    const videoKeywords = ['video', 'animate', 'animation', 'make it move', 'bring to life', 'make it come alive', 'generate video', 'create video', 'turn into video', 'video from', 'motion', 'come to life']
-    const wantsVideo = videoImage && videoKeywords.some(keyword => 
-      prompt.toLowerCase().includes(keyword.toLowerCase())
-    )
-    
-    if (wantsVideo && selectedVideoModel) {
-      // User wants to create video from the loaded image
-      // Switch to video mode to show the video generation panel
-      setMode(selectedVideoModel)
-      setOutput('✅ Ready to generate video! Please review the video settings below (duration, aspect ratio) and click the "GENERATE VIDEO" button.')
-      return
-    }
-    
-    // Auto-detect image generation requests in text prompts
+    // Auto-detect image generation requests in text prompts FIRST (before video defaults)
     // Check if user is asking for image generation
-    const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize', 'illustration', 'painting', 'sketch', 'artwork']
+    const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize', 'illustration', 'painting', 'sketch', 'artwork', 'cover art', 'album art', 'album cover', 'poster', 'banner', 'thumbnail', 'art']
     const wantsImage = prompt.length < 500 && imageKeywords.some(keyword => 
       prompt.toLowerCase().includes(keyword.toLowerCase())
     )
     
     // If user wants an image and has selected an image model, use it
-    if (wantsImage && selectedImageModel && (selectedImageModel === 'dalle_image' || selectedImageModel === 'runway_image')) {
-      // Temporarily switch to image generation mode
-      const originalMode = mode
-      setMode(selectedImageModel)
-      await handleGenerateImage()
-      // Switch back to original mode after generation
-      setMode(originalMode)
+    const imageGenModels = ['dalle_image', 'gpt-image-1', 'runway_image', 'gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']
+    if (wantsImage && selectedImageModel && imageGenModels.includes(selectedImageModel)) {
+      // Pass the selected model directly to avoid async state update issues
+      await handleGenerateImage(selectedImageModel)
+      return
+    }
+    
+    // Smart video detection - only trigger video if user explicitly asks for it
+    const videoKeywords = ['video', 'animate', 'animation', 'make it move', 'bring to life', 'make it come alive', 'generate video', 'create video', 'turn into video', 'video from', 'motion', 'come to life', 'video of', 'show me a video']
+    const wantsVideo = videoKeywords.some(keyword => 
+      prompt.toLowerCase().includes(keyword.toLowerCase())
+    )
+    
+    if (wantsVideo && selectedVideoModel) {
+      console.log('🎬 User explicitly wants video:', selectedVideoModel)
+      // Switch to video mode to show the video generation panel
+      setMode(selectedVideoModel)
+      setOutput(`✅ Ready to generate video with ${selectedVideoModel.toUpperCase()}! Please review the video settings below (duration, aspect ratio) and click "GENERATE VIDEO".`)
       return
     }
     
@@ -1225,7 +1330,25 @@ Is there anything else I can help you with?`)
         return
       }
       
-      const requiredCredits = isVisionModel ? 3 : 1 // Vision models cost more
+      // Text model credits with 60% markup on OpenAI API costs
+      const textCredits: Record<string, number> = {
+        'gpt-4o': 5,                // OpenAI: ~$0.003/msg + 60% markup
+        'gpt-4o-mini': 1,           // OpenAI: ~$0.0002/msg + 60% markup
+        'gpt-4-turbo': 18,          // OpenAI: ~$0.011/msg + 60% markup
+        'gpt-4': 43,                // OpenAI: ~$0.027/msg + 60% markup
+        'gpt-3.5-turbo': 1,         // OpenAI: ~$0.0006/msg + 60% markup
+        'o1': 32,                   // OpenAI: ~$0.020/msg + 60% markup
+        'o1-mini': 6,               // OpenAI: ~$0.004/msg + 60% markup
+        'o1-preview': 32,           // OpenAI: ~$0.020/msg + 60% markup
+        'openai': 1,                // Legacy: maps to gpt-3.5-turbo
+        'gpt': 43,                  // Legacy: maps to gpt-4
+        'blip': 0,                  // FREE (local vision model)
+        'llava': 0,                 // FREE (local vision model)
+        'llama': 0,                 // FREE (local model)
+        'mistral': 0,               // FREE (local model)
+        'custom': 0                 // FREE (local custom model)
+      }
+      const requiredCredits = textCredits[mode] || 1 // Default to 1 credit
       
       const creditResponse = await fetch('/api/credits/check', {
         method: 'POST',
@@ -1710,13 +1833,22 @@ Please provide a ${responseStyle} answer.`
           {/* Mobile: Stack navigation vertically */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             {user && (
-              <Link
-                href="/memory-core"
-                className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-              >
-                <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="hidden sm:inline text-sm">Memory Core</span>
-              </Link>
+              <>
+                <Link
+                  href="/library"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                >
+                  <Library className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline text-sm">Library</span>
+                </Link>
+                <Link
+                  href="/memory-core"
+                  className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
+                >
+                  <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline text-sm">Memory</span>
+                </Link>
+              </>
             )}
             {user ? (
               <>
@@ -1902,14 +2034,27 @@ Please provide a ${responseStyle} answer.`
                     <SelectTrigger className="w-full sm:w-32 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md">
-                      {isModelEnabled('openai') && <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO</SelectItem>}
-                      {isModelEnabled('gpt') && <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT</SelectItem>}
-                      {isModelEnabled('llama') && <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr</SelectItem>}
-                      {isModelEnabled('mistral') && <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro</SelectItem>}
-                      {isModelEnabled('custom') && <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom</SelectItem>}
-                      {isModelEnabled('rag') && <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG</SelectItem>}
-                      {isModelEnabled('web') && <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB</SelectItem>}
+                    <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md max-h-[400px] overflow-y-auto">
+                      {/* OpenAI GPT Models */}
+                      {isModelEnabled('gpt-4o') && <SelectItem value="gpt-4o" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT-4O {isAdmin && '- $0.00625/msg'}</SelectItem>}
+                      {isModelEnabled('gpt-4o-mini') && <SelectItem value="gpt-4o-mini" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT-4O MINI {isAdmin && '- $0.000375/msg'}</SelectItem>}
+                      {isModelEnabled('gpt-4-turbo') && <SelectItem value="gpt-4-turbo" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT-4 TURBO {isAdmin && '- $0.01125/msg'}</SelectItem>}
+                      {isModelEnabled('gpt-4') && <SelectItem value="gpt-4" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT-4 {isAdmin && '- $0.0675/msg'}</SelectItem>}
+                      {isModelEnabled('gpt-3.5-turbo') && <SelectItem value="gpt-3.5-turbo" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT-3.5 TURBO {isAdmin && '- $0.000375/msg'}</SelectItem>}
+                      {/* OpenAI Reasoning Models */}
+                      {isModelEnabled('o1') && <SelectItem value="o1" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">O1 (REASONING) {isAdmin && '- $0.0375/msg'}</SelectItem>}
+                      {isModelEnabled('o1-mini') && <SelectItem value="o1-mini" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">O1-MINI {isAdmin && '- $0.00275/msg'}</SelectItem>}
+                      {isModelEnabled('o1-preview') && <SelectItem value="o1-preview" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">O1-PREVIEW {isAdmin && '- $0.0375/msg'}</SelectItem>}
+                      {/* Legacy shortcuts (for backward compatibility) */}
+                      {isModelEnabled('openai') && <SelectItem value="openai" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">AiO (GPT-3.5) {isAdmin && '- $0.000375/msg'}</SelectItem>}
+                      {isModelEnabled('gpt') && <SelectItem value="gpt" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">GPT (GPT-4) {isAdmin && '- $0.0675/msg'}</SelectItem>}
+                      {/* Local Models */}
+                      {isModelEnabled('llama') && <SelectItem value="llama" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Zephyr {isAdmin && '- FREE'}</SelectItem>}
+                      {isModelEnabled('mistral') && <SelectItem value="mistral" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Maestro {isAdmin && '- FREE'}</SelectItem>}
+                      {isModelEnabled('custom') && <SelectItem value="custom" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">Custom {isAdmin && '- FREE'}</SelectItem>}
+                      {/* Enhanced Modes */}
+                      {isModelEnabled('rag') && <SelectItem value="rag" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">RAG {isAdmin && '- varies'}</SelectItem>}
+                      {isModelEnabled('web') && <SelectItem value="web" className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono uppercase">WEB {isAdmin && '- varies'}</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1922,10 +2067,14 @@ Please provide a ${responseStyle} answer.`
                       <SelectValue placeholder="Select Image Model" />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
-                      {isModelEnabled('blip') && <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One" (BLIP)</SelectItem>}
-                      {isModelEnabled('llava') && <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos" (LLAVA)</SelectItem>}
-                      {isModelEnabled('dalle_image') && <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">DALL-E 3</SelectItem>}
-                      {isModelEnabled('runway_image') && <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN-4</SelectItem>}
+                      {isModelEnabled('blip') && <SelectItem value="blip" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"One" (BLIP) {isAdmin && '- FREE'}</SelectItem>}
+                      {isModelEnabled('llava') && <SelectItem value="llava" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">"Dos" (LLAVA) {isAdmin && '- FREE'}</SelectItem>}
+                      {isModelEnabled('dalle_image') && <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">DALL-E 3 {isAdmin && '- $0.04/img'}</SelectItem>}
+                      {isModelEnabled('gpt-image-1') && <SelectItem value="gpt-image-1" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">GPT IMAGE 1 {isAdmin && '- $0.04/img'}</SelectItem>}
+                      {isModelEnabled('gen4_image') && <SelectItem value="gen4_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN4 IMAGE {isAdmin && '- 5cr/img'}</SelectItem>}
+                      {isModelEnabled('gen4_image_turbo') && <SelectItem value="gen4_image_turbo" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN4 IMAGE TURBO {isAdmin && '- 2cr/img'}</SelectItem>}
+                      {isModelEnabled('gemini_2.5_flash') && <SelectItem value="gemini_2.5_flash" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">GEMINI 2.5 FLASH {isAdmin && '- 5cr/img'}</SelectItem>}
+                      {isModelEnabled('runway_image') && <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20 focus:bg-purple-500/20 font-mono uppercase">RUNWAY GEN-4 (LEGACY) {isAdmin && '- 5cr/img'}</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1937,17 +2086,62 @@ Please provide a ${responseStyle} answer.`
                     <SelectTrigger className="w-full sm:w-48 h-10 sm:h-8 bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400 focus:border-pink-400 focus:ring-pink-400/50 text-sm font-mono uppercase tracking-wider">
                       <SelectValue placeholder="Select Video Model" />
                     </SelectTrigger>
-                    <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md">
-                      {isModelEnabled('gen4_turbo') && <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 TURBO</SelectItem>}
-                      {isModelEnabled('gen3a_turbo') && <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-3A TURBO</SelectItem>}
-                      {isModelEnabled('gen4_aleph') && <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH</SelectItem>}
+                    <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                      {/* Image to Video Only Models */}
+                      {isModelEnabled('gen4_turbo') && <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 TURBO (I2V) {isAdmin && '- 2.5cr/s'}</SelectItem>}
+                      {isModelEnabled('gen3a_turbo') && <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-3A TURBO (I2V) {isAdmin && '- 5cr/s'}</SelectItem>}
+                      {/* Text-to-Video + Image-to-Video Models */}
+                      {isModelEnabled('veo3.1') && <SelectItem value="veo3.1" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">VEO 3.1 (T2V/I2V) {isAdmin && '- 20cr/s'}</SelectItem>}
+                      {isModelEnabled('veo3.1_fast') && <SelectItem value="veo3.1_fast" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">VEO 3.1 FAST (T2V/I2V) {isAdmin && '- 10cr/s'}</SelectItem>}
+                      {isModelEnabled('veo3') && <SelectItem value="veo3" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">VEO 3 (T2V/I2V) {isAdmin && '- 32cr/s'}</SelectItem>}
+                      {/* Video to Video Model */}
+                      {isModelEnabled('gen4_aleph') && <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH (V2V) {isAdmin && '- 7.5cr/s'}</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
             )}
 
-
+            {/* Admin-Only Cost Info Panel */}
+            {isAdmin && (selectedImageModel || selectedVideoModel) && (
+              <div className="w-full max-w-3xl mb-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-md">
+                <p className="text-yellow-300 text-xs font-mono">
+                  <span className="font-bold">💰 ADMIN COST INFO:</span>
+                  {selectedImageModel && (
+                    <span className="ml-2">
+                      Image: {selectedImageModel === 'dalle_image' ? '40 INFINITO (OpenAI: ~$0.04 + 60%)' :
+                             selectedImageModel === 'gpt-image-1' ? '40 INFINITO (OpenAI: ~$0.04 + 60%)' :
+                             selectedImageModel === 'gen4_image' ? '8 INFINITO (RunwayML: 5 credits + 60%)' :
+                             selectedImageModel === 'gen4_image_turbo' ? '3 INFINITO (RunwayML: 2 credits + 60%)' :
+                             selectedImageModel === 'gemini_2.5_flash' ? '8 INFINITO (RunwayML: 5 credits + 60%)' :
+                             selectedImageModel === 'blip' || selectedImageModel === 'llava' ? 'FREE (Local)' :
+                             '8 INFINITO (RunwayML: ~5 credits + 60%)'}
+                    </span>
+                  )}
+                  {selectedVideoModel && (
+                    <span className="ml-2">
+                      Video: {
+                        selectedVideoModel === 'gen4_turbo' ? '40' :
+                        selectedVideoModel === 'gen3a_turbo' ? '80' :
+                        selectedVideoModel === 'veo3.1' ? '320' :
+                        selectedVideoModel === 'veo3.1_fast' ? '160' :
+                        selectedVideoModel === 'veo3' ? '512' :
+                        selectedVideoModel === 'gen4_aleph' ? '120' :
+                        '40'
+                      } INFINITO (RunwayML: {
+                        selectedVideoModel === 'gen4_turbo' ? '25' :
+                        selectedVideoModel === 'gen3a_turbo' ? '50' :
+                        selectedVideoModel === 'veo3.1' ? '200' :
+                        selectedVideoModel === 'veo3.1_fast' ? '100' :
+                        selectedVideoModel === 'veo3' ? '320' :
+                        selectedVideoModel === 'gen4_aleph' ? '75' :
+                        '25'
+                      } credits + 60%)
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
 
             {/* NEW: Drag and Drop Zone */}
             <div 
@@ -2228,8 +2422,27 @@ Please provide a ${responseStyle} answer.`
                           onChange={(e) => setVideoRatio(e.target.value)}
                           className="w-full bg-black/30 border border-pink-500/30 rounded px-2 py-1 text-pink-300 text-sm"
                         >
-                          <option value="768:1280">Portrait (768:1280)</option>
-                          <option value="1280:768">Landscape (1280:768)</option>
+                          {/* GEN-3A, GEN-4 TURBO, and GEN-4 ALEPH options */}
+                          {(mode === 'gen3a_turbo' || mode === 'gen4_turbo' || mode === 'gen4_aleph') && (
+                            <>
+                              <option value="720:1280">Portrait (720:1280)</option>
+                              <option value="1280:720">Landscape (1280:720)</option>
+                              <option value="1104:832">Horizontal (1104:832)</option>
+                              <option value="832:1104">Vertical (832:1104)</option>
+                              <option value="960:960">Square (960:960)</option>
+                              <option value="1584:672">Ultra-wide (1584:672)</option>
+                            </>
+                          )}
+                          
+                          {/* VEO models options (text-to-video and image-to-video) */}
+                          {(mode === 'veo3' || mode === 'veo3.1' || mode === 'veo3.1_fast') && (
+                            <>
+                              <option value="720:1280">Portrait (720:1280)</option>
+                              <option value="1280:720">Landscape (1280:720)</option>
+                              <option value="1080:1920">Vertical HD (1080:1920)</option>
+                              <option value="1920:1080">Horizontal HD (1920:1080)</option>
+                            </>
+                          )}
                         </select>
                       </div>
                     </div>
@@ -2322,7 +2535,28 @@ Please provide a ${responseStyle} answer.`
 
 
                     <p className="text-pink-300 text-xs mt-2">
-                      💰 Cost: 26 credits per video
+                      💰 Cost: {
+                        mode === 'gen4_turbo' ? '40' :
+                        mode === 'gen3a_turbo' ? '80' :
+                        mode === 'veo3.1' ? '320' :
+                        mode === 'veo3.1_fast' ? '160' :
+                        mode === 'veo3' ? '512' :
+                        mode === 'gen4_aleph' ? '120' :
+                        '40'
+                      } INFINITO credits
+                      {isAdmin && mode && (
+                        <span className="ml-2 text-yellow-300">
+                          (RunwayML: {
+                            mode === 'gen4_turbo' ? '25' :
+                            mode === 'gen3a_turbo' ? '50' :
+                            mode === 'veo3.1' ? '200' :
+                            mode === 'veo3.1_fast' ? '100' :
+                            mode === 'veo3' ? '320' :
+                            mode === 'gen4_aleph' ? '75' :
+                            '25'
+                          } credits + 60% markup)
+                        </span>
+                      )}
                     </p>
                   </div>
                 )}
@@ -2704,17 +2938,25 @@ Please provide a ${responseStyle} answer.`
                 model={mode}
                 onShowMore={async (topic: string) => {
                   // Make a follow-up API call asking for more details
-                  const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
+                  const followUpPrompt = `Expand on this topic: "${topic}"
 
-IMPORTANT: Format your response with clear paragraphs. Each paragraph should be separated by a blank line (double line break). For example:
+CRITICAL FORMATTING RULE: You MUST separate each paragraph with TWO line breaks (press Enter twice between paragraphs).
 
-Paragraph 1 content here.
+Write exactly 3-4 paragraphs:
 
-Paragraph 2 content here.
+Paragraph 1: Main historical or foundational information (3-5 sentences)
 
-Paragraph 3 content here.
+Paragraph 2: Evolution, development, or key details (3-5 sentences)
 
-Make sure to use proper spacing between paragraphs for readability.`
+Paragraph 3: Modern practices, traditions, or examples (3-5 sentences)
+
+Paragraph 4 (optional): Cultural impact, fun facts, or conclusion (2-4 sentences)
+
+IMPORTANT: 
+- Use TWO line breaks between paragraphs
+- Keep each paragraph concise (3-5 sentences)
+- Write in a natural, conversational tone
+- NO bullet points, NO numbered lists, NO code blocks`
                   
                   const payload = JSON.stringify({
                     prompt: followUpPrompt,
