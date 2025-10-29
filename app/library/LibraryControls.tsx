@@ -103,6 +103,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
     
     const imageMatch = previewItem.output?.match(/\[IMAGE_DISPLAY:(.*?)\]/);
     const videoMatch = previewItem.output?.match(/\[VIDEO_DISPLAY:(.*?)\]/);
+    const audioMatch = previewItem.output?.match(/\[AUDIO_DISPLAY:(.*?)\]/);
     
     try {
       if (imageMatch) {
@@ -114,6 +115,17 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
         const a = document.createElement('a');
         a.href = url;
         a.download = `infinito-video-${Date.now()}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else if (audioMatch) {
+        const response = await fetch(audioMatch[1]);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `infinito-audio-${Date.now()}.mp3`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -181,62 +193,12 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
   return (
     <div className="space-y-4">
       {/* Controls */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-9">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <input
           placeholder="Search prompt/output…"
           className="px-3 py-2 rounded-xl bg-neutral-900 outline-none sm:col-span-2 lg:col-span-3 text-white"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-        />
-        <input
-          placeholder="Model"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-        />
-        <input
-          placeholder="Temp min"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={tmin}
-          onChange={(e) => setTmin(e.target.value)}
-        />
-        <input
-          placeholder="Temp max"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={tmax}
-          onChange={(e) => setTmax(e.target.value)}
-        />
-        <input
-          placeholder="TopK min"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={kmin}
-          onChange={(e) => setKmin(e.target.value)}
-        />
-        <input
-          placeholder="TopK max"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={kmax}
-          onChange={(e) => setKmax(e.target.value)}
-        />
-        <input
-          type="date"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          placeholder="From date"
-        />
-        <input
-          type="date"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          placeholder="To date"
-        />
-        <input
-          placeholder="Tag (exact)"
-          className="px-3 py-2 rounded-xl bg-neutral-900 outline-none text-white"
-          value={tag}
-          onChange={(e) => setTag(e.target.value)}
         />
       </div>
 
@@ -297,9 +259,9 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                   }}
                 />
               </th>
-              <th className="text-left p-2 sm:p-3">Prompt</th>
               <th className="text-left p-2 sm:p-3">Output</th>
               <th className="text-left p-2 sm:p-3">Time</th>
+              <th className="text-left p-2 sm:p-3">Prompt</th>
               <th className="text-left p-2 sm:p-3 hidden md:table-cell">Tags</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Notes</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Model</th>
@@ -318,27 +280,27 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                     aria-label={`select ${r.id}`}
                   />
                 </td>
-                <td className="p-2 sm:p-3 max-w-[200px] sm:max-w-[320px]">{t(r.prompt, 120)}</td>
-                <td className="p-2 sm:p-3 max-w-[200px] sm:max-w-[420px] text-neutral-300">
+                <td className="p-2 sm:p-3 max-w-[300px] sm:max-w-[500px] text-neutral-300">
                   {(() => {
                     // Check if output contains media display tags
                     const imageMatch = r.output?.match(/\[IMAGE_DISPLAY:(.*?)\]/);
                     const videoMatch = r.output?.match(/\[VIDEO_DISPLAY:(.*?)\]/);
+                    const audioMatch = r.output?.match(/\[AUDIO_DISPLAY:(.*?)\]/);
                     
                     if (imageMatch) {
                       const imageUrl = imageMatch[1];
                       return (
                         <button 
                           onClick={() => handlePreview(r)}
-                          className="flex items-center gap-1 sm:gap-2 hover:opacity-80 cursor-pointer"
+                          className="flex items-center gap-2 sm:gap-3 hover:opacity-80 cursor-pointer"
                         >
                           <img 
                             src={imageUrl} 
                             alt="Generated" 
-                            className="w-10 h-10 sm:w-16 sm:h-16 object-cover rounded border border-cyan-500/30"
+                            className="w-16 h-16 sm:w-24 sm:h-24 object-cover rounded border border-cyan-500/30"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
                           />
-                          <span className="text-cyan-400 text-xs">🖼️</span>
+                          <span className="text-cyan-400 text-sm">🖼️</span>
                         </button>
                       );
                     } else if (videoMatch) {
@@ -346,18 +308,45 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                       return (
                         <button 
                           onClick={() => handlePreview(r)}
-                          className="flex items-center gap-1 sm:gap-2 hover:opacity-80 cursor-pointer"
+                          className="flex items-center gap-2 sm:gap-3 hover:opacity-80 cursor-pointer"
                         >
                           <video 
                             src={videoUrl} 
-                            className="w-10 h-10 sm:w-16 sm:h-16 object-cover rounded border border-pink-500/30"
+                            className="w-16 h-16 sm:w-24 sm:h-24 object-cover rounded border border-pink-500/30"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
                           />
-                          <span className="text-pink-400 text-xs">🎬</span>
+                          <span className="text-pink-400 text-sm">🎬</span>
                         </button>
                       );
+                    } else if (audioMatch) {
+                      const audioUrl = audioMatch[1];
+                      return (
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <button 
+                            onClick={() => handlePreview(r)}
+                            className="hover:opacity-80 cursor-pointer"
+                          >
+                            <div className="w-16 h-16 sm:w-24 sm:h-24 bg-green-500/20 rounded border border-green-500/30 flex items-center justify-center">
+                              <span className="text-green-400 text-2xl">🎵</span>
+                            </div>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const audio = new Audio(audioUrl);
+                              audio.play().catch(console.error);
+                            }}
+                            className="w-8 h-8 sm:w-10 sm:h-10 bg-green-600 hover:bg-green-700 rounded-full flex items-center justify-center transition-colors"
+                            title="Play audio"
+                          >
+                            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z"/>
+                            </svg>
+                          </button>
+                        </div>
+                      );
                     } else {
-                      return t(r.output, 180);
+                      return t(r.output, 200);
                     }
                   })()}
                 </td>
@@ -374,6 +363,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                     })}
                   </button>
                 </td>
+                <td className="p-2 sm:p-3 max-w-[200px] sm:max-w-[320px]">{t(r.prompt, 120)}</td>
                 <td className="p-2 sm:p-3 max-w-[220px] hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {(r.tags ?? []).map(t => (
@@ -466,6 +456,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
               {(() => {
                 const imageMatch = previewItem.output?.match(/\[IMAGE_DISPLAY:(.*?)\]/);
                 const videoMatch = previewItem.output?.match(/\[VIDEO_DISPLAY:(.*?)\]/);
+                const audioMatch = previewItem.output?.match(/\[AUDIO_DISPLAY:(.*?)\]/);
                 
                 if (imageMatch) {
                   return (
@@ -487,6 +478,20 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                       Your browser does not support the video tag.
                     </video>
                   );
+                } else if (audioMatch) {
+                  return (
+                    <div className="w-full flex flex-col items-center justify-center py-8 bg-green-500/10 rounded-lg border border-green-500/30">
+                      <div className="text-green-400 text-6xl mb-4">🎵</div>
+                      <audio 
+                        src={audioMatch[1]} 
+                        controls
+                        className="w-full max-w-md"
+                      >
+                        Your browser does not support the audio tag.
+                      </audio>
+                      <p className="text-gray-400 text-sm mt-2">Click play to listen to the generated audio</p>
+                    </div>
+                  );
                 } else {
                   return (
                     <pre className="text-gray-300 whitespace-pre-wrap">{previewItem.output}</pre>
@@ -495,11 +500,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
               })()}
 
               {/* Metadata */}
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 text-xs sm:text-sm">
-                <div>
-                  <div className="text-cyan-400 text-xs">Model</div>
-                  <div className="text-white break-words">{previewItem.model || 'N/A'}</div>
-                </div>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 text-xs sm:text-sm">
                 <div>
                   <div className="text-cyan-400 text-xs">Date</div>
                   <div className="text-white text-xs sm:text-sm">{new Date(previewItem.created_at).toLocaleString()}</div>

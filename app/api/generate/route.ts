@@ -293,7 +293,7 @@ export async function POST(req: Request) {
                       "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                      model: "gpt-4",
+                      model: m === "openai" ? "gpt-3.5-turbo" : m === "gpt" ? "gpt-4" : m,
                       messages: [
                         {
                           role: "system",
@@ -326,6 +326,14 @@ export async function POST(req: Request) {
           }
           break;
         case "gpt":
+        case "gpt-4o":
+        case "gpt-4o-mini":
+        case "gpt-4-turbo":
+        case "gpt-4":
+        case "gpt-3.5-turbo":
+        case "o1":
+        case "o1-mini":
+        case "o1-preview":
         default:       
           if (response_style === "concise") {
             output = `A table in web development is an HTML structure used to organize data into rows and columns for clear presentation on the web page. Tables are fundamental HTML elements that allow developers to present data in an organized, tabular format. They're commonly used for displaying information like pricing, schedules, statistics, and any data that benefits from row and column organization. HTML tables use tags like <table>, <tr>, <td>, and <th> to create the structure. While tables were originally designed for tabular data, they're also used for layout purposes, though CSS Grid and Flexbox are now preferred for modern layouts. Tables provide a clean, organized way to present complex information that users can easily scan and understand.`;

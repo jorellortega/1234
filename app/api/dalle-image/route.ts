@@ -54,11 +54,22 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json()
-    const { prompt } = body
+    const { prompt, model } = body
 
     if (!prompt) {
       return NextResponse.json(
         { error: 'Prompt is required' },
+        { status: 400 }
+      )
+    }
+
+    // Determine which OpenAI image model to use
+    const imageModel = model || 'dall-e-3' // Default to DALL-E 3
+    const validModels = ['dall-e-3', 'dall-e-2', 'gpt-image-1']
+    
+    if (!validModels.includes(imageModel)) {
+      return NextResponse.json(
+        { error: `Invalid model. Must be one of: ${validModels.join(', ')}` },
         { status: 400 }
       )
     }
@@ -94,33 +105,52 @@ export async function POST(req: NextRequest) {
 
       const openaiApiKey = apiKeyData.encrypted_key
       
-      // Call OpenAI DALL-E 3 API for high-quality image generation
+      // Build request body based on model capabilities
+      const requestBody: any = {
+        model: imageModel,
+        prompt: prompt,
+        n: 1,
+      }
+
+      // DALL-E models support additional parameters
+      if (imageModel === 'dall-e-3' || imageModel === 'dall-e-2') {
+        requestBody.size = "1024x1024"
+        requestBody.response_format = "url"
+        
+        // Only DALL-E 3 supports quality parameter
+        if (imageModel === 'dall-e-3') {
+          requestBody.quality = "standard"
+        }
+      }
+      // GPT Image 1 uses simpler parameters (no size, quality, or response_format)
+      
+      // Call OpenAI Image Generation API
       const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${openaiApiKey}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model: "dall-e-3",
-          prompt: prompt,
-          n: 1,
-          size: "1024x1024",
-          quality: "standard",
-          response_format: "url"
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (!dalleResponse.ok) {
         const errorData = await dalleResponse.json().catch(() => ({}))
-        throw new Error(`DALL-E API error: ${errorData.error?.message || dalleResponse.statusText}`)
+        throw new Error(`OpenAI Image API error: ${errorData.error?.message || dalleResponse.statusText}`)
       }
 
       const dalleData = await dalleResponse.json()
       const imageUrl = dalleData.data?.[0]?.url
       
       if (!imageUrl) {
-        throw new Error('No image URL received from DALL-E API')
+        throw new Error('No image URL received from OpenAI Image API')
+      }
+
+      // Model-specific messages
+      const modelMessages: Record<string, string> = {
+        'dall-e-3': 'Generated using DALL-E 3 - high-quality AI image generation.',
+        'dall-e-2': 'Generated using DALL-E 2 - creative AI image generation.',
+        'gpt-image-1': 'Generated using GPT Image 1 - advanced multimodal image generation.'
       }
 
       return NextResponse.json({
@@ -128,8 +158,8 @@ export async function POST(req: NextRequest) {
         url: imageUrl,
         prompt: prompt,
         type: 'image',
-        model: 'dall-e-3',
-        message: 'Generated using DALL-E 3 - high-quality AI image generation.'
+        model: imageModel,
+        message: modelMessages[imageModel] || `Generated using ${imageModel}.`
       })
 
     } catch (error: any) {

@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Use service role key to bypass RLS for credit operations
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+})
 
 export async function POST(request: Request) {
   console.log('🔍 Credits check API: Starting request')
@@ -106,17 +112,54 @@ export async function POST(request: Request) {
       .from('user_profiles')
       .select('credits')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()  // Use maybeSingle() instead of single() to handle missing rows gracefully
 
     console.log('📊 Final credit balance:', {
-      credits: profile?.credits || 0,
+      credits: profile?.credits ?? 0,
       error: profileError?.message,
-      profileExists: !!profile
+      profileExists: !!profile,
+      rawProfile: profile
     })
+
+    // If profile doesn't exist, that's a problem - log it but still return success
+    if (!profile && !profileError) {
+      console.error('⚠️ WARNING: User profile not found for user:', user.id)
+      console.error('⚠️ This means credits were deducted but we cannot fetch the balance')
+      
+      // Try to get credits from credit_transactions table as fallback
+      const { data: transactions } = await supabase
+        .from('credit_transactions')
+        .select('balance_after')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      const fallbackCredits = transactions?.balance_after ?? 0
+      console.log('💡 Using fallback credits from transactions:', fallbackCredits)
+      
+      return NextResponse.json({
+        success: true,
+        credits: fallbackCredits,
+        deducted: operation === 'check_and_deduct' ? requiredCredits : 0,
+        warning: 'Credits fetched from transaction history (profile not found)'
+      })
+    }
+
+    if (profileError) {
+      console.error('❌ Error fetching profile:', profileError)
+      // Still return success for the operation, but with 0 credits
+      return NextResponse.json({
+        success: true,
+        credits: 0,
+        deducted: operation === 'check_and_deduct' ? requiredCredits : 0,
+        warning: 'Credits deducted but balance fetch failed. Please refresh the page.'
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      credits: profile?.credits || 0,
+      credits: profile?.credits ?? 0,
       deducted: operation === 'check_and_deduct' ? requiredCredits : 0
     })
 

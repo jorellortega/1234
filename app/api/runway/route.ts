@@ -23,6 +23,50 @@ const getRunwayClient = () => {
   return new Runway({ apiKey })
 }
 
+// Refund credits to user in case of video generation failure
+async function refundCredits(userId: string, amount: number) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    
+    const { createClient } = await import('@supabase/supabase-js')
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    
+    console.log(`💰 Refunding ${amount} credits to user ${userId}`)
+    
+    // Get current credits
+    const { data: profile, error: fetchError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('credits')
+      .eq('id', userId)
+      .single()
+    
+    if (fetchError || !profile) {
+      console.error('❌ Failed to fetch user profile for refund:', fetchError)
+      return { success: false, error: fetchError }
+    }
+    
+    const newCredits = (profile.credits || 0) + amount
+    
+    // Add credits back
+    const { error: updateError } = await supabaseAdmin
+      .from('user_profiles')
+      .update({ credits: newCredits })
+      .eq('id', userId)
+    
+    if (updateError) {
+      console.error('❌ Failed to refund credits:', updateError)
+      return { success: false, error: updateError }
+    }
+    
+    console.log(`✅ Refunded ${amount} credits. New balance: ${newCredits}`)
+    return { success: true, newBalance: newCredits }
+  } catch (error) {
+    console.error('❌ Refund error:', error)
+    return { success: false, error }
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Verify user authentication
@@ -58,6 +102,15 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+
+    // Check if user is admin
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    
+    const isAdmin = profile?.role === 'admin'
 
     // Parse form data
     const formData = await req.formData()
@@ -96,27 +149,78 @@ export async function POST(req: NextRequest) {
 
     // Handle different model types
     try {
-      // Map gen4_aleph to gen3a_turbo since gen4_aleph is not available in the API
-      const actualModel = model === 'gen4_aleph' ? 'gen3a_turbo' : model
-      
-      switch (actualModel) {
+      switch (model) {
         case 'gen4_turbo':
         case 'gen3a_turbo':
-          // These models require an image
+          // These models REQUIRE an image (image-to-video only)
           if (!imageBase64) {
             return NextResponse.json(
-              { error: `${actualModel} requires an image input` },
+              { error: `${model} requires an image input for video generation` },
               { status: 400 }
             )
           }
+          
+          // Handle duration requirements
+          let validDuration = duration
+          if (model === 'gen3a_turbo') {
+            // gen3a_turbo requires 5 or 10 seconds
+            validDuration = duration === 10 ? 10 : 5
+          } else if (model === 'gen4_turbo') {
+            // gen4_turbo allows 2-10 seconds
+            validDuration = Math.max(2, Math.min(10, duration))
+          }
+          
           result = await runway.imageToVideo.create({
-            model: actualModel as 'gen4_turbo' | 'gen3a_turbo',
+            model: model as 'gen4_turbo' | 'gen3a_turbo',
             promptImage: imageBase64,
             promptText: prompt,
-            duration: duration as 5 | 10,
+            duration: validDuration as any,
             ratio: ratio as any,
           })
           break
+
+        case 'veo3.1':
+        case 'veo3.1_fast':
+        case 'veo3':
+          // VEO models support BOTH text-to-video AND image-to-video
+          
+          // Handle duration requirements for VEO models
+          let veoDuration = duration
+          if (model === 'veo3') {
+            veoDuration = 8 // veo3 requires 8 seconds
+          } else if (model === 'veo3.1' || model === 'veo3.1_fast') {
+            // veo3.1 and veo3.1_fast require 4, 6, or 8 seconds
+            if (![4, 6, 8].includes(duration)) {
+              veoDuration = 6 // default to 6 seconds
+            }
+          }
+          
+          if (imageBase64) {
+            // Image-to-Video mode
+            result = await runway.imageToVideo.create({
+              model: model as 'veo3.1' | 'veo3.1_fast' | 'veo3',
+              promptImage: imageBase64,
+              promptText: prompt,
+              duration: veoDuration as any,
+              ratio: ratio as any,
+            })
+          } else {
+            // Text-to-Video mode (no image required!)
+            result = await runway.textToVideo.create({
+              model: model as 'veo3.1' | 'veo3.1_fast' | 'veo3',
+              promptText: prompt,
+              duration: veoDuration as any,
+              ratio: ratio as any,
+            })
+          }
+          break
+
+        case 'gen4_aleph':
+          // Video to Video model - requires a video input (not currently supported in this endpoint)
+          return NextResponse.json(
+            { error: 'gen4_aleph (video-to-video) is not yet supported. Please use image-to-video models.' },
+            { status: 400 }
+          )
 
         default:
           return NextResponse.json(
@@ -130,16 +234,50 @@ export async function POST(req: NextRequest) {
       let taskId = result.id
       let videoUrl = null
       let attempts = 0
-      const maxAttempts = 120 // 10 minutes (5 seconds per attempt)
+      const maxAttempts = 240 // 20 minutes (5 seconds per attempt) - text-to-video takes longer
+
+      console.log(`🎬 Video generation started with task ID: ${taskId}`)
+      console.log(`📝 Model: ${model}, Duration: ${duration}s, Ratio: ${ratio}`)
+      console.log(`⏰ Max wait time: ${maxAttempts * 5 / 60} minutes`)
+
+      let throttledAttempts = 0
+      const maxThrottledAttempts = 60 // 5 minutes of throttled status before giving up
 
       while (attempts < maxAttempts) {
         const task = await runway.tasks.retrieve(taskId)
         
+        console.log(`🔄 Attempt ${attempts + 1}/${maxAttempts}: Status = ${task.status}`)
+        
         if (task.status === 'SUCCEEDED') {
           videoUrl = task.output?.[0]
+          console.log('✅ Video generation succeeded! URL:', videoUrl)
           break
         } else if (task.status === 'FAILED') {
+          console.error('❌ Video generation failed:', task.failure)
           throw new Error('Video generation failed: ' + (task.failure || 'Unknown error'))
+        } else if (task.status === 'THROTTLED') {
+          throttledAttempts++
+          if (throttledAttempts >= maxThrottledAttempts) {
+            console.error('🚦 Request stuck in THROTTLED state for 5+ minutes')
+            
+            // Different messages for admin vs regular users
+            const errorMessage = isAdmin
+              ? 'Video generation is currently throttled by RunwayML. Their API might be experiencing high demand. Please try again later or try a different model (Gen3a Turbo or Gen4 Turbo).'
+              : 'Video generation is temporarily unavailable due to high demand. Please try again in a few minutes.'
+            
+            throw new Error(errorMessage)
+          }
+          if (throttledAttempts % 12 === 0) {
+            console.log(`🚦 Still throttled... ${throttledAttempts * 5 / 60} minutes in queue`)
+          }
+        } else {
+          // Reset throttled counter if status changes to PENDING or RUNNING
+          throttledAttempts = 0
+        }
+        
+        // Log progress every minute (12 attempts)
+        if (attempts > 0 && attempts % 12 === 0) {
+          console.log(`⏳ Still processing... ${attempts * 5 / 60} minutes elapsed (Status: ${task.status})`)
         }
         
         // Wait 5 seconds before checking again
@@ -148,7 +286,14 @@ export async function POST(req: NextRequest) {
       }
 
       if (!videoUrl) {
-        throw new Error('Video generation timed out')
+        console.error('⏰ Video generation timed out after', attempts * 5 / 60, 'minutes')
+        
+        // Different messages for admin vs regular users
+        const timeoutMessage = isAdmin
+          ? `Video generation timed out after ${maxAttempts * 5 / 60} minutes. Please try again or use a shorter duration.`
+          : 'Video generation took too long and timed out. Please try again.'
+        
+        throw new Error(timeoutMessage)
       }
 
       // Note: Credits are already deducted by the frontend before calling this API
@@ -165,10 +310,47 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
       console.error('RunwayML API error:', error)
+      
+      // Refund credits for failed video generation
+      const REFUND_AMOUNT = 26 // Same as the deducted amount
+      const refundResult = await refundCredits(user.id, REFUND_AMOUNT)
+      
+      if (refundResult.success) {
+        console.log(`✅ Successfully refunded ${REFUND_AMOUNT} credits to user ${user.id}`)
+      } else {
+        console.error(`❌ Failed to refund credits to user ${user.id}`, refundResult.error)
+      }
+      
+      // Check if it's a RunwayML insufficient credits error
+      if (error.message && error.message.includes('You do not have enough credits')) {
+        // Different messages for admin vs regular users
+        const creditsErrorMessage = isAdmin
+          ? 'Insufficient RunwayML API credits. Your INFINITO credits have been refunded. Please add credits to your RunwayML account at https://app.runwayml.com/billing or try a cheaper model (Gen4 Turbo uses only 25 RunwayML credits vs 200 for VEO 3).'
+          : 'Video generation service temporarily unavailable. Your credits have been refunded. Please try again later or contact support.'
+        
+        return NextResponse.json(
+          { 
+            error: creditsErrorMessage,
+            details: isAdmin ? 'RunwayML account credit balance too low' : 'Service unavailable',
+            runwaymlError: true,
+            refunded: refundResult.success,
+            newBalance: refundResult.newBalance
+          },
+          { status: 402 } // 402 Payment Required
+        )
+      }
+      
+      // General error message - hide technical details from regular users
+      const generalErrorMessage = isAdmin
+        ? 'Video generation failed: ' + (error.message || 'Unknown error')
+        : 'Video generation failed. Your credits have been refunded. Please try again or contact support.'
+      
       return NextResponse.json(
         { 
-          error: 'Video generation failed: ' + (error.message || 'Unknown error'),
-          details: error.response?.data || error.message
+          error: generalErrorMessage,
+          details: isAdmin ? (error.response?.data || error.message) : 'An error occurred',
+          refunded: refundResult.success,
+          newBalance: refundResult.newBalance
         },
         { status: 500 }
       )

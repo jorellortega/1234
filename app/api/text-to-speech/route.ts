@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     const fileName = `audio-${Date.now()}.mp3`;
     const { data: uploadData, error: uploadError } = await supabase
       .storage
-      .from('generations')
+      .from('media-files')
       .upload(fileName, audioBuffer, {
         contentType: 'audio/mpeg',
         cacheControl: '3600',
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
     // Get public URL
     const { data: { publicUrl } } = supabase
       .storage
-      .from('generations')
+      .from('media-files')
       .getPublicUrl(fileName);
 
     return NextResponse.json({

@@ -79,8 +79,8 @@ export function ProgressiveResponse({
 
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
-    // NEVER truncate image/video responses - they need the full URL
-    // Remove IMAGE_DISPLAY and VIDEO_DISPLAY tags from displayed text but keep for extraction
+    // NEVER truncate image/video/audio responses - they need the full URL
+    // Remove IMAGE_DISPLAY, VIDEO_DISPLAY, and AUDIO_DISPLAY tags from displayed text but keep for extraction
     let displayContent = content;
     if (content.includes('[IMAGE_DISPLAY:')) {
       // Remove the IMAGE_DISPLAY tag from the text
@@ -90,8 +90,12 @@ export function ProgressiveResponse({
       // Remove the VIDEO_DISPLAY tag from the text
       displayContent = content.replace(/\[VIDEO_DISPLAY:[^\]]+\]/g, '').trim();
     }
+    if (content.includes('[AUDIO_DISPLAY:')) {
+      // Remove the AUDIO_DISPLAY tag from the text
+      displayContent = content.replace(/\[AUDIO_DISPLAY:[^\]]+\]/g, '').trim();
+    }
     
-    if (content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
+    if (content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
       return { concisePart: displayContent, detailedPart: null }
     }
     
@@ -123,7 +127,12 @@ export function ProgressiveResponse({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content)
+      // Use expanded content if available, otherwise use original content
+      const textToCopy = isExpanded && detailedContent 
+        ? `${concisePart}\n\n${detailedContent}` 
+        : content
+      
+      await navigator.clipboard.writeText(textToCopy)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
@@ -136,8 +145,13 @@ export function ProgressiveResponse({
     const urlParams = new URLSearchParams(window.location.search)
     const prompt = urlParams.get('prompt') || ''
     
+    // Use expanded content if available, otherwise use original content
+    const contentToExport = isExpanded && detailedContent 
+      ? `${concisePart}\n\n${detailedContent}` 
+      : content
+    
     // Generate PDF export URL
-    const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(content)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
+    const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(contentToExport)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
     
     // Open in new window
     window.open(pdfUrl, '_blank')
@@ -153,61 +167,17 @@ export function ProgressiveResponse({
       const detailedResponse = await onShowMore(topic)
       setDetailedContent(detailedResponse)
       setIsExpanded(true)
-      
-      // Auto-scroll to keep the response window in view after expansion
-      setTimeout(() => {
-        if (responseRef.current) {
-          responseRef.current.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start',
-            inline: 'nearest'
-          })
-          
-          // Additional scroll adjustment to ensure content is visible
-          setTimeout(() => {
-            const rect = responseRef.current?.getBoundingClientRect()
-            if (rect && rect.bottom > window.innerHeight) {
-              window.scrollBy({
-                top: rect.bottom - window.innerHeight + 50,
-                behavior: 'smooth'
-              })
-            }
-          }, 300)
-        }
-      }, 100)
     } catch (error) {
       console.error('Failed to get detailed response:', error)
       setDetailedContent("Sorry, I couldn't load more details. Please try asking a follow-up question.")
       setIsExpanded(true)
-      
-      // Auto-scroll even on error
-      setTimeout(() => {
-        if (responseRef.current) {
-          responseRef.current.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start',
-            inline: 'nearest'
-          })
-          
-          // Additional scroll adjustment to ensure content is visible
-          setTimeout(() => {
-            const rect = responseRef.current?.getBoundingClientRect()
-            if (rect && rect.bottom > window.innerHeight) {
-              window.scrollBy({
-                top: rect.bottom - window.innerHeight + 50,
-                behavior: 'smooth'
-              })
-            }
-          }, 300)
-        }
-      }, 100)
     } finally {
       setIsLoadingMore(false)
     }
   }
 
   const hasDetailedContent = detailedPart && detailedPart.trim().length > 0
-  const hasMediaContent = content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:')
+  const hasMediaContent = content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:')
   const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore) && !hasMediaContent
 
   // Audio control functions
@@ -255,26 +225,35 @@ export function ProgressiveResponse({
 
     const link = document.createElement('a')
     link.href = audioUrl
-    link.download = `ai-response-${Date.now()}.mp3`
+    link.download = `infinito-response-${Date.now()}.mp3`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
   }
 
   const handleGenerateAudio = () => {
-    if (!content || !onGenerateAudio) return
+    if (!onGenerateAudio) return
     
-    if (content.length > 5000) {
+    // Use expanded content if available, otherwise use original content
+    const textToGenerate = isExpanded && detailedContent 
+      ? `${concisePart}\n\n${detailedContent}` 
+      : content
+    
+    if (textToGenerate.length > 5000) {
       alert("Text must be less than 5000 characters for audio generation")
       return
     }
 
-    onGenerateAudio(content)
+    onGenerateAudio(textToGenerate)
   }
 
-  const handleSaveMedia = async (mediaUrl: string, mediaType: 'image' | 'video') => {
-    if (!prompt) {
-      alert('Cannot save: No prompt information available')
+  const handleSaveMedia = async (mediaUrl: string, mediaType: 'image' | 'video' | 'audio') => {
+    // Use prompt if available, otherwise use a fallback based on media type and content
+    const promptToSave = prompt || 
+      (mediaType === 'audio' ? (content.slice(0, 100) || 'Audio generation') : 'Media generation')
+    
+    if (!promptToSave) {
+      alert('Cannot save: No content information available')
       return
     }
 
@@ -291,8 +270,8 @@ export function ProgressiveResponse({
         body: JSON.stringify({
           mediaUrl,
           mediaType,
-          prompt,
-          model: model || (mediaType === 'image' ? 'image_gen' : 'video_gen')
+          prompt: promptToSave,
+          model: model || (mediaType === 'image' ? 'image_gen' : mediaType === 'video' ? 'video_gen' : 'audio_gen')
         })
       })
 
@@ -384,6 +363,21 @@ export function ProgressiveResponse({
                   >
                     <Download className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
+                  <Button 
+                    onClick={() => handleSaveMedia(audioUrl, 'audio')}
+                    variant="ghost" 
+                    size="sm"
+                    disabled={isSaving || saveStatus === 'saved'}
+                    className="text-green-400 hover:bg-green-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 disabled:opacity-50"
+                  >
+                    {saveStatus === 'saving' ? (
+                      <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                    ) : saveStatus === 'saved' ? (
+                      <Check className="h-3 w-3 sm:h-4 sm:w-4" />
+                    ) : (
+                      <Save className="h-3 w-3 sm:h-4 sm:w-4" />
+                    )}
+                  </Button>
                 </>
               )}
               
@@ -413,6 +407,7 @@ export function ProgressiveResponse({
                 try {
                   const imageMatch = content.match(/\[IMAGE_DISPLAY:(.*?)\]/);
                   const videoMatch = content.match(/\[VIDEO_DISPLAY:(.*?)\]/);
+                  const audioMatch = content.match(/\[AUDIO_DISPLAY:(.*?)\]/);
                   
                   if (imageMatch) {
                     // Download image via API proxy
@@ -425,6 +420,18 @@ export function ProgressiveResponse({
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = `infinito-video-${Date.now()}.mp4`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } else if (audioMatch) {
+                    // Download audio
+                    const response = await fetch(audioMatch[1]);
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `infinito-audio-${Date.now()}.mp3`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -641,6 +648,91 @@ export function ProgressiveResponse({
                   >
                     Your browser does not support the video tag.
                   </video>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
+        {/* Display the generated audio if present */}
+        {(() => {
+          const audioMatch = content.match(/\[AUDIO_DISPLAY:(.*?)\]/);
+          const audioUrl = audioMatch ? audioMatch[1] : null;
+          
+          if (audioUrl) {
+            const handleDownloadAudio = async () => {
+              try {
+                const response = await fetch(audioUrl);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `infinito-audio-${Date.now()}.mp3`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+              } catch (error) {
+                console.error('Failed to download audio:', error);
+              }
+            };
+
+            return (
+              <div className="mb-4 p-2 sm:p-3 bg-black/10 rounded border border-green-500/30 overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                  <div className="text-green-400 text-sm font-semibold">Generated Audio:</div>
+                  <div className="flex flex-wrap gap-1 sm:gap-2">
+                    <Button
+                      onClick={handleDownloadAudio}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs border-green-500/50 text-green-400 hover:bg-green-500/10"
+                    >
+                      <Download className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Download</span>
+                    </Button>
+                    <Button
+                      onClick={() => handleSaveMedia(audioUrl, 'audio')}
+                      variant="outline"
+                      size="sm"
+                      disabled={isSaving || saveStatus === 'saved'}
+                      className="h-7 px-2 text-xs border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50"
+                    >
+                      {saveStatus === 'saving' ? (
+                        <>
+                          <Loader2 className="h-3 w-3 sm:mr-1 animate-spin" />
+                          <span className="hidden sm:inline">Saving...</span>
+                        </>
+                      ) : saveStatus === 'saved' ? (
+                        <>
+                          <Check className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Saved!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-3 w-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Save</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                {saveError && (
+                  <div className="text-red-400 text-xs mb-2 break-words">❌ {saveError}</div>
+                )}
+                <div className="flex justify-center overflow-hidden">
+                  <div className="w-full max-w-full sm:max-w-[500px] flex flex-col items-center justify-center py-8 bg-green-500/10 rounded-lg border border-green-500/30">
+                    <div className="text-green-400 text-6xl mb-4">🎵</div>
+                    <audio 
+                      src={audioUrl} 
+                      controls
+                      className="w-full max-w-md"
+                    >
+                      Your browser does not support the audio tag.
+                    </audio>
+                    <p className="text-gray-400 text-sm mt-2">Click play to listen to the generated audio</p>
+                  </div>
                 </div>
               </div>
             );

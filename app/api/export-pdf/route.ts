@@ -29,23 +29,76 @@ export async function GET(req: NextRequest) {
 
     // Set font
     doc.setFont('helvetica', 'normal')
-    
-    let yPos = 20
-    
-    doc.setFontSize(10)
+    doc.setFontSize(11)
     doc.setTextColor(0, 0, 0) // Black color
     
-    // Split long text into lines that fit the page width
-    const lines = doc.splitTextToSize(response, 170)
+    let yPos = 20
+    const lineHeight = 6
+    const paragraphSpacing = 8 // Extra spacing between paragraphs
+    const pageMargin = 20
+    const maxWidth = 170
+    const pageHeight = 270 // Near bottom of page (A4 height is 297mm)
     
-    // Add text with page breaks
-    for (let i = 0; i < lines.length; i++) {
-      if (yPos > 270) { // Near bottom of page (A4 height is 297mm)
-        doc.addPage()
-        yPos = 20
+    // Split response into paragraphs (by double line breaks or single line breaks)
+    const paragraphs = response.split(/\n\n+/).filter(p => p.trim().length > 0)
+    
+    // If no double line breaks found, try single line breaks
+    const finalParagraphs = paragraphs.length > 1 
+      ? paragraphs 
+      : response.split(/\n/).filter(p => p.trim().length > 0)
+    
+    // Add optional prompt header if provided
+    if (prompt && prompt.trim()) {
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Question:', pageMargin, yPos)
+      yPos += lineHeight + 2
+      
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(10)
+      const promptLines = doc.splitTextToSize(prompt, maxWidth)
+      for (const line of promptLines) {
+        if (yPos > pageHeight) {
+          doc.addPage()
+          yPos = pageMargin
+        }
+        doc.text(line, pageMargin, yPos)
+        yPos += lineHeight
       }
-      doc.text(lines[i], 20, yPos)
-      yPos += 6
+      
+      yPos += paragraphSpacing + 4
+      
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Response:', pageMargin, yPos)
+      yPos += lineHeight + 4
+      
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+    }
+    
+    // Add each paragraph with proper spacing
+    for (let i = 0; i < finalParagraphs.length; i++) {
+      const paragraph = finalParagraphs[i].trim()
+      if (!paragraph) continue
+      
+      // Split paragraph into lines that fit the page width
+      const lines = doc.splitTextToSize(paragraph, maxWidth)
+      
+      // Add lines of this paragraph
+      for (let j = 0; j < lines.length; j++) {
+        if (yPos > pageHeight) {
+          doc.addPage()
+          yPos = pageMargin
+        }
+        doc.text(lines[j], pageMargin, yPos)
+        yPos += lineHeight
+      }
+      
+      // Add extra spacing after paragraph (except for last paragraph)
+      if (i < finalParagraphs.length - 1) {
+        yPos += paragraphSpacing
+      }
     }
     
     // Generate PDF as buffer
@@ -54,7 +107,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="ai-response.pdf"',
+        'Content-Disposition': 'attachment; filename="infinito-response.pdf"',
         'Cache-Control': 'no-store',
       },
     })

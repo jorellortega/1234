@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json()
-    const { prompt } = body
+    const { prompt, model = 'gen4_image' } = body
 
     if (!prompt) {
       return NextResponse.json(
@@ -72,14 +72,28 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Validate model
+    const validModels = ['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash', 'runway_image']
+    const modelToUse = validModels.includes(model) ? model : 'gen4_image'
+
     // Initialize Runway client
     const runway = getRunwayClient()
 
     try {
-      // Use Gen-4 Image for text-to-image generation
-      // gen4_image supports optional reference images (we're using none for pure text-to-image)
+      // Map frontend model names to RunwayML API model names
+      let runwayModelName: 'gen4_image' | 'gen4_image_turbo' | 'gemini_2.5_flash' = 'gen4_image'
+      if (modelToUse === 'gen4_image_turbo') {
+        runwayModelName = 'gen4_image_turbo'
+      } else if (modelToUse === 'gemini_2.5_flash') {
+        runwayModelName = 'gemini_2.5_flash'
+      } else if (modelToUse === 'runway_image') {
+        // Legacy model - map to gen4_image
+        runwayModelName = 'gen4_image'
+      }
+
+      // Use RunwayML text-to-image generation
       const result = await runway.textToImage.create({
-        model: 'gen4_image',
+        model: runwayModelName,
         promptText: prompt,
         ratio: '1024:1024', // Square format for images
       })
@@ -109,14 +123,22 @@ export async function POST(req: NextRequest) {
         throw new Error('Image generation timed out')
       }
 
+      // Create model-specific messages
+      const modelMessages = {
+        'gen4_image': 'Generated using RunwayML Gen4 Image - High-quality AI image generation.',
+        'gen4_image_turbo': 'Generated using RunwayML Gen4 Image Turbo - Fast, high-quality AI image generation.',
+        'gemini_2.5_flash': 'Generated using Gemini 2.5 Flash - Advanced AI image generation.',
+        'runway_image': 'Generated using RunwayML Gen4 Image - High-quality AI image generation.'
+      }
+
       return NextResponse.json({
         success: true,
         url: outputUrl,
         taskId: taskId,
         prompt: prompt,
         type: 'image',
-        model: 'gen4_image',
-        message: 'Generated using RunwayML Gen-4 Image - High-quality AI image generation.'
+        model: modelToUse,
+        message: modelMessages[modelToUse as keyof typeof modelMessages] || modelMessages['gen4_image']
       })
 
     } catch (error: any) {

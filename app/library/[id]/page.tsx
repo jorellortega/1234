@@ -213,31 +213,30 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
                 >
                   Re-run in Console
                 </Link>
+                <button
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to delete this generation? This cannot be undone.')) {
+                      try {
+                        const response = await fetch(`/api/generations/${row.id}`, {
+                          method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) throw new Error('Failed to delete');
+                        
+                        router.push('/library');
+                      } catch (error) {
+                        console.error('Delete failed:', error);
+                        alert('Failed to delete generation');
+                      }
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+                >
+                  Delete
+                </button>
               </div>
               <Link href="/library" className="text-cyan-400 hover:underline">← Back to Library</Link>
             </div>
-
-            <div className="grid gap-3 text-sm sm:grid-cols-3 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
-              <div><div className="opacity-70 text-cyan-400">ID</div><div className="break-all text-white">{row.id}</div></div>
-              <div><div className="opacity-70 text-cyan-400">Time</div><div className="text-white">{new Date(row.created_at).toLocaleString()}</div></div>
-              <div><div className="opacity-70 text-cyan-400">Model</div><div className="text-white">{row.model ?? "mini_llm"}</div></div>
-              <div><div className="opacity-70 text-cyan-400">Temperature</div><div className="text-white">{row.temperature ?? ""}</div></div>
-              <div><div className="opacity-70 text-cyan-400">Top-K</div><div className="text-white">{row.top_k ?? ""}</div></div>
-              <div><div className="opacity-70 text-cyan-400">Tags</div><div className="text-white">{(row.tags ?? []).map((t: string) => `#${t}`).join(" ")}</div></div>
-            </div>
-
-            <section className="space-y-4 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white">Prompt</h2>
-                <button
-                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
-                  onClick={async () => { await navigator.clipboard.writeText(row.prompt ?? ""); }}
-                >
-                  Copy
-                </button>
-              </div>
-              <pre className="p-4 rounded-xl bg-neutral-800 whitespace-pre-wrap text-gray-300 border border-neutral-700">{row.prompt}</pre>
-            </section>
 
             <section className="space-y-4 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
               <h2 className="text-xl font-semibold text-white">Output</h2>
@@ -245,6 +244,10 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
                 <ProgressiveResponse content={row.output ?? ""} responseStyle="detailed" />
               </div>
             </section>
+
+            <div className="grid gap-3 text-sm sm:grid-cols-1 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
+              <div><div className="opacity-70 text-cyan-400">Prompt</div><div className="text-white break-words">{row.prompt}</div></div>
+            </div>
 
             <div className="bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
               <NotesEditor id={row.id} initial={row.notes ?? null} />

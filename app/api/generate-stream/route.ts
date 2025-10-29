@@ -82,8 +82,8 @@ export async function POST(req: Request) {
         "Connection": "keep-alive",
       },
     });
-  } else if (m === "openai") {
-    // OpenAI streaming
+  } else if (m === "openai" || m === "gpt" || m === "gpt-4" || m === "gpt-4o" || m === "gpt-4o-mini" || m === "gpt-4-turbo" || m === "gpt-3.5-turbo" || m === "o1" || m === "o1-mini" || m === "o1-preview") {
+    // OpenAI streaming (supports all GPT and O1 models)
     const stream = new ReadableStream({
       async start(controller) {
         const enc = new TextEncoder();
@@ -219,7 +219,7 @@ export async function POST(req: Request) {
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              model: "gpt-3.5-turbo",
+              model: m === "openai" ? "gpt-3.5-turbo" : m === "gpt" ? "gpt-4" : m,
               messages: [
                 {
                   role: "system",

@@ -43,6 +43,7 @@ interface UserProfile {
   id: string
   email: string
   has_subscription: boolean
+  role: string
 }
 
 interface AIService {
@@ -62,8 +63,7 @@ export default function AISettingsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [inputValues, setInputValues] = useState<{ [key: string]: string }>({})
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
-  const [hasSubscription, setHasSubscription] = useState(false)
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Fetch user profile and subscription status
   useEffect(() => {
@@ -73,13 +73,13 @@ export default function AISettingsPage() {
         if (user) {
           const { data: profile, error } = await supabase
             .from('user_profiles')
-            .select('id, email, has_subscription')
+            .select('id, email, has_subscription, role')
             .eq('id', user.id)
             .single()
 
           if (profile && !error) {
             setUserProfile(profile)
-            setHasSubscription(profile.has_subscription)
+            setIsAdmin(profile.role === 'admin')
           }
         }
       } catch (error) {
@@ -422,34 +422,25 @@ export default function AISettingsPage() {
         </div>
       </div>
 
-      {/* Subscription Warning - Only show if user doesn't have subscription */}
-      {!hasSubscription && (
+      {/* Admin Access Warning - Only show if user is not admin */}
+      {!isAdmin && (
         <Card className="mb-6 border-red-500/30 bg-red-50/10">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-red-500" />
               <div>
-                <h3 className="font-semibold text-red-400">Subscription Required</h3>
+                <h3 className="font-semibold text-red-400">Admin Access Required</h3>
                 <p className="text-sm text-red-300 mt-1">
-                  You must have an active subscription to access the developer portal. Please upgrade your account to configure service integrations.
+                  This developer portal is only accessible to administrators. Please contact your system administrator for access.
                 </p>
-                <div className="mt-3">
-                  <Button 
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                  >
-                    <Shield className="h-4 w-4" />
-                    Upgrade Account
-                  </Button>
-                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Main Content - Only show if user has subscription */}
-      {hasSubscription ? (
+      {/* Main Content - Only show if user is admin */}
+      {isAdmin ? (
         <div className="grid gap-6">
           {/* Service Integrations Overview */}
           <Card>
@@ -657,58 +648,18 @@ export default function AISettingsPage() {
         </Card>
       </div>
       ) : (
-        /* Disabled State - Show when user doesn't have subscription */
+        /* Disabled State - Show when user is not admin */
         <Card className="border-gray-500/30 bg-gray-50/5">
           <CardContent className="pt-6">
             <div className="text-center py-8">
               <AlertCircle className="h-12 w-12 text-gray-500 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-400 mb-2">Developer Portal Disabled</h3>
               <p className="text-gray-500 mb-4">
-                This developer portal is only available to users with an active subscription.
+                This developer portal is only available to administrators.
               </p>
-              <Button 
-                onClick={() => setShowUpgradeModal(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors"
-              >
-                <Shield className="h-4 w-4" />
-                Unlock Developer Portal
-              </Button>
             </div>
           </CardContent>
         </Card>
-      )}
-      
-      {/* Upgrade Modal */}
-      {showUpgradeModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="bg-black/90 backdrop-blur-md border-cyan-500/30 shadow-2xl shadow-cyan-500/20 max-w-md w-full">
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 w-16 h-16 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full flex items-center justify-center">
-                <Zap className="h-8 w-8 text-white" />
-              </div>
-              <CardTitle className="text-2xl font-bold text-cyan-400">Coming Soon!</CardTitle>
-              <CardDescription className="text-cyan-300">
-                Developer subscriptions are coming in INFINITO version 2
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center space-y-4">
-              <div className="space-y-2 text-sm text-gray-300">
-                <p>🚀 Enhanced developer portal features</p>
-                <p>⚡ Advanced AI platform integrations</p>
-                <p>🔒 Enterprise-grade security</p>
-                <p>📊 Advanced analytics and monitoring</p>
-              </div>
-              <div className="pt-4">
-                <Button 
-                  onClick={() => setShowUpgradeModal(false)}
-                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:brightness-110 text-white font-bold"
-                >
-                  Got It!
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       )}
     </div>
   )

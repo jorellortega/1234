@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (!['image', 'video'].includes(mediaType)) {
+    if (!['image', 'video', 'audio'].includes(mediaType)) {
       return NextResponse.json(
-        { error: 'Invalid mediaType. Must be "image" or "video"' },
+        { error: 'Invalid mediaType. Must be "image", "video", or "audio"' },
         { status: 400 }
       )
     }
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       }
 
       const blob = await response.blob()
-      const fileExt = mediaType === 'image' ? 'png' : 'mp4'
+      const fileExt = mediaType === 'image' ? 'png' : mediaType === 'video' ? 'mp4' : 'mp3'
       const fileName = `${user.id}/${Date.now()}-${mediaType}.${fileExt}`
 
       // Step 2: Upload to Supabase Storage
@@ -98,10 +98,16 @@ export async function POST(req: NextRequest) {
       const arrayBuffer = await blob.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
 
+      const contentType = mediaType === 'image' 
+        ? 'image/png' 
+        : mediaType === 'video' 
+        ? 'video/mp4' 
+        : 'audio/mpeg'
+      
       const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
         .from('media-files')
         .upload(fileName, buffer, {
-          contentType: blob.type || (mediaType === 'image' ? 'image/png' : 'video/mp4'),
+          contentType: blob.type || contentType,
           upsert: false
         })
 
@@ -120,8 +126,18 @@ export async function POST(req: NextRequest) {
       console.log('Public URL:', publicUrl)
 
       // Step 4: Save to generations table with permanent URL
-      const mediaTag = mediaType === 'image' ? 'IMAGE_DISPLAY' : 'VIDEO_DISPLAY'
+      const mediaTag = mediaType === 'image' 
+        ? 'IMAGE_DISPLAY' 
+        : mediaType === 'video' 
+        ? 'VIDEO_DISPLAY' 
+        : 'AUDIO_DISPLAY'
       const output = `[${mediaTag}:${publicUrl}]`
+
+      const defaultModel = mediaType === 'image' 
+        ? 'image_gen' 
+        : mediaType === 'video' 
+        ? 'video_gen' 
+        : 'audio_gen'
 
       const { data: generation, error: saveError } = await supabaseAdmin
         .from('generations')
@@ -129,7 +145,7 @@ export async function POST(req: NextRequest) {
           user_id: user.id,
           prompt: prompt,
           output: output,
-          model: model || (mediaType === 'image' ? 'image_gen' : 'video_gen'),
+          model: model || defaultModel,
           temperature: null,
           top_k: null,
           parent_id: null
@@ -142,9 +158,15 @@ export async function POST(req: NextRequest) {
         throw new Error(`Failed to save generation: ${saveError.message}`)
       }
 
+      const mediaTypeLabel = mediaType === 'image' 
+        ? 'Image' 
+        : mediaType === 'video' 
+        ? 'Video' 
+        : 'Audio'
+
       return NextResponse.json({
         success: true,
-        message: `${mediaType === 'image' ? 'Image' : 'Video'} saved successfully!`,
+        message: `${mediaTypeLabel} saved successfully!`,
         generation: generation,
         storageUrl: publicUrl,
         fileName: fileName

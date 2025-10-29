@@ -193,17 +193,25 @@ export default function ModelConsole() {
           responseStyle={responseStyle}
           onShowMore={async (topic: string) => {
             // Make a follow-up API call asking for more details
-            const followUpPrompt = `Can you explain more about "${topic}"? Please provide a detailed explanation with examples, code snippets, and best practices. 
+            const followUpPrompt = `Expand on this topic: "${topic}"
 
-IMPORTANT: Format your response with clear paragraphs. Each paragraph should be separated by a blank line (double line break). For example:
+CRITICAL FORMATTING RULE: You MUST separate each paragraph with TWO line breaks (press Enter twice between paragraphs).
 
-Paragraph 1 content here.
+Write exactly 3-4 paragraphs:
 
-Paragraph 2 content here.
+Paragraph 1: Main historical or foundational information (3-5 sentences)
 
-Paragraph 3 content here.
+Paragraph 2: Evolution, development, or key details (3-5 sentences)
 
-Make sure to use proper spacing between paragraphs for readability.`
+Paragraph 3: Modern practices, traditions, or examples (3-5 sentences)
+
+Paragraph 4 (optional): Cultural impact, fun facts, or conclusion (2-4 sentences)
+
+IMPORTANT: 
+- Use TWO line breaks between paragraphs
+- Keep each paragraph concise (3-5 sentences)
+- Write in a natural, conversational tone
+- NO bullet points, NO numbered lists, NO code blocks`
             
             const payload = JSON.stringify({
               prompt: followUpPrompt,
