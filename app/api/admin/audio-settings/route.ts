@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     // Check if user is admin
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('user_profiles')
       .select('role')
       .eq('id', user.id)
       .single()
@@ -42,7 +42,11 @@ export async function GET(request: NextRequest) {
         elevenlabs_style,
         elevenlabs_use_speaker_boost,
         audio_output_format,
-        audio_optimize_streaming_latency
+        audio_optimize_streaming_latency,
+        available_voice_ids,
+        default_voice_id,
+        allow_custom_voices,
+        voice_selection_enabled
       `)
       .eq('id', '00000000-0000-0000-0000-000000000001')
       .single()
@@ -77,7 +81,7 @@ export async function PUT(request: NextRequest) {
 
     // Check if user is admin
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('user_profiles')
       .select('role')
       .eq('id', user.id)
       .single()
@@ -98,6 +102,11 @@ export async function PUT(request: NextRequest) {
       elevenlabs_use_speaker_boost,
       audio_output_format,
       audio_optimize_streaming_latency,
+      // System-wide settings
+      available_voice_ids,
+      default_voice_id,
+      allow_custom_voices,
+      voice_selection_enabled,
     } = body
 
     // Update audio settings
@@ -112,6 +121,11 @@ export async function PUT(request: NextRequest) {
         elevenlabs_use_speaker_boost,
         audio_output_format,
         audio_optimize_streaming_latency,
+        // System-wide settings
+        available_voice_ids,
+        default_voice_id,
+        allow_custom_voices,
+        voice_selection_enabled,
       })
       .eq('id', '00000000-0000-0000-0000-000000000001')
 

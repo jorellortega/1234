@@ -347,37 +347,48 @@ export function ProgressiveResponse({
               
               {audioUrl && !isGeneratingAudio && (
                 <>
-                  <Button 
-                    onClick={togglePlayPause}
-                    variant="ghost" 
-                    size="sm"
-                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
-                  >
-                    {isPlaying ? <Pause className="h-3 w-3 sm:h-4 sm:w-4" /> : <Play className="h-3 w-3 sm:h-4 sm:w-4" />}
-                  </Button>
-                  <Button 
-                    onClick={downloadAudio}
-                    variant="ghost" 
-                    size="sm"
-                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
-                  >
-                    <Download className="h-3 w-3 sm:h-4 sm:w-4" />
-                  </Button>
-                  <Button 
-                    onClick={() => handleSaveMedia(audioUrl, 'audio')}
-                    variant="ghost" 
-                    size="sm"
-                    disabled={isSaving || saveStatus === 'saved'}
-                    className="text-green-400 hover:bg-green-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 disabled:opacity-50"
-                  >
-                    {saveStatus === 'saving' ? (
-                      <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
-                    ) : saveStatus === 'saved' ? (
-                      <Check className="h-3 w-3 sm:h-4 sm:w-4" />
-                    ) : (
-                      <Save className="h-3 w-3 sm:h-4 sm:w-4" />
-                    )}
-                  </Button>
+                  {/* Media Controls */}
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      onClick={togglePlayPause}
+                      variant="ghost" 
+                      size="sm"
+                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
+                    >
+                      {isPlaying ? <Pause className="h-3 w-3 sm:h-4 sm:w-4" /> : <Play className="h-3 w-3 sm:h-4 sm:w-4" />}
+                    </Button>
+                    <Button 
+                      onClick={downloadAudio}
+                      variant="ghost" 
+                      size="sm"
+                      className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2"
+                    >
+                      <Download className="h-3 w-3 sm:h-4 sm:w-4" />
+                    </Button>
+                    <Button 
+                      onClick={() => handleSaveMedia(audioUrl, 'audio')}
+                      variant="ghost" 
+                      size="sm"
+                      disabled={isSaving || saveStatus === 'saved'}
+                      className="text-green-400 hover:bg-green-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 disabled:opacity-50"
+                    >
+                      {saveStatus === 'saving' ? (
+                        <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                      ) : saveStatus === 'saved' ? (
+                        <Check className="h-3 w-3 sm:h-4 sm:w-4" />
+                      ) : (
+                        <Save className="h-3 w-3 sm:h-4 sm:w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {/* Divider */}
+                  <div className="h-6 w-px bg-gray-600 mx-1"></div>
+                  
+                  {/* Document Actions */}
+                  <div className="flex items-center gap-1">
+                    {/* Empty for now - PDF and Copy are handled elsewhere */}
+                  </div>
                 </>
               )}
               
@@ -389,6 +400,12 @@ export function ProgressiveResponse({
           
           {/* Export PDF Button - Only show for text responses */}
           {!hasMediaContent && (
+            <>
+              {/* Divider */}
+              <div className="h-6 w-px bg-gray-600 mx-1"></div>
+              
+              {/* Document Actions */}
+              <div className="flex items-center gap-1">
             <Button 
               onClick={handleExportPDF}
               variant="ghost" 
@@ -398,6 +415,8 @@ export function ProgressiveResponse({
               <FileText className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
               <span className="text-xs hidden sm:inline">PDF</span>
             </Button>
+              </div>
+            </>
           )}
           
           {/* Download Button - Only show for image/video */}
@@ -451,6 +470,7 @@ export function ProgressiveResponse({
           )}
           
           {/* Copy Button */}
+          <div className="flex items-center gap-1">
           <Button 
             onClick={handleCopy}
             variant="ghost" 
@@ -469,6 +489,7 @@ export function ProgressiveResponse({
               </>
             )}
           </Button>
+          </div>
         </div>
       </div>
       

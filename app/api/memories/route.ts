@@ -55,10 +55,10 @@ export async function GET(request: Request) {
       query = query.eq('hierarchy_level', parseInt(hierarchyLevel))
     }
     
-    // Order by hierarchy level, then sort order, then salience
+    // Order by hierarchy level, then sort order (descending so newest first), then salience, then created_at
     const { data: memories, error } = await query
       .order('hierarchy_level', { ascending: true })
-      .order('sort_order', { ascending: true })
+      .order('sort_order', { ascending: false })
       .order('salience', { ascending: false })
       .order('created_at', { ascending: false })
 

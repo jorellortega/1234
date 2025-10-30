@@ -4,7 +4,7 @@ import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft, Library } from "lucide-react"
+import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft, Library, RefreshCw, Play, Music, ImageIcon, Video } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
 import { DocumentUpload } from "@/components/DocumentUpload"
@@ -300,6 +300,74 @@ Is there anything else I can help you with?`)
     }
   }
 
+  // Load available voices and user preferences
+  const loadVoicesAndPreferences = async () => {
+    if (!user) {
+      console.log('🎵 No user, skipping voice loading')
+      return
+    }
+    
+    try {
+      console.log('🎵 Loading voices and preferences for user:', user.id)
+      setIsLoadingVoices(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.log('🎵 No session token')
+        return
+      }
+
+      // Load available voices
+      console.log('🎵 Fetching available voices...')
+      const voicesResponse = await fetch('/api/available-voices', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (voicesResponse.ok) {
+        const voicesData = await voicesResponse.json()
+        console.log('🎵 Voices data:', voicesData)
+        setAvailableVoices(voicesData.voices || [])
+        
+        // If user has no preferences, use admin's default voice
+        if (!selectedVoiceId && voicesData.admin_default_voice) {
+          console.log('🎵 Setting admin default voice:', voicesData.admin_default_voice)
+          setSelectedVoiceId(voicesData.admin_default_voice)
+        }
+      } else {
+        console.error('🎵 Failed to load voices:', voicesResponse.status, await voicesResponse.text())
+      }
+
+      // Load user audio preferences
+      console.log('🎵 Fetching user preferences...')
+      const prefsResponse = await fetch('/api/user/audio-preferences', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (prefsResponse.ok) {
+        const prefsData = await prefsResponse.json()
+        console.log('🎵 User preferences:', prefsData)
+        setUserAudioPreferences(prefsData.preferences)
+        
+        // Use user's preferred voice, or admin's default, or first available voice
+        const voiceToUse = prefsData.preferences?.preferred_voice_id || 
+                          voicesData?.admin_default_voice || 
+                          availableVoices[0]?.voice_id || 
+                          availableVoices[0]?.id
+        console.log('🎵 Setting voice to use:', voiceToUse)
+        setSelectedVoiceId(voiceToUse)
+      } else {
+        console.error('🎵 Failed to load user preferences:', prefsResponse.status, await prefsResponse.text())
+      }
+    } catch (error) {
+      console.error('🎵 Error loading voices and preferences:', error)
+    } finally {
+      setIsLoadingVoices(false)
+    }
+  }
+
   // Generate audio from text using ElevenLabs
   const generateAudio = async (text: string) => {
     if (!text.trim()) return
@@ -315,6 +383,14 @@ Is there anything else I can help you with?`)
         throw new Error('Authentication required. Please log in.')
       }
 
+      // Use selected voice or fallback to user preferences, then admin default, then system default
+      const voiceToUse = selectedVoiceId || 
+                        userAudioPreferences?.preferred_voice_id || 
+                        'EXAVITQu4vr4xnSDxMaL' // System fallback
+      const modelToUse = userAudioPreferences?.preferred_model_id || 'eleven_multilingual_v2'
+
+      console.log('🎵 Using voice for audio generation:', voiceToUse)
+
       const response = await fetch('/api/text-to-speech', {
         method: 'POST',
         headers: {
@@ -323,8 +399,14 @@ Is there anything else I can help you with?`)
         },
         body: JSON.stringify({
           text: text.trim(),
-          voice_id: "21m00Tcm4TlvDq8ikWAM", // Default voice
-          model_id: "eleven_monolingual_v1"
+          voice_id: voiceToUse,
+          model_id: modelToUse,
+          stability: userAudioPreferences?.stability || 0.50,
+          similarity_boost: userAudioPreferences?.similarity_boost || 0.75,
+          style: userAudioPreferences?.style || 0.00,
+          use_speaker_boost: userAudioPreferences?.use_speaker_boost ?? true,
+          output_format: userAudioPreferences?.output_format || 'mp3_44100_128',
+          optimize_streaming_latency: userAudioPreferences?.optimize_streaming_latency || 0
         })
       })
 
@@ -334,12 +416,86 @@ Is there anything else I can help you with?`)
       }
 
       const data = await response.json()
-      setAudioUrl(data.audio)
+      setAudioUrl(data.audioUrl || data.audio)
     } catch (error) {
       console.error('Audio generation error:', error)
       setAudioError(error instanceof Error ? error.message : 'Failed to generate audio')
     } finally {
       setIsGeneratingAudio(false)
+    }
+  }
+  
+  // Save user voice preference
+  const saveUserVoicePreference = async (voiceId: string) => {
+    if (!user) return
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      await fetch('/api/user/audio-preferences', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          preferred_voice_id: voiceId,
+          preferred_model_id: userAudioPreferences?.preferred_model_id || 'eleven_multilingual_v2',
+          stability: userAudioPreferences?.stability || 0.50,
+          similarity_boost: userAudioPreferences?.similarity_boost || 0.75,
+          style: userAudioPreferences?.style || 0.00,
+          use_speaker_boost: userAudioPreferences?.use_speaker_boost ?? true,
+          output_format: userAudioPreferences?.output_format || 'mp3_44100_128',
+          optimize_streaming_latency: userAudioPreferences?.optimize_streaming_latency || 0
+        })
+      })
+    } catch (error) {
+      console.error('Error saving voice preference:', error)
+    }
+  }
+
+  // Preview voice function
+  const previewVoice = async (voiceId: string) => {
+    if (!user) return
+    
+    try {
+      setIsGeneratingPreview(true)
+      setPreviewVoiceId(voiceId)
+      setPreviewAudioUrl(null)
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const response = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: "Hello! This is a preview of how I sound.",
+          voice_id: voiceId,
+          model_id: userAudioPreferences?.preferred_model_id || 'eleven_multilingual_v2',
+          stability: userAudioPreferences?.stability || 0.50,
+          similarity_boost: userAudioPreferences?.similarity_boost || 0.75,
+          style: userAudioPreferences?.style || 0.00,
+          use_speaker_boost: userAudioPreferences?.use_speaker_boost ?? true,
+          output_format: userAudioPreferences?.output_format || 'mp3_44100_128',
+          optimize_streaming_latency: userAudioPreferences?.optimize_streaming_latency || 0
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setPreviewAudioUrl(data.audioUrl || data.audio)
+      } else {
+        console.error('Failed to generate voice preview')
+      }
+    } catch (error) {
+      console.error('Error generating voice preview:', error)
+    } finally {
+      setIsGeneratingPreview(false)
     }
   }
   
@@ -368,6 +524,17 @@ Is there anything else I can help you with?`)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
   const [audioError, setAudioError] = useState<string | null>(null)
+  
+  // Voice selection for all users
+  const [availableVoices, setAvailableVoices] = useState<any[]>([])
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>('')
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false)
+  const [userAudioPreferences, setUserAudioPreferences] = useState<any>(null)
+  
+  // Voice preview state
+  const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null)
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null)
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
 
   // NEW: Document import state
   const [showDocumentUpload, setShowDocumentUpload] = useState(false)
@@ -425,6 +592,13 @@ Is there anything else I can help you with?`)
     check()
     return () => { cancelled = true }
   }, [mode])
+
+  // Load voices and preferences when user changes
+  useEffect(() => {
+    if (user) {
+      loadVoicesAndPreferences()
+    }
+  }, [user])
 
   // Update video aspect ratio when mode changes to ensure compatibility
   useEffect(() => {
@@ -1033,7 +1207,9 @@ Is there anything else I can help you with?`)
         setUserCredits(creditData.credits)
       }
       // Also refresh credits after a short delay to ensure we have the latest
-      setTimeout(() => fetchUserCredits(), 500)
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
 
       // Determine which API to use
       let apiEndpoint = '/api/runway-image' // Default to RunwayML
@@ -1086,6 +1262,11 @@ Is there anything else I can help you with?`)
         setPrompt('') // Clear prompt
         // Use IMAGE_DISPLAY format so it appears in the AI response
         setOutput(`[IMAGE_DISPLAY:${data.url}]`)
+        
+        // Refresh credits after successful generation
+        if (user?.id) {
+          setTimeout(() => fetchUserCredits(user.id), 500)
+        }
       } else {
         throw new Error('No image URL returned')
       }
@@ -1094,6 +1275,11 @@ Is there anything else I can help you with?`)
       console.error('Image generation error:', error)
       setError(error.message || 'Failed to generate image')
       setImageGenerationProgress('')
+      
+      // Refresh credits after error (in case there was a refund)
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
     } finally {
       setIsGeneratingImage(false)
     }
@@ -1174,7 +1360,9 @@ Is there anything else I can help you with?`)
         setUserCredits(creditData.credits)
       }
       // Also refresh credits after a short delay to ensure we have the latest
-      setTimeout(() => fetchUserCredits(), 500)
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
 
       // Prepare form data
       const formData = new FormData()
@@ -1221,6 +1409,11 @@ Is there anything else I can help you with?`)
         setPrompt('') // Clear prompt
         // Use VIDEO_DISPLAY format so it appears in the AI response
         setOutput(`[VIDEO_DISPLAY:${data.url}]`)
+        
+        // Refresh credits after successful generation
+        if (user?.id) {
+          setTimeout(() => fetchUserCredits(user.id), 500)
+        }
       } else {
         throw new Error('No video URL returned')
       }
@@ -1229,6 +1422,11 @@ Is there anything else I can help you with?`)
       console.error('Video generation error:', error)
       setError(error.message || 'Failed to generate video')
       setVideoGenerationProgress('')
+      
+      // Refresh credits after error (in case there was a refund)
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
     } finally {
       console.log('Video generation completed, setting isGeneratingVideo to false')
       setIsGeneratingVideo(false)
@@ -1270,14 +1468,24 @@ Is there anything else I can help you with?`)
     
     // Auto-detect image generation requests in text prompts FIRST (before video defaults)
     // Check if user is asking for image generation
-    const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize', 'illustration', 'painting', 'sketch', 'artwork', 'cover art', 'album art', 'album cover', 'poster', 'banner', 'thumbnail', 'art']
+    const imageKeywords = ['image', 'picture', 'photo', 'draw', 'generate image', 'create image', 'show me an image', 'visualize', 'illustration', 'painting', 'sketch', 'artwork', 'cover art', 'album art', 'album cover', 'poster', 'banner', 'thumbnail', 'art', 'drawing', 'create a picture', 'make an image', 'generate a picture']
     const wantsImage = prompt.length < 500 && imageKeywords.some(keyword => 
       prompt.toLowerCase().includes(keyword.toLowerCase())
     )
     
+    // Additional check: if the prompt is asking a factual question, don't generate images
+    const factualKeywords = ['what', 'when', 'where', 'why', 'how', 'who', 'explain', 'tell me about', 'describe', 'define', 'meaning', 'history', 'origin', 'started', 'began', 'created', 'invented', 'discovered']
+    const isFactualQuestion = factualKeywords.some(keyword => 
+      prompt.toLowerCase().startsWith(keyword.toLowerCase()) || 
+      prompt.toLowerCase().includes(` ${keyword.toLowerCase()}`)
+    )
+    
+    // Don't generate images for factual questions
+    const shouldGenerateImage = wantsImage && !isFactualQuestion
+    
     // If user wants an image and has selected an image model, use it
     const imageGenModels = ['dalle_image', 'gpt-image-1', 'runway_image', 'gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']
-    if (wantsImage && selectedImageModel && imageGenModels.includes(selectedImageModel)) {
+    if (shouldGenerateImage && selectedImageModel && imageGenModels.includes(selectedImageModel)) {
       // Pass the selected model directly to avoid async state update issues
       await handleGenerateImage(selectedImageModel)
       return
@@ -1524,6 +1732,11 @@ Please provide a ${responseStyle} answer.`
       setError(e.message || "Unknown error")
     } finally {
       setLoading(false)
+      
+      // Always refresh credits after text generation completes (in case of errors or refunds)
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
     }
   }
 
@@ -2797,6 +3010,128 @@ Please provide a ${responseStyle} answer.`
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            )}
+
+            {/* Mode Selector - Admin Only */}
+            {isAdmin && (
+              <div className="w-full max-w-3xl mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">MODE:</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-10 bg-transparent border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/20 hover:text-white hover:border-cyan-400 transition-all"
+                  >
+                    <Music className="h-4 w-4 mr-2" />
+                    A
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-10 bg-transparent border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-white hover:border-purple-400 transition-all"
+                  >
+                    <ImageIcon className="h-4 w-4 mr-2" />
+                    P
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-10 bg-transparent border-red-500/50 text-red-300 hover:bg-red-500/20 hover:text-white hover:border-red-400 transition-all"
+                  >
+                    <Video className="h-4 w-4 mr-2" />
+                    V
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-10 bg-transparent border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/20 hover:text-white hover:border-yellow-400 transition-all"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    T
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Voice Selection - For All Users */}
+            {user && (
+              <div className="w-full max-w-3xl mt-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">DEFAULT VOICE:</span>
+                    {isLoadingVoices && (
+                      <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
+                    )}
+                  </div>
+                  <Select 
+                    value={selectedVoiceId || ""} 
+                    onValueChange={(value) => {
+                      setSelectedVoiceId(value)
+                      // Save user preference
+                      saveUserVoicePreference(value)
+                    }}
+                    disabled={isLoadingVoices}
+                  >
+                    <SelectTrigger className="w-full sm:w-64 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
+                      <SelectValue placeholder={isLoadingVoices ? "Loading voices..." : availableVoices.length === 0 ? "No voices available" : "Select Default Voice"} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md max-h-60">
+                      {availableVoices.length > 0 ? (
+                        availableVoices.map((voice) => (
+                          <div key={voice.voice_id || voice.id} className="flex items-center justify-between p-2 hover:bg-cyan-500/20">
+                            <SelectItem 
+                              value={voice.voice_id || voice.id}
+                              className="text-cyan-300 hover:bg-cyan-500/20 focus:bg-cyan-500/20 font-mono flex-1"
+                            >
+                              {voice.name} {voice.category === 'cloned' || voice.category === 'custom' ? '(Custom)' : ''}
+                            </SelectItem>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                previewVoice(voice.voice_id || voice.id)
+                              }}
+                              disabled={isGeneratingPreview && previewVoiceId === (voice.voice_id || voice.id)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/20 flex-shrink-0 ml-2"
+                              title="Preview voice"
+                            >
+                              {isGeneratingPreview && previewVoiceId === (voice.voice_id || voice.id) ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Play className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-2 text-gray-400 text-sm">
+                          {isLoadingVoices ? "Loading voices..." : "No voices available. Please run the SQL setup first."}
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs text-gray-400 mt-1 sm:mt-0">
+                    This will be your default voice for all audio generation
+                  </div>
+                </div>
+                
+                {/* Voice Preview Audio */}
+                {previewAudioUrl && (
+                  <div className="mt-3 p-3 bg-cyan-900/20 border border-cyan-500/30 rounded-lg">
+                    <div className="text-xs text-cyan-400 mb-2">Voice Preview:</div>
+                    <audio 
+                      controls 
+                      src={previewAudioUrl} 
+                      className="w-full h-8"
+                      autoPlay
+                    />
+                  </div>
+                )}
+                
               </div>
             )}
 

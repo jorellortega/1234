@@ -208,7 +208,7 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             </div>
           </div>
 
-          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {isDrillable && onDrillDown && (
               <Button 
                 variant="ghost" 

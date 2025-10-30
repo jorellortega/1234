@@ -251,6 +251,10 @@ export async function POST(req: NextRequest) {
         if (task.status === 'SUCCEEDED') {
           videoUrl = task.output?.[0]
           console.log('✅ Video generation succeeded! URL:', videoUrl)
+          // Log full task object to see what resolution info is available
+          console.log('📊 Full task object:', JSON.stringify(task, null, 2))
+          console.log('📐 Requested ratio:', ratio)
+          console.log('🎬 Actual video output:', task.output)
           break
         } else if (task.status === 'FAILED') {
           console.error('❌ Video generation failed:', task.failure)
@@ -306,6 +310,7 @@ export async function POST(req: NextRequest) {
         model: model,
         prompt: prompt,
         duration: duration,
+        ratio: ratio, // Include requested ratio in response
       })
 
     } catch (error: any) {
