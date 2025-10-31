@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET(
   request: Request,
@@ -7,12 +7,38 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const supabase = supabaseServer()
+    
+    // Create Supabase client with anon key for user authentication
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Authorization header required' },
+        { status: 401 }
+      )
+    }
+    
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
     
     const { data: memory, error } = await supabase
       .from('memories')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single()
 
     if (error) {
@@ -64,7 +90,53 @@ export async function PUT(
       )
     }
 
-    const supabase = supabaseServer()
+    // Create Supabase client with anon key for user authentication
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Authorization header required' },
+        { status: 401 }
+      )
+    }
+    
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    
+    // Verify the memory exists and belongs to the user
+    const { data: memory, error: fetchError } = await supabase
+      .from('memories')
+      .select('id, user_id')
+      .eq('id', id)
+      .single()
+    
+    if (fetchError || !memory) {
+      return NextResponse.json(
+        { error: 'Memory not found' },
+        { status: 404 }
+      )
+    }
+    
+    // Verify ownership
+    if (memory.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You can only update your own memories' },
+        { status: 403 }
+      )
+    }
     
     const { data: updatedMemory, error } = await supabase
       .from('memories')
@@ -78,6 +150,7 @@ export async function PUT(
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single()
 
@@ -111,12 +184,61 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const supabase = supabaseServer()
     
+    // Create Supabase client with anon key for user authentication
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Authorization header required' },
+        { status: 401 }
+      )
+    }
+    
+    // Set the session from the authorization header
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    
+    // Verify the memory exists and belongs to the user
+    const { data: memory, error: fetchError } = await supabase
+      .from('memories')
+      .select('id, user_id')
+      .eq('id', id)
+      .single()
+    
+    if (fetchError || !memory) {
+      return NextResponse.json(
+        { error: 'Memory not found' },
+        { status: 404 }
+      )
+    }
+    
+    // Verify ownership
+    if (memory.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You can only delete your own memories' },
+        { status: 403 }
+      )
+    }
+    
+    // Delete the memory
     const { error } = await supabase
       .from('memories')
       .delete()
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) {
       console.error('Error deleting memory:', error)

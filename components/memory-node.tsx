@@ -6,6 +6,7 @@ import { MemoryForm } from "@/components/MemoryForm"
 import { cn } from "@/lib/utils"
 import { Pencil, Trash2, FolderOpen } from "lucide-react"
 import { Memory, MemoryFormData } from '@/lib/types'
+import { supabase } from '@/lib/supabase-client'
 
 type MemoryNodeProps = {
   memory: Memory
@@ -23,10 +24,17 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
 
   const handleEdit = async (memoryData: MemoryFormData) => {
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
       const response = await fetch(`/api/memories/${memory.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(memoryData),
       })
@@ -52,12 +60,23 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
 
     try {
       setIsDeleting(true)
+      
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
       const response = await fetch(`/api/memories/${memory.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
       })
 
       if (!response.ok) {
-        throw new Error('Failed to delete memory')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete memory')
       }
 
       if (onUpdate) {
@@ -65,7 +84,7 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
       }
     } catch (error) {
       console.error('Error deleting memory:', error)
-      alert('Failed to delete memory')
+      alert(error instanceof Error ? error.message : 'Failed to delete memory')
     } finally {
       setIsDeleting(false)
     }
@@ -139,7 +158,7 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
         <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-8 h-0.5 w-1/2 bg-cyan-500/30" />
         <div className="hidden md:block absolute left-1/2 -translate-x-1/2 top-8 h-4 w-4 rounded-full bg-cyan-500 glow" />
 
-        <div className="w-full md:w-[calc(50%-2rem)] aztec-panel backdrop-blur-sm p-4 group transition-all hover:border-cyan-400 overflow-hidden">
+        <div className="w-full md:w-[calc(50%-2rem)] aztec-panel backdrop-blur-sm p-4 group transition-all hover:border-cyan-400 overflow-hidden relative">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1">
               <span className="text-xs text-cyan-600 font-mono break-all">{memory.timestamp}</span>
@@ -208,12 +227,12 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             </div>
           </div>
 
-          <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute bottom-2 right-2 flex gap-1 opacity-30 group-hover:opacity-100 transition-opacity z-50">
             {isDrillable && onDrillDown && (
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="text-blue-400 hover:text-blue-300 h-7 w-7"
+                className="text-blue-400 hover:text-blue-300 h-7 w-7 z-50"
                 onClick={() => onDrillDown(memory)}
                 title="Drill down into sub-memories"
               >
@@ -223,7 +242,7 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-gray-400 hover:text-white h-7 w-7"
+              className="text-gray-400 hover:text-white h-7 w-7 z-50"
               onClick={() => setShowEditForm(true)}
             >
               <Pencil className="h-4 w-4" />
@@ -231,7 +250,7 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             <Button
               variant="ghost"
               size="icon"
-              className="text-red-500/70 hover:text-red-500 hover:bg-red-500/10 h-7 w-7"
+              className="text-red-500/70 hover:text-red-500 hover:bg-red-500/10 h-7 w-7 z-50"
               onClick={handleDelete}
               disabled={isDeleting}
             >

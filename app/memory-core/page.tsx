@@ -318,7 +318,7 @@ export default function MemoryCorePage() {
         {/* Category Filter */}
         <div className="my-4">
           <div className="flex flex-wrap gap-2">
-            {(['all', 'project', 'idea', 'family_tree', 'question', 'general'] as MemoryCategory[]).map((category) => (
+            {(['all', 'project', 'idea', 'question', 'general'] as MemoryCategory[]).map((category) => (
               <Button
                 key={category}
                 variant={selectedCategory === category ? "default" : "outline"}
@@ -407,7 +407,7 @@ export default function MemoryCorePage() {
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-12">
-          <p>JOR INTERFACE © {new Date().getFullYear()}. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
+          <p>JOR INTERFACE © 2025. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
         </footer>
 
         {showForm && (
