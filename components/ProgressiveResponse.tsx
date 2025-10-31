@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save } from "lucide-react"
 
 interface ProgressiveResponseProps {
@@ -19,6 +20,11 @@ interface ProgressiveResponseProps {
   // Save media props
   prompt?: string
   model?: string
+  // Admin-only props for image-to-video model selector
+  isAdmin?: boolean
+  imageToVideoModel?: string
+  onImageToVideoModelChange?: (model: string) => void
+  isModelEnabled?: (model: string) => boolean
 }
 
 export function ProgressiveResponse({ 
@@ -32,7 +38,11 @@ export function ProgressiveResponse({
   onGenerateAudio,
   onConvertToVideo,
   prompt,
-  model
+  model,
+  isAdmin = false,
+  imageToVideoModel = 'gen4_turbo',
+  onImageToVideoModelChange,
+  isModelEnabled = () => true
 }: ProgressiveResponseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -178,7 +188,11 @@ export function ProgressiveResponse({
 
   const hasDetailedContent = detailedPart && detailedPart.trim().length > 0
   const hasMediaContent = content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:')
-  const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore) && !hasMediaContent
+  // Only show "Show More" for actual text content, not for media generation status messages
+  // Check if content is a status message (starts with emoji or status text) or contains media
+  const isStatusMessage = concisePart && /^(✅|❌|🎬|🖼️|🎵|Image loaded|Ready to|Ready!|Video|Audio|Generating|Processing)/i.test(concisePart.trim())
+  const isTextResponse = !hasMediaContent && !isStatusMessage && concisePart && concisePart.trim().length > 0
+  const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore) && isTextResponse
 
   // Audio control functions
   useEffect(() => {
@@ -225,7 +239,7 @@ export function ProgressiveResponse({
 
     const link = document.createElement('a')
     link.href = audioUrl
-    link.download = `infinito-response-${Date.now()}.mp3`
+    link.download = `Infinito Audio.mp3`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -450,7 +464,7 @@ export function ProgressiveResponse({
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `infinito-audio-${Date.now()}.mp3`;
+                    a.download = `Infinito Audio.mp3`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -523,6 +537,29 @@ export function ProgressiveResponse({
 
             return (
               <div className="mb-4 p-2 sm:p-3 bg-black/10 rounded border border-cyan-500/30 overflow-hidden">
+                {/* Admin-only Image-to-Video Model Selector */}
+                {isAdmin && onImageToVideoModelChange && (
+                  <div className="mb-3 p-2 bg-black/20 rounded border border-pink-500/30">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                      <span className="text-pink-400 text-xs font-semibold tracking-wide uppercase">Image-to-Video Model:</span>
+                      <Select 
+                        value={imageToVideoModel} 
+                        onValueChange={onImageToVideoModelChange}
+                      >
+                        <SelectTrigger className="w-full sm:w-48 h-8 bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400 focus:border-pink-400 focus:ring-pink-400/50 text-xs font-mono uppercase tracking-wider">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                          {isModelEnabled('gen4_turbo') && <SelectItem value="gen4_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase text-xs">GEN-4 TURBO (I2V)</SelectItem>}
+                          {isModelEnabled('gen3a_turbo') && <SelectItem value="gen3a_turbo" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase text-xs">GEN-3A TURBO (I2V)</SelectItem>}
+                          {isModelEnabled('veo3.1') && <SelectItem value="veo3.1" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase text-xs">VEO 3.1 (T2V/I2V)</SelectItem>}
+                          {isModelEnabled('veo3.1_fast') && <SelectItem value="veo3.1_fast" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase text-xs">VEO 3.1 FAST (T2V/I2V)</SelectItem>}
+                          {isModelEnabled('veo3') && <SelectItem value="veo3" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase text-xs">VEO 3 (T2V/I2V)</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                   <div className="text-cyan-400 text-sm font-semibold">Generated Image:</div>
                   <div className="flex flex-wrap gap-1 sm:gap-2">
@@ -689,7 +726,7 @@ export function ProgressiveResponse({
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `infinito-audio-${Date.now()}.mp3`;
+                a.download = `Infinito Audio.mp3`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
@@ -889,7 +926,7 @@ export function ProgressiveResponse({
               {isLoadingMore ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  <span className="text-xs">Loading...</span>
+                  <span className="text-xs">Processing...</span>
                 </>
               ) : isExpanded ? (
                 <>

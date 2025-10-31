@@ -1,8 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Download, Trash2, Edit, X } from "lucide-react";
+import { Download, Trash2, Edit, X, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase-client";
 
@@ -38,6 +38,9 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
   const [previewItem, setPreviewItem] = useState<Row | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newPrompt, setNewPrompt] = useState("");
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
 
   const rows = useMemo(() => {
     return initial.filter((r) => {
@@ -58,6 +61,18 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
       return true;
     });
   }, [initial, q, model, tmin, tmax, kmin, kmax, from, to, tag]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      setPlayingAudioUrl(null);
+      setIsPaused(false);
+    };
+  }, []);
 
   // helper functions
   function toggle(id: string, val?: boolean) {
@@ -125,7 +140,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `infinito-audio-${Date.now()}.mp3`;
+        a.download = `Infinito Audio.mp3`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -333,15 +348,47 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              // If the same audio is playing, toggle play/pause
+                              if (playingAudioUrl === audioUrl && currentAudioRef.current) {
+                                if (isPaused) {
+                                  currentAudioRef.current.play().catch(console.error);
+                                  setIsPaused(false);
+                                } else {
+                                  currentAudioRef.current.pause();
+                                  setIsPaused(true);
+                                }
+                                return;
+                              }
+                              
+                              // Stop any currently playing audio
+                              if (currentAudioRef.current) {
+                                currentAudioRef.current.pause();
+                                currentAudioRef.current.currentTime = 0;
+                                currentAudioRef.current = null;
+                              }
+                              
+                              // Create and play new audio
                               const audio = new Audio(audioUrl);
+                              currentAudioRef.current = audio;
+                              setPlayingAudioUrl(audioUrl);
+                              setIsPaused(false);
                               audio.play().catch(console.error);
+                              
+                              // Clean up when audio ends
+                              audio.onended = () => {
+                                currentAudioRef.current = null;
+                                setPlayingAudioUrl(null);
+                                setIsPaused(false);
+                              };
                             }}
                             className="w-8 h-8 sm:w-10 sm:h-10 bg-green-600 hover:bg-green-700 rounded-full flex items-center justify-center transition-colors"
-                            title="Play audio"
+                            title={playingAudioUrl === audioUrl && !isPaused ? "Pause audio" : "Play audio"}
                           >
-                            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M8 5v14l11-7z"/>
-                            </svg>
+                            {playingAudioUrl === audioUrl && !isPaused ? (
+                              <Pause className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                            ) : (
+                              <Play className="w-4 h-4 sm:w-5 sm:h-5 text-white ml-0.5" />
+                            )}
                           </button>
                         </div>
                       );

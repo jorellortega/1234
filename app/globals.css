@@ -174,3 +174,19 @@ body {
   animation: shimmer 1.5s ease-in-out infinite;
   width: 50%;
 }
+
+/* Buy button animation - attention grabbing pulse with glow */
+@keyframes buy-button-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.3), 0 0 60px rgba(34, 197, 94, 0.2);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.6), 0 0 60px rgba(34, 197, 94, 0.4), 0 0 90px rgba(34, 197, 94, 0.3);
+  }
+}
+
+.animate-buy-button {
+  animation: buy-button-pulse 2s ease-in-out infinite;
+}

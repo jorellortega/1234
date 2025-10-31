@@ -80,6 +80,10 @@ export default function CreditsPage() {
   const [currentCredits, setCurrentCredits] = useState(0)
   const [processing, setProcessing] = useState<string | null>(null)
   const [customCredits, setCustomCredits] = useState(50)
+  const MIN_CREDITS = 30 // Minimum credits = $1.44 / $0.048 (Stripe minimum $1.00)
+  const MIN_PRICE = 1.44
+  const MAX_PRICE = 999999.99 // Stripe maximum price
+  const MAX_CREDITS = Math.floor(MAX_PRICE / 0.048) // Maximum credits = $999,999.99 / $0.048
   const [showCustom, setShowCustom] = useState(false)
 
   useEffect(() => {
@@ -148,16 +152,20 @@ export default function CreditsPage() {
       console.log('📥 Response status:', response.status)
       console.log('📥 Response ok:', response.ok)
 
-      const { url } = await response.json()
+      const data = await response.json()
       
-      if (url) {
-        window.location.href = url
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session')
+      }
+      
+      if (data.url) {
+        window.location.href = data.url
       } else {
         throw new Error('Failed to create checkout session')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating checkout session:', error)
-      alert('Failed to start payment. Please try again.')
+      alert(error.message || 'Failed to start payment. Please try again.')
     } finally {
       setProcessing(null)
     }
@@ -170,13 +178,21 @@ export default function CreditsPage() {
       return
     }
 
-    if (customCredits < 10) {
-      alert('Minimum purchase is 10 credits')
+    // Calculate price: $0.048 per credit (includes 60% markup)
+    const price = customCredits * 0.048
+
+    if (price < MIN_PRICE) {
+      alert(`Minimum purchase is $${MIN_PRICE.toFixed(2)} (${MIN_CREDITS} credits). Stripe requires a minimum payment of $1.00.`)
       return
     }
 
-    if (customCredits > 10000) {
-      alert('Maximum purchase is 10,000 credits')
+    if (customCredits < MIN_CREDITS) {
+      alert(`Minimum purchase is ${MIN_CREDITS} credits ($${MIN_PRICE.toFixed(2)})`)
+      return
+    }
+
+    if (price > MAX_PRICE) {
+      alert(`Maximum purchase is $${MAX_PRICE.toFixed(2)} (${MAX_CREDITS.toLocaleString()} credits). Stripe maximum is $999,999.99.`)
       return
     }
 
@@ -189,9 +205,6 @@ export default function CreditsPage() {
         alert('Please sign in to purchase credits')
         return
       }
-
-      // Calculate price: $0.048 per credit (includes 60% markup)
-      const price = customCredits * 0.048
       
       const response = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -206,16 +219,20 @@ export default function CreditsPage() {
         }),
       })
 
-      const { url } = await response.json()
+      const data = await response.json()
       
-      if (url) {
-        window.location.href = url
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session')
+      }
+      
+      if (data.url) {
+        window.location.href = data.url
       } else {
         throw new Error('Failed to create checkout session')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating checkout session:', error)
-      alert('Failed to start payment. Please try again.')
+      alert(error.message || 'Failed to start payment. Please try again.')
     } finally {
       setProcessing(null)
     }
@@ -223,8 +240,20 @@ export default function CreditsPage() {
 
   const adjustCustomCredits = (amount: number) => {
     const newAmount = customCredits + amount
-    if (newAmount >= 10 && newAmount <= 10000) {
+    if (newAmount >= MIN_CREDITS && newAmount <= MAX_CREDITS) {
       setCustomCredits(newAmount)
+    }
+  }
+
+  const adjustCustomPrice = (amount: number) => {
+    const currentPrice = customCredits * 0.048
+    const newPrice = currentPrice + amount
+    if (newPrice >= MIN_PRICE && newPrice <= MAX_PRICE) {
+      // Calculate credits from price (round to nearest integer)
+      const newCredits = Math.round(newPrice / 0.048)
+      if (newCredits >= MIN_CREDITS && newCredits <= MAX_CREDITS) {
+        setCustomCredits(newCredits)
+      }
     }
   }
 
@@ -272,11 +301,18 @@ export default function CreditsPage() {
           {/* Custom Amount Section - FIRST for mobile visibility */}
           <div className="mb-6 sm:mb-8 md:mb-12">
             <div className="text-center mb-4 sm:mb-6 md:mb-8">
-              <h3 className="text-2xl sm:text-3xl md:text-4xl font-bold text-green-400 mb-1 sm:mb-2 tracking-widest">
-                CUSTOM AMOUNT
-              </h3>
+              <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+                <div className="p-2 sm:p-3 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg">
+                  <Plus className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-lg sm:text-xl md:text-2xl font-bold text-green-400">
+                    Choose Your Amount
+                  </h4>
+                </div>
+              </div>
               <p className="text-base sm:text-lg md:text-xl text-green-300">
-                Choose exactly how many credits you need
+                Select the exact number of credits you need
               </p>
             </div>
             
@@ -287,17 +323,55 @@ export default function CreditsPage() {
                   
                   {/* Price Display - FIRST on mobile */}
                   <div className="text-center bg-gradient-to-br from-green-900/20 to-emerald-900/20 rounded-2xl p-4 sm:p-6 md:p-8 border-2 border-green-400/30 order-1">
-                    <div className="text-4xl sm:text-5xl md:text-6xl font-bold text-green-400 mb-2 sm:mb-3 tracking-tight">
-                      ${(customCredits * 0.048).toFixed(2)}
+                    <div className="flex items-center justify-center gap-2 sm:gap-3 md:gap-4 mb-2 sm:mb-3">
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => adjustCustomPrice(-1)}
+                        disabled={(customCredits * 0.048) <= MIN_PRICE}
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-3 sm:px-4 py-2 sm:py-3 h-12 sm:h-14 flex-shrink-0"
+                      >
+                        <Minus className="h-5 w-5 sm:h-6 sm:w-6" />
+                      </Button>
+                      <div className="relative inline-flex min-w-[120px]">
+                        <Input
+                          type="number"
+                          value={(customCredits * 0.048).toFixed(2)}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value) || MIN_PRICE
+                            if (value >= MIN_PRICE && value <= MAX_PRICE) {
+                              // Calculate credits from price (round to nearest integer)
+                              const newCredits = Math.round(value / 0.048)
+                              if (newCredits >= MIN_CREDITS && newCredits <= MAX_CREDITS) {
+                                setCustomCredits(newCredits)
+                              }
+                            }
+                          }}
+                          size={Math.max(8, ((customCredits * 0.048).toFixed(2).length + 2))}
+                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-400 text-3xl sm:text-4xl md:text-5xl font-bold w-auto min-w-[120px] max-w-[400px] h-12 sm:h-14 md:h-16 pl-6 sm:pl-8 md:pl-10 pr-2 sm:pr-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                          min={MIN_PRICE}
+                          max={MAX_PRICE}
+                          step="0.01"
+                        />
+                        <div className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 text-3xl sm:text-4xl md:text-5xl font-bold text-green-400 pointer-events-none">
+                          $
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => adjustCustomPrice(1)}
+                        disabled={(customCredits * 0.048) >= MAX_PRICE}
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-3 sm:px-4 py-2 sm:py-3 h-12 sm:h-14 flex-shrink-0"
+                      >
+                        <Plus className="h-5 w-5 sm:h-6 sm:w-6" />
+                      </Button>
                     </div>
                     <div className="text-green-300 text-xl sm:text-2xl font-semibold mb-1 sm:mb-2">
                       {customCredits} Credits
                     </div>
-                    <div className="text-sm sm:text-base md:text-lg text-green-500 font-medium">
+                    <div className="text-[9px] sm:text-[10px] text-green-500/40 font-medium">
                       $0.048 per credit
-                    </div>
-                    <div className="text-xs sm:text-sm text-green-400 mt-1 sm:mt-2">
-                      1 Credit = 1,000 tokens
                     </div>
                     <div className="mt-2 sm:mt-4 text-xs sm:text-sm text-green-400">
                       ⚡ Instant delivery after payment
@@ -309,7 +383,7 @@ export default function CreditsPage() {
                     <Button
                       onClick={handleCustomPurchase}
                       disabled={processing === 'custom'}
-                      className="w-full bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 hover:brightness-110 text-white font-bold px-6 sm:px-8 md:px-12 py-3 sm:py-4 text-lg sm:text-xl tracking-wider transition-all disabled:opacity-50 shadow-2xl shadow-green-500/30 hover:shadow-green-400/40"
+                      className="w-full bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 hover:brightness-110 text-white font-bold px-6 sm:px-8 md:px-12 py-3 sm:py-4 text-lg sm:text-xl tracking-wider transition-all disabled:opacity-50 shadow-2xl shadow-green-500/30 hover:shadow-green-400/40 animate-buy-button hover:animate-none hover:scale-105 active:scale-100 ring-2 ring-green-400/50 ring-offset-2 ring-offset-black/50"
                     >
                       {processing === 'custom' ? (
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
@@ -327,39 +401,30 @@ export default function CreditsPage() {
                   
                   {/* Amount Controls - THIRD on mobile */}
                   <div className="space-y-4 sm:space-y-6 order-3">
-                    <div className="flex items-center gap-2 sm:gap-3 justify-center">
-                      <div className="p-2 sm:p-3 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg">
-                        <Plus className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-white" />
-                      </div>
-                      <div className="text-center sm:text-left">
-                        <h4 className="text-lg sm:text-xl md:text-2xl font-bold text-green-400">Choose Your Amount</h4>
-                        <p className="text-xs sm:text-sm md:text-base text-green-300">Select the exact number of credits you need</p>
-                      </div>
-                    </div>
-                    
                     <div className="flex items-center justify-center gap-3 sm:gap-4">
                       <Button
                         variant="outline"
                         size="lg"
                         onClick={() => adjustCustomCredits(-10)}
-                        disabled={customCredits <= 10}
+                        disabled={customCredits <= MIN_CREDITS}
                         className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-3 sm:px-4 py-2 sm:py-3 h-12 sm:h-14"
                       >
                         <Minus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
-                      <div className="relative">
+                      <div className="relative inline-flex min-w-[150px]">
                         <Input
                           type="number"
                           value={customCredits}
                           onChange={(e) => {
-                            const value = parseInt(e.target.value) || 10
-                            if (value >= 10 && value <= 10000) {
+                            const value = parseInt(e.target.value) || MIN_CREDITS
+                            if (value >= MIN_CREDITS && value <= MAX_CREDITS) {
                               setCustomCredits(value)
                             }
                           }}
-                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-300 text-2xl sm:text-3xl font-bold w-24 sm:w-32 h-12 sm:h-14 px-2 sm:px-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30"
-                          min="10"
-                          max="10000"
+                          size={Math.max(8, (customCredits.toString().length + 2))}
+                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-300 text-2xl sm:text-3xl md:text-4xl font-bold w-auto min-w-[150px] max-w-[300px] h-12 sm:h-14 px-2 sm:px-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                          min={MIN_CREDITS}
+                          max={MAX_CREDITS}
                         />
                         <div className="absolute -bottom-5 sm:-bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-green-500 font-medium whitespace-nowrap">
                           CREDITS
@@ -369,15 +434,15 @@ export default function CreditsPage() {
                         variant="outline"
                         size="lg"
                         onClick={() => adjustCustomCredits(10)}
-                        disabled={customCredits >= 10000}
+                        disabled={customCredits >= MAX_CREDITS}
                         className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-3 sm:px-4 py-2 sm:py-3 h-12 sm:h-14"
                       >
                         <Plus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
                     </div>
                     
-                    <p className="text-xs sm:text-sm text-green-500 text-center">
-                      Min: 10 credits • Max: 10,000 credits
+                    <p className="text-[10px] text-green-500 text-center opacity-70">
+                      Min: {MIN_CREDITS} credits (${MIN_PRICE.toFixed(2)}) • Max: {MAX_CREDITS.toLocaleString()} credits (${MAX_PRICE.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})})
                     </p>
                   </div>
                 </div>
@@ -403,25 +468,8 @@ export default function CreditsPage() {
             )}
           </div>
 
-          {/* Pricing Explanation */}
-          <div className="mb-6 sm:mb-8 text-center">
-            <div className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-2xl p-4 sm:p-6 border border-cyan-500/30">
-              <h3 className="text-lg sm:text-xl font-bold text-cyan-400 mb-3">How Credits Work</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
-                <div className="text-cyan-300">
-                  <strong className="text-cyan-400">1 Credit = 1,000 tokens</strong><br/>
-                  Each credit gives you 1,000 output tokens from AI models
-                </div>
-                <div className="text-cyan-300">
-                  <strong className="text-cyan-400">$0.048 per credit</strong><br/>
-                  Includes 60% markup on OpenAI costs for sustainable service
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Pricing Packs */}
-          <div className="mb-6 sm:mb-8">
+          <div className="mb-6 sm:mb-8 hidden">
             <h3 className="text-xl sm:text-2xl font-bold text-cyan-400 mb-4 sm:mb-6 text-center">Credit Packs</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {pricingTiers.map((tier) => (
@@ -494,28 +542,6 @@ export default function CreditsPage() {
             </div>
           </div>
 
-          <div className="text-center">
-            <div className="bg-black/20 rounded-lg p-4 sm:p-6 border border-cyan-500/20">
-              <h3 className="text-lg sm:text-xl font-bold text-cyan-400 mb-3 sm:mb-4">How Credits Work</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 text-cyan-300">
-                <div>
-                  <Zap className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-cyan-400" />
-                  <h4 className="font-semibold mb-1 sm:mb-2 text-sm sm:text-base">AI Generations</h4>
-                  <p className="text-xs sm:text-sm">Each AI response costs 1 credit</p>
-                </div>
-                <div>
-                  <Crown className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-cyan-400" />
-                  <h4 className="font-semibold mb-1 sm:mb-2 text-sm sm:text-base">Document Processing</h4>
-                  <p className="text-xs sm:text-sm">Document uploads cost 5 credits</p>
-                </div>
-                <div>
-                  <Rocket className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-cyan-400" />
-                  <h4 className="font-semibold mb-1 sm:mb-2 text-sm sm:text-base">Vision Models</h4>
-                  <p className="text-xs sm:text-sm">Image analysis costs 3 credits</p>
-                </div>
-              </div>
-            </div>
-          </div>
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-6 sm:mt-8">

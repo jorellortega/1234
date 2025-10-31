@@ -137,6 +137,7 @@ export async function PUT(request: NextRequest) {
     if (body.selected_image_model !== undefined) updateData.selected_image_model = body.selected_image_model
     if (body.selected_video_model !== undefined) updateData.selected_video_model = body.selected_video_model
     if (body.selected_audio_model !== undefined) updateData.selected_audio_model = body.selected_audio_model
+    if (body.selected_image_to_video_model !== undefined) updateData.selected_image_to_video_model = body.selected_image_to_video_model
 
     // Update preferences (update the single row)
     const { data, error } = await supabase

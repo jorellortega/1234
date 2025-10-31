@@ -24,6 +24,7 @@ export default function AIPromptPage() {
   const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null)
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null)
   const [selectedAudioModel, setSelectedAudioModel] = useState<string | null>(null)
+  const [imageToVideoModel, setImageToVideoModel] = useState<string>('gen4_turbo') // Separate model for image-to-video conversion (gen4_aleph is V2V, not I2V)
   
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
@@ -181,6 +182,10 @@ export default function AIPromptPage() {
         if (prefs.selected_audio_model) {
           setSelectedAudioModel(prefs.selected_audio_model)
           console.log('📌 Restored audio model:', prefs.selected_audio_model)
+        }
+        if (prefs.selected_image_to_video_model) {
+          setImageToVideoModel(prefs.selected_image_to_video_model)
+          console.log('📌 Restored image-to-video model:', prefs.selected_image_to_video_model)
         }
       }
     } catch (error) {
@@ -529,6 +534,7 @@ Is there anything else I can help you with?`)
   const [availableVoices, setAvailableVoices] = useState<any[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('')
   const [isLoadingVoices, setIsLoadingVoices] = useState(false)
+  const [isVoiceDropdownOpen, setIsVoiceDropdownOpen] = useState(false)
   const [userAudioPreferences, setUserAudioPreferences] = useState<any>(null)
   
   // Voice preview state
@@ -570,6 +576,7 @@ Is there anything else I can help you with?`)
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
   const [videoRatio, setVideoRatio] = useState<string>('720:1280') // Default to portrait (RunwayML compatible)
   const videoFileInputRef = useRef<HTMLInputElement>(null)
+  const [isConvertingImageToVideo, setIsConvertingImageToVideo] = useState(false) // Flag to track if converting from generated image
   
   // RunwayML Image Generation state
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null)
@@ -687,6 +694,9 @@ Is there anything else I can help you with?`)
     } else if (modelType === 'audio') {
       setSelectedAudioModel(value)
       console.log("Audio model changed to:", value)
+    } else if (modelType === 'imageToVideo') {
+      setImageToVideoModel(value)
+      console.log("Image-to-video model changed to:", value)
     }
     
     // Save model selection to admin preferences if admin
@@ -697,10 +707,12 @@ Is there anything else I can help you with?`)
         updatePayload.selected_text_model = value
       } else if (modelType === 'image') {
         updatePayload.selected_image_model = value
-      } else if (modelType === 'video') {
+      } else       if (modelType === 'video') {
         updatePayload.selected_video_model = value
       } else if (modelType === 'audio') {
         updatePayload.selected_audio_model = value
+      } else if (modelType === 'imageToVideo') {
+        updatePayload.selected_image_to_video_model = value
       }
       
       // Save to preferences
@@ -791,14 +803,37 @@ Is there anything else I can help you with?`)
       })
 
       if (!response.ok) {
-        throw new Error('Failed to process document')
+        const errorData = await response.json().catch(() => ({ error: 'Failed to process document' }))
+        const errorMessage = errorData.error || errorData.details || 'Failed to process document'
+        console.error('❌ [ERROR] Document processing failed:', errorData)
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
       
+      // DEBUG: Log the API response
+      console.log('🔍 [DEBUG] Document processing API response:', {
+        hasResult: !!result,
+        filename: result?.filename,
+        hasMemories: !!result?.memories,
+        memoriesCount: result?.memories?.length || 0,
+        hasExtractedText: !!result?.extractedText,
+        extractedTextLength: result?.extractedText?.length || 0,
+        extractedTextPreview: result?.extractedText?.substring(0, 100) || 'NO TEXT',
+        fullResult: result
+      })
+      
       if (result.memories && result.memories.length > 0) {
         // Get the current session token for authentication
         const { data: { session } } = await supabase.auth.getSession()
+        
+        // DEBUG: Check extractedText before proceeding
+        if (!result.extractedText || result.extractedText.trim().length === 0) {
+          console.error('❌ [ERROR] API returned no extractedText!', result)
+          setError(`Document ${file.name} was processed but no text was extracted. Check server logs.`)
+          setIsProcessingDocument(false)
+          return
+        }
         
         // Automatically save all extracted memories
         for (const memory of result.memories) {
@@ -817,6 +852,7 @@ Is there anything else I can help you with?`)
         setLastProcessedDocument(`${file.name} (${result.memories.length} memories)`)
         
         // Set the processed document data to show the file icon
+        console.log('✅ [DEBUG] Setting processedDocumentData with extractedText length:', result.extractedText?.length || 0)
         setProcessedDocumentData(result)
         // Don't automatically show the review window - let user click the icon
         
@@ -885,6 +921,7 @@ Is there anything else I can help you with?`)
   const clearVideoImage = () => {
     setVideoImage(null)
     setVideoImagePreview(null)
+    setIsConvertingImageToVideo(false) // Clear flag when clearing video image
     if (videoFileInputRef.current) {
       videoFileInputRef.current.value = ''
     }
@@ -912,6 +949,9 @@ Is there anything else I can help you with?`)
       // Set the video image
       setVideoImage(file)
       
+      // Set flag to use imageToVideoModel instead of selected video model
+      setIsConvertingImageToVideo(true)
+      
       // Switch to video mode - use current video model if already selected, otherwise default to gen4_turbo
       const isCurrentlyVideoModel = ['gen4_turbo', 'gen3a_turbo', 'veo3.1', 'veo3.1_fast', 'veo3', 'gen4_aleph'].includes(mode)
       if (!isCurrentlyVideoModel) {
@@ -930,6 +970,7 @@ Is there anything else I can help you with?`)
     } catch (error) {
       console.error('Error converting image to video:', error)
       setError('Failed to load image for video generation')
+      setIsConvertingImageToVideo(false)
     }
   }
 
@@ -1034,7 +1075,7 @@ Is there anything else I can help you with?`)
       // Then save the memory with storage URL
       const imageMemory = {
         concept: `Image Document: ${selectedImage.name}`,
-        data: `Image file uploaded for vision model analysis.\n\nFilename: ${selectedImage.name}\nSize: ${(selectedImage.size / 1024 / 1024).toFixed(2)} MB\nType: ${selectedImage.type}\nVision Model: ${mode.toUpperCase()}\nStorage URL: ${storageUrl || 'Upload failed'}\n\nImage Data: ${imagePreview ? 'Available' : 'Not available'}`,
+        data: `Image file uploaded for vision model analysis.\n\nFilename: ${selectedImage.name}\nSize: ${(selectedImage.size / 1024 / 1024).toFixed(2)} MB\nType: ${selectedImage.type}\nStorage URL: ${storageUrl || 'Upload failed'}\n\nImage Data: ${imagePreview ? 'Available' : 'Not available'}`,
         salience: 0.9,
         connections: ['image_document', 'vision_model', 'memory_core'],
         memory_type: 'semantic',
@@ -1104,14 +1145,14 @@ Is there anything else I can help you with?`)
   }
 
   // NEW: Stream from API function for SSE
-  async function* streamFromAPI(prompt: string, mode: string) {
+  async function* streamFromAPI(prompt: string, mode: string, customMaxTokens?: number) {
     const res = await fetch("/api/generate-stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ 
           prompt, 
           mode, 
-          max_tokens: maxTokens, 
+          max_tokens: customMaxTokens ?? maxTokens, 
           temperature, 
           top_k: topK,
           image: isVisionModel && selectedImage ? imagePreview : undefined, // Send actual image data for vision models
@@ -1435,7 +1476,11 @@ Is there anything else I can help you with?`)
 
   // Original handler that uses the current mode
   const handleGenerateVideo = async () => {
-    await handleGenerateVideoWithModel(mode)
+    // If converting from generated image, use the separate image-to-video model
+    const modelToUse = isConvertingImageToVideo ? imageToVideoModel : mode
+    await handleGenerateVideoWithModel(modelToUse)
+    // Clear the flag after generating
+    setIsConvertingImageToVideo(false)
   }
 
   // NEW: Handle TRANSMIT button click
@@ -1456,7 +1501,11 @@ Is there anything else I can help you with?`)
     // Handle video generation mode - if we're already in video mode (panel is showing), generate!
     if (isVideoModel && mode) {
       console.log('✅ Video mode active, calling handleGenerateVideo with mode:', mode)
-      await handleGenerateVideoWithModel(mode)
+      // If converting from generated image, use the separate image-to-video model
+      const modelToUse = isConvertingImageToVideo ? imageToVideoModel : mode
+      await handleGenerateVideoWithModel(modelToUse)
+      // Clear the flag after generating
+      setIsConvertingImageToVideo(false)
       return
     }
     
@@ -1501,7 +1550,7 @@ Is there anything else I can help you with?`)
       console.log('🎬 User explicitly wants video:', selectedVideoModel)
       // Switch to video mode to show the video generation panel
       setMode(selectedVideoModel)
-      setOutput(`✅ Ready to generate video with ${selectedVideoModel.toUpperCase()}! Please review the video settings below (duration, aspect ratio) and click "GENERATE VIDEO".`)
+      setOutput('✅ Ready to generate video! Please review the video settings below (duration, aspect ratio) and click "GENERATE VIDEO".')
       return
     }
     
@@ -1623,6 +1672,30 @@ Please continue the conversation naturally, remembering the context above.`
     
     // Add document context if available
     if (processedDocumentData) {
+      // DEBUG: Log document data
+      console.log('🔍 [DEBUG] Document Context Debug:', {
+        hasProcessedDocumentData: !!processedDocumentData,
+        filename: processedDocumentData?.filename,
+        hasExtractedText: !!processedDocumentData?.extractedText,
+        extractedTextLength: processedDocumentData?.extractedText?.length || 0,
+        extractedTextPreview: processedDocumentData?.extractedText?.substring(0, 100) || 'NO TEXT',
+        fullProcessedDocumentData: processedDocumentData
+      })
+      
+      // Check if extractedText exists and is valid
+      if (!processedDocumentData.extractedText || processedDocumentData.extractedText.trim().length === 0) {
+        console.error('❌ [ERROR] No extracted text found in processedDocumentData!', processedDocumentData)
+        setError(`Document ${processedDocumentData.filename} was processed but no text was extracted. This might be a processing error.`)
+        return
+      }
+      
+      // Check if extractedText is an error message
+      if (processedDocumentData.extractedText.startsWith('Error') || processedDocumentData.extractedText.includes('Error parsing')) {
+        console.error('❌ [ERROR] Extracted text contains an error:', processedDocumentData.extractedText)
+        setError(`Failed to extract text from ${processedDocumentData.filename}: ${processedDocumentData.extractedText}`)
+        return
+      }
+      
       enhancedPrompt = `${styleInstruction}
 
 Document Context: ${processedDocumentData.filename}
@@ -1634,6 +1707,8 @@ ${conversationContext}
 ` : ''}Current Question: ${prompt}
 
 Please answer the user's question based on the document content above, and continue the conversation naturally.`
+      
+      console.log('✅ [DEBUG] Enhanced prompt with document context created, text length:', processedDocumentData.extractedText.length)
     }
     
     // For simple questions without context, add style instruction
@@ -1844,6 +1919,8 @@ Please provide a ${responseStyle} answer.`
       return
     }
     
+    let messageAdded = false
+    
     try {
       // Clean and validate the data before sending
       const cleanData = role === 'user' ? userInput : aiResponse
@@ -1915,6 +1992,7 @@ Please provide a ${responseStyle} answer.`
             parentConversationId: currentConversationId || savedMemory.id
           }])
 
+          messageAdded = true
           console.log(`Conversation turn saved to memory core: ${savedMemory.id}`)
         } else {
           console.error('Memory save response missing ID. Full response:', responseData)
@@ -1930,14 +2008,24 @@ Please provide a ${responseStyle} answer.`
           console.error('Could not read error response body')
         }
       }
+
+      // Fallback: Only add to local conversation history if save failed and message wasn't added
+      if (!messageAdded) {
+        const fallbackId = `local-${Date.now()}`
+        setConversationHistory(prev => [...prev, {
+          id: fallbackId,
+          role,
+          content: role === 'user' ? userInput : aiResponse,
+          timestamp: new Date(),
+          documentContext: processedDocumentData?.filename,
+          parentConversationId: null // Don't set fake parent
+        }])
+      }
     } catch (error) {
       console.error('Error saving conversation turn:', error)
-    }
-    
-    // Fallback: Add to local conversation history even if memory save fails
-    // But don't set a fake parent_id that doesn't exist
+      // Only add fallback if we caught an error and message wasn't added
+      if (!messageAdded) {
     const fallbackId = `local-${Date.now()}`
-    
     setConversationHistory(prev => [...prev, {
       id: fallbackId,
       role,
@@ -1946,6 +2034,8 @@ Please provide a ${responseStyle} answer.`
       documentContext: processedDocumentData?.filename,
       parentConversationId: null // Don't set fake parent
     }])
+      }
+    }
   }
 
   // NEW: Retrieve conversation context from memory core
@@ -2116,21 +2206,18 @@ Please provide a ${responseStyle} answer.`
             </div>
             
             {user && (
-              <div className="text-right text-cyan-400 text-xs sm:text-sm">
-                <div className="flex items-center gap-1 sm:gap-2">
+              <div className="text-right">
                   <Link 
                     href="/credits" 
-                    className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer hover:underline"
+                  className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-cyan-400/20 hover:border-cyan-400/40 transition-all cursor-pointer group"
                   >
+                  <span className="text-cyan-400 text-xs sm:text-sm group-hover:text-cyan-300 transition-colors">
                     CREDITS:
-                  </Link>
-                  <Link 
-                    href="/credits" 
-                    className="text-amber-400 font-bold hover:text-amber-300 transition-colors cursor-pointer hover:underline"
-                  >
+                  </span>
+                  <span className="text-amber-400 font-bold text-sm sm:text-base group-hover:text-amber-300 transition-colors">
                     {userCredits}
+                  </span>
                   </Link>
-                </div>
               </div>
             )}
           </div>
@@ -2863,6 +2950,20 @@ Please provide a ${responseStyle} answer.`
                   </div>
                 )}
 
+                {/* Reset Button - Above prompt window on the right */}
+                <div className="flex justify-end mb-2">
+                  <Button
+                    onClick={() => window.location.reload()}
+                    variant="ghost"
+                    size="sm"
+                    className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white text-xs px-3 py-1 h-8"
+                    title="Reset page"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1.5" />
+                    Reset
+                  </Button>
+                </div>
+
                 <textarea
                   placeholder={
                     signupFlow === 'collecting' && signupStep === 'email'
@@ -2915,7 +3016,7 @@ Please provide a ${responseStyle} answer.`
                       size="icon" 
                       className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white h-10 w-10"
                       onClick={() => setShowDocumentUpload(true)}
-                      title="Import Document"
+                      title="Import File"
                     >
                       <FileUp className="h-5 w-5" />
                     </Button>
@@ -3060,12 +3161,32 @@ Please provide a ${responseStyle} answer.`
             {user && (
               <div className="w-full max-w-3xl mt-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">DEFAULT VOICE:</span>
-                    {isLoadingVoices && (
-                      <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                    )}
-                  </div>
+                  {/* Check if selected voice is custom - hide text if custom voice selected */}
+                  {(() => {
+                    const selectedVoice = availableVoices.find(v => (v.voice_id || v.id) === selectedVoiceId)
+                    // Default voice IDs list
+                    const defaultVoiceIds = [
+                      'EXAVITQu4vr4xnSDxMaL', '21m00Tcm4TlvDq8ikWAM', 'AZnzlk1XvdvUeBnXmlld',
+                      'ErXwobaYiN019PkySvjV', 'MF3mGyEYCl7XYWbV9V6O', 'TxGEqnHWrfWFTfGW9XjX',
+                      'VR6AewLTigWG4xSOukaG', 'pNInz6obpgDQGcFmaJgB', 'yoZ06aMxZJJ28mfd3POQ',
+                      'IKne3meq5aSn9XLyUdCD'
+                    ]
+                    // A voice is custom if it's not in the default voices list
+                    const voiceId = selectedVoiceId
+                    const isDefaultVoice = defaultVoiceIds.includes(voiceId) || 
+                                           (selectedVoice && selectedVoice.category === 'premade')
+                    const isCustomVoice = selectedVoice && !isDefaultVoice
+                    const showText = isVoiceDropdownOpen || !isCustomVoice
+                    
+                    return showText ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyan-400 text-xs sm:text-sm font-semibold tracking-wide uppercase">DEFAULT VOICE:</span>
+                        {isLoadingVoices && (
+                          <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
+                        )}
+                      </div>
+                    ) : null
+                  })()}
                   <Select 
                     value={selectedVoiceId || ""} 
                     onValueChange={(value) => {
@@ -3073,6 +3194,7 @@ Please provide a ${responseStyle} answer.`
                       // Save user preference
                       saveUserVoicePreference(value)
                     }}
+                    onOpenChange={setIsVoiceDropdownOpen}
                     disabled={isLoadingVoices}
                   >
                     <SelectTrigger className="w-full sm:w-64 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
@@ -3114,9 +3236,28 @@ Please provide a ${responseStyle} answer.`
                       )}
                     </SelectContent>
                   </Select>
-                  <div className="text-xs text-gray-400 mt-1 sm:mt-0">
-                    This will be your default voice for all audio generation
-                  </div>
+                  {(() => {
+                    const selectedVoice = availableVoices.find(v => (v.voice_id || v.id) === selectedVoiceId)
+                    // Default voice IDs list
+                    const defaultVoiceIds = [
+                      'EXAVITQu4vr4xnSDxMaL', '21m00Tcm4TlvDq8ikWAM', 'AZnzlk1XvdvUeBnXmlld',
+                      'ErXwobaYiN019PkySvjV', 'MF3mGyEYCl7XYWbV9V6O', 'TxGEqnHWrfWFTfGW9XjX',
+                      'VR6AewLTigWG4xSOukaG', 'pNInz6obpgDQGcFmaJgB', 'yoZ06aMxZJJ28mfd3POQ',
+                      'IKne3meq5aSn9XLyUdCD'
+                    ]
+                    // A voice is custom if it's not in the default voices list
+                    const voiceId = selectedVoiceId
+                    const isDefaultVoice = defaultVoiceIds.includes(voiceId) || 
+                                           (selectedVoice && selectedVoice.category === 'premade')
+                    const isCustomVoice = selectedVoice && !isDefaultVoice
+                    const showText = isVoiceDropdownOpen || !isCustomVoice
+                    
+                    return showText ? (
+                      <div className="text-xs text-gray-400 mt-1 sm:mt-0">
+                        This will be your default voice for all audio generation
+                      </div>
+                    ) : null
+                  })()}
                 </div>
                 
                 {/* Voice Preview Audio */}
@@ -3271,47 +3412,64 @@ Please provide a ${responseStyle} answer.`
                 onConvertToVideo={handleConvertImageToVideo}
                 prompt={lastPrompt}
                 model={mode}
+                isAdmin={isAdmin}
+                imageToVideoModel={imageToVideoModel}
+                onImageToVideoModelChange={(value) => handleModelChange(value, 'imageToVideo')}
+                isModelEnabled={isModelEnabled}
                 onShowMore={async (topic: string) => {
+                  // Reset audio state when expanding content so user can generate audio for expanded content
+                  setAudioUrl(null)
+                  setAudioError(null)
+                  
                   // Make a follow-up API call asking for more details
                   const followUpPrompt = `Expand on this topic: "${topic}"
 
-CRITICAL FORMATTING RULE: You MUST separate each paragraph with TWO line breaks (press Enter twice between paragraphs).
+CRITICAL INSTRUCTIONS - READ CAREFULLY:
+1. Write EXACTLY 3-4 paragraphs ONLY. NO MORE. STOP after paragraph 4.
+2. Each paragraph must be 3-5 sentences MAXIMUM.
+3. Separate paragraphs with TWO line breaks (press Enter twice between paragraphs).
+4. Total word count should be approximately 150-250 words MAXIMUM.
+5. Be concise and focused - do not provide extensive detail.
 
-Write exactly 3-4 paragraphs:
+Paragraph 1 (3-5 sentences): Main historical or foundational information
+Paragraph 2 (3-5 sentences): Evolution, development, or key details  
+Paragraph 3 (3-5 sentences): Modern practices, traditions, or examples
+Paragraph 4 OPTIONAL (2-4 sentences): Brief conclusion or cultural impact
 
-Paragraph 1: Main historical or foundational information (3-5 sentences)
-
-Paragraph 2: Evolution, development, or key details (3-5 sentences)
-
-Paragraph 3: Modern practices, traditions, or examples (3-5 sentences)
-
-Paragraph 4 (optional): Cultural impact, fun facts, or conclusion (2-4 sentences)
-
-IMPORTANT: 
-- Use TWO line breaks between paragraphs
-- Keep each paragraph concise (3-5 sentences)
-- Write in a natural, conversational tone
-- NO bullet points, NO numbered lists, NO code blocks`
+IMPORTANT RESTRICTIONS:
+- NO bullet points, NO numbered lists, NO code blocks
+- NO additional paragraphs beyond 4
+- Keep it SHORT and CONCISE
+- Stop writing after completing paragraph 4`
+                  
+                  // Limit max_tokens to ensure concise 3-4 paragraph response (approximately 150-250 words = 200-350 tokens)
+                  const limitedMaxTokens = Math.min(maxTokens, 400)
+                  
+                  // Helper function to truncate to exactly 4 paragraphs
+                  const truncateToFourParagraphs = (text: string): string => {
+                    // Split by double line breaks (paragraphs)
+                    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0)
+                    
+                    // Take only first 4 paragraphs
+                    if (paragraphs.length > 4) {
+                      return paragraphs.slice(0, 4).join('\n\n')
+                    }
+                    
+                    return text
+                  }
                   
                   const payload = JSON.stringify({
                     prompt: followUpPrompt,
                     mode,
-                    max_tokens: maxTokens,
+                    max_tokens: limitedMaxTokens,
                     temperature,
                     top_k: topK,
                     response_style: "detailed", // Force detailed for follow-up
+                    is_show_more: true // Flag to indicate this is a show more request
                   })
 
                   try {
-                    if (stream) {
-                      // For streaming, collect the response
-                      let detailedResponse = ""
-                      for await (const chunk of streamFromAPI(followUpPrompt, mode)) {
-                        detailedResponse += chunk
-                      }
-                      return detailedResponse
-                    } else {
-                      // For non-streaming
+                    // Use non-streaming for show more (faster for small responses)
                       const r = await fetch("/api/generate", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -3319,8 +3477,13 @@ IMPORTANT:
                       })
                       const data = await r.json()
                       if (!r.ok || data.error) throw new Error(data.error || "Request failed")
-                      return String(data.output ?? "")
-                    }
+                    
+                    let response = String(data.output ?? "")
+                    
+                    // Truncate to exactly 4 paragraphs
+                    response = truncateToFourParagraphs(response)
+                    
+                    return response
                   } catch (error) {
                     console.error('Follow-up API call failed:', error)
                     throw error
@@ -3577,6 +3740,7 @@ IMPORTANT:
           <DocumentUpload
             onCancel={() => setShowDocumentUpload(false)}
             onDocumentProcessed={handleDocumentProcessed}
+            onProcessAndSave={processAndSaveDocument}
           />
         )}
 

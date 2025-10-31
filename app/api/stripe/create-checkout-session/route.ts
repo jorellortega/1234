@@ -55,6 +55,26 @@ export async function POST(request: Request) {
     }
     console.log('✅ User authenticated:', user.id)
 
+    // Validate minimum price (Stripe requires minimum $1.00, we enforce $1.44 for safety)
+    const MIN_PRICE = 1.44
+    if (price < MIN_PRICE) {
+      console.error(`❌ Price too low: $${price} (minimum: $${MIN_PRICE})`)
+      return NextResponse.json(
+        { error: `Minimum purchase amount is $${MIN_PRICE.toFixed(2)}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate maximum price (Stripe maximum is $999,999.99)
+    const MAX_PRICE = 999999.99
+    if (price > MAX_PRICE) {
+      console.error(`❌ Price too high: $${price} (maximum: $${MAX_PRICE})`)
+      return NextResponse.json(
+        { error: `Maximum purchase amount is $${MAX_PRICE.toFixed(2)}` },
+        { status: 400 }
+      )
+    }
+
     // Create Stripe checkout session
     console.log('🛒 Creating Stripe checkout session...')
     

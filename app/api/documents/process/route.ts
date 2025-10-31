@@ -88,10 +88,39 @@ export async function POST(request: NextRequest) {
 
     // 4. Extract text content (simulated for now)
     // In a real implementation, you'd use libraries like pdf-parse, mammoth, etc.
+    console.log('🔍 [DEBUG] Starting text extraction for:', filename, 'Type:', file.type, 'Size:', file.size)
     const extractedText = await simulateTextExtraction(file, filename)
+    
+    // DEBUG: Log extracted text
+    console.log('🔍 [DEBUG] Text extraction result:', {
+      hasExtractedText: !!extractedText,
+      extractedTextLength: extractedText?.length || 0,
+      extractedTextPreview: extractedText?.substring(0, 200) || 'NO TEXT',
+      isError: extractedText?.startsWith('Error') || extractedText?.includes('Error parsing')
+    })
+    
+    // Check if extraction failed
+    if (!extractedText || extractedText.trim().length === 0 || extractedText.startsWith('Error')) {
+      console.error('❌ [ERROR] Text extraction failed for:', filename, 'Result:', extractedText)
+      return NextResponse.json(
+        { 
+          error: 'Failed to extract text from document',
+          details: extractedText || 'No text content found',
+          filename,
+          fileType: file.type
+        },
+        { status: 400 }
+      )
+    }
 
     // 5. Process with AI to extract memories (like before)
     const simulatedMemories = await simulateDocumentProcessing(filename, file.type, extractedText)
+    
+    console.log('🔍 [DEBUG] Document processing complete:', {
+      filename,
+      memoriesCount: simulatedMemories?.length || 0,
+      extractedTextLength: extractedText.length
+    })
 
     // 6. Add document reference to each memory
     const memoriesWithDocument = simulatedMemories.map(memory => ({
@@ -139,13 +168,45 @@ async function simulateTextExtraction(file: File, filename: string): Promise<str
   // For PDFs, use pdf-parse library
   if (file.type.includes('pdf')) {
     try {
-      const pdfParse = require('pdf-parse')
+      console.log('🔍 [DEBUG] Attempting to parse PDF:', filename, 'Size:', file.size)
+      
+      // Use dynamic import to avoid bundling issues with Next.js
+      // Dynamic import works better with Next.js and avoids webpack bundling issues
+      let pdfParse: any
+      try {
+        const pdfParseModule = await import('pdf-parse')
+        pdfParse = pdfParseModule.default || pdfParseModule
+        console.log('✅ [DEBUG] pdf-parse loaded via dynamic import')
+      } catch (importError) {
+        console.error('❌ [ERROR] Failed to load pdf-parse:', importError)
+        // If dynamic import fails, we can't process PDFs
+        throw new Error(`Failed to load PDF parser: ${importError instanceof Error ? importError.message : String(importError)}`)
+      }
+      
       const fileBuffer = await file.arrayBuffer()
-      const result = await pdfParse(Buffer.from(fileBuffer))
-      return result.text
+      const buffer = Buffer.from(fileBuffer)
+      
+      console.log('🔍 [DEBUG] Calling pdfParse with buffer size:', buffer.length)
+      const result = await pdfParse(buffer)
+      
+      const extractedText = result?.text || ''
+      console.log('✅ [DEBUG] PDF parsed successfully:', {
+        textLength: extractedText.length,
+        pages: result?.numpages || 0,
+        textPreview: extractedText.substring(0, 200) || 'NO TEXT'
+      })
+      
+      if (!extractedText || extractedText.trim().length === 0) {
+        console.warn('⚠️ [WARN] PDF parsed but extracted text is empty')
+        return `PDF ${filename} was parsed but contains no extractable text. This might be a scanned image PDF or an empty document.`
+      }
+      
+      return extractedText
     } catch (error) {
-      console.error('Error parsing PDF:', error)
+      console.error('❌ [ERROR] Error parsing PDF:', filename, error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorStack = error instanceof Error ? error.stack : String(error)
+      console.error('❌ [ERROR] Full error details:', { errorMessage, errorStack })
       return `Error parsing PDF: ${filename}. ${errorMessage}`
     }
   }
