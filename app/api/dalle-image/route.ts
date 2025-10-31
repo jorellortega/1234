@@ -3,6 +3,53 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
+// Refund credits to user in case of image generation failure
+async function refundCredits(userId: string, amount: number) {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return { success: false, error: 'Storage not configured' }
+    }
+    
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+    
+    console.log(`💰 Refunding ${amount} credits to user ${userId}`)
+    
+    // Get current credits
+    const { data: profile, error: fetchError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('credits')
+      .eq('id', userId)
+      .single()
+    
+    if (fetchError || !profile) {
+      console.error('❌ Failed to fetch user profile for refund:', fetchError)
+      return { success: false, error: fetchError }
+    }
+    
+    const newCredits = (profile.credits || 0) + amount
+    
+    // Add credits back
+    const { error: updateError } = await supabaseAdmin
+      .from('user_profiles')
+      .update({ credits: newCredits })
+      .eq('id', userId)
+    
+    if (updateError) {
+      console.error('❌ Failed to refund credits:', updateError)
+      return { success: false, error: updateError }
+    }
+    
+    console.log(`✅ Refunded ${amount} credits. New balance: ${newCredits}`)
+    return { success: true, newBalance: newCredits }
+  } catch (error) {
+    console.error('❌ Refund error:', error)
+    return { success: false, error }
+  }
+}
+
 /**
  * Image Generation API using DALL-E 3
  * 
@@ -136,14 +183,27 @@ export async function POST(req: NextRequest) {
 
       if (!dalleResponse.ok) {
         const errorData = await dalleResponse.json().catch(() => ({}))
-        throw new Error(`OpenAI Image API error: ${errorData.error?.message || dalleResponse.statusText}`)
+        const errorMessage = errorData.error?.message || dalleResponse.statusText
+        
+        // Check if it's a moderation error and provide a clearer message
+        if (errorMessage && (
+          errorMessage.toLowerCase().includes('moderation') || 
+          errorMessage.toLowerCase().includes('did not pass') ||
+          errorMessage.toLowerCase().includes('content policy')
+        )) {
+          throw new Error("Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again.")
+        }
+        
+        // Remove any service/model names from the error message before showing to user
+        const sanitizedError = errorMessage.replace(/OpenAI|DALL-E|dall-e/g, '').trim()
+        throw new Error(`Image generation failed: ${sanitizedError || 'Unknown error'}`)
       }
 
       const dalleData = await dalleResponse.json()
       const imageUrl = dalleData.data?.[0]?.url
       
       if (!imageUrl) {
-        throw new Error('No image URL received from OpenAI Image API')
+        throw new Error('No image URL received from image generation service')
       }
 
       // Model-specific messages
@@ -164,10 +224,52 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
       console.error('Image generation API error:', error)
+      
+      const errorMessage = error.message || 'Unknown error'
+      const isModerationError = errorMessage && (
+        errorMessage.toLowerCase().includes('moderation') || 
+        errorMessage.toLowerCase().includes('did not pass') ||
+        errorMessage.toLowerCase().includes('content policy')
+      )
+      
+      // Refund credits if it's a moderation/copyright error
+      if (isModerationError) {
+        // Calculate credits to refund based on model
+        const imageCredits: Record<string, number> = {
+          'dall-e-3': 40,
+          'dall-e-2': 40,
+          'gpt-image-1': 40
+        }
+        const creditsToRefund = imageCredits[imageModel] || 40
+        
+        const refundResult = await refundCredits(user.id, creditsToRefund)
+        
+        if (refundResult.success) {
+          console.log(`✅ Successfully refunded ${creditsToRefund} credits to user ${user.id}`)
+        } else {
+          console.error(`❌ Failed to refund credits to user ${user.id}`, refundResult.error)
+        }
+        
+        return NextResponse.json(
+          { 
+            error: "Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again.",
+            details: errorMessage,
+            refunded: refundResult.success,
+            refundAmount: creditsToRefund,
+            newBalance: refundResult.newBalance
+          },
+          { status: 400 }
+        )
+      }
+      
+      // Sanitize error message to remove service/model names before returning to user
+      let sanitizedError = errorMessage.replace(/OpenAI|DALL-E|dall-e/g, '').trim()
+      if (!sanitizedError) sanitizedError = 'Image generation failed'
+      
       return NextResponse.json(
         { 
-          error: 'Image generation failed: ' + (error.message || 'Unknown error'),
-          details: error.message
+          error: sanitizedError.startsWith('Image generation') ? sanitizedError : `Image generation failed: ${sanitizedError}`,
+          details: error.message // Keep full details for logging
         },
         { status: 500 }
       )

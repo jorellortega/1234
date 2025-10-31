@@ -3,13 +3,14 @@
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save } from "lucide-react"
+import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save, Edit2, X } from "lucide-react"
 
 interface ProgressiveResponseProps {
   content: string
   className?: string
   responseStyle?: "concise" | "detailed"
   onShowMore?: (topic: string) => Promise<string>
+  onShowPrevious?: () => Promise<void> // Callback to show previous "generate more" responses
   // Audio props
   audioUrl?: string
   isGeneratingAudio?: boolean
@@ -25,6 +26,9 @@ interface ProgressiveResponseProps {
   imageToVideoModel?: string
   onImageToVideoModelChange?: (model: string) => void
   isModelEnabled?: (model: string) => boolean
+  // Edit props
+  onContentChange?: (newContent: string) => void | Promise<void>
+  generationId?: string | null // ID of the generation to update in database
 }
 
 export function ProgressiveResponse({ 
@@ -32,6 +36,7 @@ export function ProgressiveResponse({
   className = "", 
   responseStyle = "detailed", 
   onShowMore,
+  onShowPrevious,
   audioUrl,
   isGeneratingAudio = false,
   audioError,
@@ -42,13 +47,109 @@ export function ProgressiveResponse({
   isAdmin = false,
   imageToVideoModel = 'gen4_turbo',
   onImageToVideoModelChange,
-  isModelEnabled = () => true
+  isModelEnabled = () => true,
+  onContentChange,
+  generationId
 }: ProgressiveResponseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [detailedContent, setDetailedContent] = useState<string>("")
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedContent, setEditedContent] = useState<string>("")
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [hasPreviousResponse, setHasPreviousResponse] = useState(false)
+  const [wasExpandedBeforeEdit, setWasExpandedBeforeEdit] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLDivElement>(null)
+  
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      // Reset height to auto to get proper scrollHeight
+      textareaRef.current.style.height = 'auto'
+      // Set height based on content
+      textareaRef.current.style.height = `${Math.max(200, textareaRef.current.scrollHeight)}px`
+    }
+  }, [isEditing, editedContent])
+  
+  // Track if we just finished editing to prevent state resets
+  const justFinishedEditingRef = useRef(false)
+  
+  // When content prop changes and we're not editing, ensure we have the latest
+  // This handles cases where content is updated after save
+  useEffect(() => {
+    if (!isEditing && content) {
+      // Content was updated externally (e.g., after save) - reset any stale edit state
+      // But don't reset if we just finished editing (to preserve display state)
+      if (!justFinishedEditingRef.current) {
+        setEditedContent("")
+      } else {
+        // Reset the flag after handling the post-save update
+        justFinishedEditingRef.current = false
+      }
+    }
+  }, [content, isEditing])
+  
+  // Preserve expanded state after edit - separate effect to avoid re-triggering
+  // This is a backup in case immediate state preservation in handleSaveEdit didn't work
+  useEffect(() => {
+    if (!isEditing && wasExpandedBeforeEdit) {
+      setIsExpanded(true)
+      setWasExpandedBeforeEdit(false)
+    }
+  }, [isEditing, wasExpandedBeforeEdit])
+  
+  // Check if there are previous "generate more" responses when generationId changes
+  // Use a ref to track the last checked generationId to prevent unnecessary re-fetches
+  const lastCheckedGenerationIdRef = useRef<string | null>(null)
+  
+  useEffect(() => {
+    const checkForPreviousResponse = async () => {
+      // Only check if we haven't checked this generationId before
+      if (generationId && onShowPrevious && generationId !== lastCheckedGenerationIdRef.current) {
+        lastCheckedGenerationIdRef.current = generationId
+        
+        try {
+          // Import supabase client dynamically
+          const { supabase } = await import('@/lib/supabase-client')
+          const { data: { session } } = await supabase.auth.getSession()
+          
+          if (session) {
+            const threadResponse = await fetch(`/api/generations/thread?id=${generationId}`, {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`
+              }
+            })
+            
+            if (threadResponse.ok) {
+              const threadData = await threadResponse.json()
+              const thread = threadData.thread || []
+              
+              // Check if there are any child generations (generate more responses)
+              if (thread.length > 1) {
+                const children = thread.slice(1)
+                const hasChildren = children.some((c: any) => c.output && c.output.trim().length > 0)
+                setHasPreviousResponse(hasChildren)
+              } else {
+                setHasPreviousResponse(false)
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error checking for previous response:', error)
+          setHasPreviousResponse(false)
+        }
+      } else if (!generationId) {
+        setHasPreviousResponse(false)
+        lastCheckedGenerationIdRef.current = null
+      }
+    }
+    
+    checkForPreviousResponse()
+    // Only depend on generationId, not onShowPrevious to avoid re-running when parent re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationId])
   
   // Save media state
   const [isSaving, setIsSaving] = useState(false)
@@ -89,6 +190,8 @@ export function ProgressiveResponse({
 
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
+    console.log('🔍 [SPLIT] Splitting content. Length:', content?.length, 'Style:', responseStyle)
+    
     // NEVER truncate image/video/audio responses - they need the full URL
     // Remove IMAGE_DISPLAY, VIDEO_DISPLAY, and AUDIO_DISPLAY tags from displayed text but keep for extraction
     let displayContent = content;
@@ -106,6 +209,7 @@ export function ProgressiveResponse({
     }
     
     if (content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
+      console.log('🔍 [SPLIT] Media content, not splitting')
       return { concisePart: displayContent, detailedPart: null }
     }
     
@@ -115,14 +219,19 @@ export function ProgressiveResponse({
       const sentenceRegex = /([^.!?]*[.!?]+)/g
       const sentences = content.match(sentenceRegex) || []
       
+      console.log('🔍 [SPLIT] Concise mode. Total sentences:', sentences.length)
+      
       if (sentences.length <= 2) {
         // If response is short (1-2 sentences), show everything
+        console.log('🔍 [SPLIT] Short content, not splitting')
         return { concisePart: content, detailedPart: null }
       } else {
         // Show first 1-2 complete sentences
         const sentencesToShow = Math.min(2, sentences.length)
         const conciseText = sentences.slice(0, sentencesToShow).join(' ').trim()
         const detailedText = sentences.slice(sentencesToShow).join(' ').trim()
+        
+        console.log('🔍 [SPLIT] Split into concise:', conciseText.length, 'detailed:', detailedText.length)
         
         return { 
           concisePart: conciseText, 
@@ -132,6 +241,7 @@ export function ProgressiveResponse({
     }
     
     // For detailed mode, show everything
+    console.log('🔍 [SPLIT] Detailed mode, not splitting')
     return { concisePart: content, detailedPart: null }
   }, [content, responseStyle])
 
@@ -186,6 +296,164 @@ export function ProgressiveResponse({
     }
   }
 
+  const handleStartEdit = () => {
+    // Get full content - use the actual content prop (it includes everything)
+    // Don't try to reconstruct from concise/detailed parts
+    setEditedContent(content)
+    // Remember if content was expanded before editing
+    setWasExpandedBeforeEdit(isExpanded)
+    setIsEditing(true)
+    console.log('✏️ [EDIT] Starting edit. Content length:', content.length, 'Was expanded:', isExpanded)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditedContent("")
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editedContent.trim()) {
+      alert('Content cannot be empty')
+      return
+    }
+
+    setIsSavingEdit(true)
+    try {
+      console.log('💾 [EDIT] Starting save. Generation ID:', generationId, 'Content length:', editedContent.length)
+      
+      // Save to database if generationId is provided
+      if (generationId) {
+        // Import supabase client dynamically
+        const { supabase } = await import('@/lib/supabase-client')
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session) {
+          console.error('❌ [EDIT] No session found')
+          throw new Error('Authentication required. Please refresh the page.')
+        }
+        
+        // Fetch the thread to get root and all children
+        console.log('🔄 [EDIT] Fetching thread to check for child generations...')
+        const threadResponse = await fetch(`/api/generations/thread?id=${generationId}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+        
+        let threadData = null
+        if (threadResponse.ok) {
+          threadData = await threadResponse.json()
+          console.log('📋 [EDIT] Thread fetched. Found', threadData.thread?.length || 0, 'generations in thread')
+        }
+        
+        // If we have a thread with multiple generations, replace ALL content in root and delete/clear children
+        if (threadData && threadData.thread && threadData.thread.length > 1) {
+          console.log('🔀 [EDIT] Multiple generations in thread. Replacing all with edited content...')
+          
+          const rootGen = threadData.thread[0]
+          const childGens = threadData.thread.slice(1)
+          
+          // Update root generation with the FULL edited content (user wants to replace everything)
+          console.log('💾 [EDIT] Updating root generation with full edited content...')
+          const rootResponse = await fetch(`/api/generations/${rootGen.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ output: editedContent })
+          })
+          
+          if (!rootResponse.ok) {
+            const errorData = await rootResponse.json().catch(() => ({}))
+            throw new Error(errorData.error || 'Failed to update root generation')
+          }
+          
+          // Delete child generations since user wants to replace everything with edited content
+          console.log('🗑️ [EDIT] Deleting child generations...')
+          for (const child of childGens) {
+            try {
+              const deleteResponse = await fetch(`/api/generations/${child.id}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${session.access_token}`
+                }
+              })
+              
+              if (!deleteResponse.ok) {
+                console.warn(`⚠️ [EDIT] Failed to delete child ${child.id}`)
+              } else {
+                console.log(`✅ [EDIT] Deleted child ${child.id}`)
+              }
+            } catch (err) {
+              console.warn(`⚠️ [EDIT] Failed to delete child ${child.id}:`, err)
+            }
+          }
+          
+          console.log('✅ [EDIT] Root updated with full content, children deleted')
+        } else {
+          // Single generation - simple update
+          console.log('✅ [EDIT] Single generation. Updating directly...')
+          const response = await fetch(`/api/generations/${generationId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ output: editedContent })
+          })
+
+          console.log('📡 [EDIT] Response status:', response.status, response.ok)
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            console.error('❌ [EDIT] Save failed:', errorData)
+            throw new Error(errorData.error || 'Failed to save changes')
+          }
+          
+          const responseData = await response.json().catch(() => ({}))
+          console.log('✅ [EDIT] Save successful. Response:', responseData)
+        }
+      } else {
+        console.warn('⚠️ [EDIT] No generationId provided. Skipping database save.')
+      }
+
+      // IMPORTANT: Update parent state BEFORE closing edit mode
+      // This ensures the content prop updates immediately to reflect the edited text
+      if (onContentChange) {
+        console.log('🔄 [EDIT] Calling onContentChange callback with edited content. Length:', editedContent.length)
+        await onContentChange(editedContent)
+        console.log('✅ [EDIT] onContentChange completed. Parent state should now be updated.')
+      } else {
+        console.warn('⚠️ [EDIT] No onContentChange callback provided')
+      }
+
+      // Clear any expanded content since we've replaced everything with the edited content
+      setDetailedContent("")
+      
+      // Preserve expanded state IMMEDIATELY (don't wait for useEffect)
+      // For detailed mode, isExpanded doesn't affect display, but we preserve it anyway
+      // for consistency and in case responseStyle changes
+      if (wasExpandedBeforeEdit) {
+        setIsExpanded(true)
+        setWasExpandedBeforeEdit(false)
+      }
+      
+      // Set flag to prevent state reset when content prop updates
+      justFinishedEditingRef.current = true
+
+      // Close edit mode after state is updated
+      setIsEditing(false)
+      setEditedContent("")
+      console.log('✅ [EDIT] Edit saved successfully! Content should now show:', editedContent.substring(0, 50) + '...')
+    } catch (error) {
+      console.error('❌ [EDIT] Failed to save edit:', error)
+      alert(error instanceof Error ? error.message : 'Failed to save changes')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
   const hasDetailedContent = detailedPart && detailedPart.trim().length > 0
   const hasMediaContent = content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:')
   // Only show "Show More" for actual text content, not for media generation status messages
@@ -193,6 +461,16 @@ export function ProgressiveResponse({
   const isStatusMessage = concisePart && /^(✅|❌|🎬|🖼️|🎵|Image loaded|Ready to|Ready!|Video|Audio|Generating|Processing)/i.test(concisePart.trim())
   const isTextResponse = !hasMediaContent && !isStatusMessage && concisePart && concisePart.trim().length > 0
   const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore) && isTextResponse
+
+  console.log('🎨 [DISPLAY] Render decision:', {
+    responseStyle,
+    hasDetailedContent,
+    isExpanded,
+    shouldShowProgressive,
+    concisePartLength: concisePart?.length || 0,
+    detailedPartLength: detailedPart?.length || 0,
+    detailedContentLength: detailedContent?.length || 0
+  })
 
   // Audio control functions
   useEffect(() => {
@@ -504,26 +782,86 @@ export function ProgressiveResponse({
             )}
           </Button>
           </div>
+          
+          {/* Edit Button - Only show for text responses when not editing */}
+          {!hasMediaContent && onContentChange && !isEditing && (
+            <>
+              <div className="h-6 w-px bg-gray-600 mx-1"></div>
+              <div className="flex items-center gap-1">
+                <Button 
+                  onClick={handleStartEdit}
+                  variant="ghost" 
+                  size="sm"
+                  className="text-yellow-400 hover:bg-yellow-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
+                >
+                  <Edit2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                  <span className="text-xs hidden sm:inline">Edit</span>
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
       
       {/* Audio Element */}
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" />}
       
-      <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
-        {/* Concise part - always visible */}
-        <div className="mb-3">
-          {concisePart}
+      {/* Edit Mode - Show textarea */}
+      {isEditing ? (
+        <div className="border border-yellow-500/50 rounded p-3 sm:p-4 bg-black/30">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-yellow-400 text-sm font-semibold">Editing Response</span>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleCancelEdit}
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-white h-7 px-2"
+                disabled={isSavingEdit}
+              >
+                <X className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                <span className="text-xs hidden sm:inline">Cancel</span>
+              </Button>
+              <Button
+                onClick={handleSaveEdit}
+                variant="ghost"
+                size="sm"
+                className="text-green-400 hover:bg-green-400/10 hover:text-white h-7 px-2"
+                disabled={isSavingEdit}
+              >
+                {isSavingEdit ? (
+                  <>
+                    <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1 animate-spin" />
+                    <span className="text-xs hidden sm:inline">Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                    <span className="text-xs hidden sm:inline">Save</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={editedContent}
+            onChange={(e) => setEditedContent(e.target.value)}
+            className="w-full min-h-[200px] p-3 bg-black/50 border border-cyan-500/30 rounded text-gray-100 text-sm font-mono resize-none overflow-y-auto focus:outline-none focus:border-cyan-500"
+            placeholder="Edit your response here..."
+          />
         </div>
+      ) : (
+        <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
+          {/* Concise part - always visible */}
+          <div className="mb-3">
+            {concisePart}
+          </div>
         
         {/* Display the generated image if present */}
         {(() => {
           const imageMatch = content.match(/\[IMAGE_DISPLAY:(.*?)\]/);
           const imageUrl = imageMatch ? imageMatch[1] : null;
-          
-          console.log('ProgressiveResponse content:', content);
-          console.log('Image match:', imageMatch);
-          console.log('Image URL:', imageUrl);
           
           if (imageUrl) {
             const handleDownload = async () => {
@@ -913,9 +1251,23 @@ export function ProgressiveResponse({
           </div>
         )}
         
-        {/* Expand/Collapse button */}
+        {/* Expand/Collapse buttons */}
         {shouldShowProgressive && (
-          <div className="mt-3 pt-2 border-t border-cyan-500/20">
+          <div className="mt-3 pt-2 border-t border-cyan-500/20 flex items-center gap-2">
+            {onShowPrevious && hasPreviousResponse && (
+              <Button
+                onClick={async () => {
+                  if (onShowPrevious) {
+                    await onShowPrevious()
+                  }
+                }}
+                variant="ghost"
+                size="sm"
+                className="text-purple-400 hover:bg-purple-400/10 hover:text-white transition-all h-8 px-3"
+              >
+                <span className="text-xs">Show Previous</span>
+              </Button>
+            )}
             <Button
               onClick={isExpanded ? () => setIsExpanded(false) : handleShowMore}
               variant="ghost"
@@ -942,7 +1294,8 @@ export function ProgressiveResponse({
             </Button>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

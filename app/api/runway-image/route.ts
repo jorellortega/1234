@@ -143,10 +143,84 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
       console.error('RunwayML Image API error:', error)
+      
+      const errorMessage = error.message || 'Unknown error'
+      
+      // Check if it's a moderation/content policy error and provide a clearer message
+      const isModerationError = errorMessage && (
+        errorMessage.toLowerCase().includes('moderation') || 
+        errorMessage.toLowerCase().includes('did not pass') ||
+        errorMessage.toLowerCase().includes('content policy') ||
+        errorMessage.toLowerCase().includes('policy violation')
+      )
+      
+      if (isModerationError) {
+        // Refund credits for moderation errors
+        const imageCredits: Record<string, number> = {
+          'gen4_image': 8,
+          'gen4_image_turbo': 3,
+          'gemini_2.5_flash': 8,
+          'runway_image': 8
+        }
+        const creditsToRefund = imageCredits[modelToUse] || 8
+        
+        // Import refund function (similar to runway video route)
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          const { createClient } = await import('@supabase/supabase-js')
+          const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+          
+          console.log(`💰 Refunding ${creditsToRefund} credits to user ${user.id}`)
+          
+          const { data: profile } = await supabaseAdmin
+            .from('user_profiles')
+            .select('credits')
+            .eq('id', user.id)
+            .single()
+          
+          if (profile) {
+            const newCredits = (profile.credits || 0) + creditsToRefund
+            const { error: updateError } = await supabaseAdmin
+              .from('user_profiles')
+              .update({ credits: newCredits })
+              .eq('id', user.id)
+            
+            if (!updateError) {
+              console.log(`✅ Refunded ${creditsToRefund} credits. New balance: ${newCredits}`)
+              return NextResponse.json(
+                { 
+                  error: "Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again.",
+                  details: errorMessage,
+                  refunded: true,
+                  refundAmount: creditsToRefund,
+                  newBalance: newCredits
+                },
+                { status: 400 }
+              )
+            }
+          }
+        }
+        
+        return NextResponse.json(
+          { 
+            error: "Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again.",
+            details: errorMessage,
+            refunded: false
+          },
+          { status: 400 }
+        )
+      }
+      
+      // Sanitize error message to remove service/model names before returning to user
+      let sanitizedError = errorMessage.replace(/RunwayML|runway|Gen-?4|gen-?4|Gemini|gemini/g, '').trim()
+      if (!sanitizedError) sanitizedError = 'Image generation failed'
+      
       return NextResponse.json(
         { 
-          error: 'Image generation failed: ' + (error.message || 'Unknown error'),
-          details: error.response?.data || error.message
+          error: sanitizedError.startsWith('Image generation') ? sanitizedError : `Image generation failed: ${sanitizedError}`,
+          details: error.response?.data || errorMessage // Keep full details for logging
         },
         { status: 500 }
       )

@@ -20,7 +20,7 @@ export type Memory = {
   document_url?: string
 }
 
-export type MemoryCategory = 'all' | 'project' | 'idea' | 'family_tree' | 'question' | 'general'
+export type MemoryCategory = 'all' | 'project' | 'idea' | 'family_tree' | 'question' | 'general' | 'conversation'
 
 export type MemoryFormData = {
   concept: string

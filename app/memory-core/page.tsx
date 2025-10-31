@@ -6,7 +6,7 @@ import { MemoryNode } from "@/components/memory-node"
 import { MemoryForm } from "@/components/MemoryForm"
 import { DocumentUpload } from "@/components/DocumentUpload"
 import { MemoryReview } from "@/components/MemoryReview"
-import { Home, PlusCircle, RefreshCw, FolderOpen, ArrowLeft, FileText, Settings } from "lucide-react"
+import { Home, PlusCircle, RefreshCw, FolderOpen, ArrowLeft, FileText } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Memory, MemoryCategory, MemoryFormData } from '@/lib/types'
 import { supabase } from '@/lib/supabase-client'
@@ -204,6 +204,7 @@ export default function MemoryCorePage() {
       case 'family_tree': return '👨‍👩‍👧‍👦'
       case 'question': return '❓'
       case 'general': return '📝'
+      case 'conversation': return '💬'
       default: return '📄'
     }
   }
@@ -215,6 +216,7 @@ export default function MemoryCorePage() {
       case 'family_tree': return 'text-green-400'
       case 'question': return 'text-purple-400'
       case 'general': return 'text-gray-400'
+      case 'conversation': return 'text-cyan-400'
       default: return 'text-cyan-400'
     }
   }
@@ -243,7 +245,7 @@ export default function MemoryCorePage() {
         <div className="animated-grid" />
         <div className="relative z-10 flex items-center justify-center h-screen">
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-cyan-400 mb-4">JOR // MEMORY CORE</h1>
+            <h1 className="text-3xl font-bold text-cyan-400 mb-4">MEMORY CORE</h1>
             <p className="text-cyan-300 mb-6">Authentication required to access Memory Core</p>
             <div className="flex gap-4 justify-center">
               <Link 
@@ -278,12 +280,8 @@ export default function MemoryCorePage() {
 
       <div className="relative z-10 flex flex-col h-full p-4 md:p-6 lg:p-8">
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <h1 className="text-2xl md:text-3xl font-bold text-cyan-400 glow break-words">JOR // MEMORY CORE</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-cyan-400 glow break-words">MEMORY CORE</h1>
           <div className="flex items-center gap-2 sm:gap-4">
-            <Link href="/ai-settings" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors text-sm">
-              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline">AI Settings</span>
-            </Link>
             <Link href="/" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors text-sm">
               <Home className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="hidden sm:inline">Return to Core</span>
@@ -318,7 +316,7 @@ export default function MemoryCorePage() {
         {/* Category Filter */}
         <div className="my-4">
           <div className="flex flex-wrap gap-2">
-            {(['all', 'project', 'idea', 'question', 'general'] as MemoryCategory[]).map((category) => (
+            {(['all', 'project', 'idea', 'question', 'general', 'conversation'] as MemoryCategory[]).map((category) => (
               <Button
                 key={category}
                 variant={selectedCategory === category ? "default" : "outline"}
@@ -407,7 +405,7 @@ export default function MemoryCorePage() {
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-12">
-          <p>JOR INTERFACE © 2025. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
+          <p>INTERFACE © 2025. UNAUTHORIZED ACCESS IS PROHIBITED.</p>
         </footer>
 
         {showForm && (

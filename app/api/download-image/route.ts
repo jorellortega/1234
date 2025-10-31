@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return new NextResponse(blob, {
       headers: {
         'Content-Type': 'image/png',
-        'Content-Disposition': `attachment; filename="infinito-image-${Date.now()}.png"`,
+        'Content-Disposition': `attachment; filename="Infinito-Image.png"`,
       },
     })
   } catch (error) {

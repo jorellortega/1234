@@ -19,6 +19,7 @@ type MemoryNodeProps = {
 export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = false }: MemoryNodeProps) {
   const [showEditForm, setShowEditForm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
   
   const salienceColor = memory.salience > 0.9 ? "bg-red-500" : memory.salience > 0.7 ? "bg-amber-500" : "bg-cyan-500"
 
@@ -214,7 +215,63 @@ export function MemoryNode({ memory, side, onUpdate, onDrillDown, isDrillable = 
             </div>
           )}
           
-          <p className="text-gray-300 mt-2 text-sm break-words overflow-wrap-anywhere">{memory.data}</p>
+          {/* Memory Data - Truncate long AI responses */}
+          {(() => {
+            const isConversationMemory = memory.memory_category === 'conversation' || 
+                                         memory.concept.includes('AI Response') ||
+                                         memory.concept.includes('Generate More')
+            const isLongText = memory.data.length > 300 || memory.data.split('\n\n').length > 2
+            const shouldTruncate = isConversationMemory && isLongText && !isExpanded
+            
+            if (shouldTruncate) {
+              // Truncate to first 2 paragraphs or ~300 characters
+              const paragraphs = memory.data.split('\n\n')
+              const preview = paragraphs.length > 2 
+                ? paragraphs.slice(0, 2).join('\n\n') 
+                : memory.data.substring(0, 300)
+              
+              return (
+                <div className="mt-2">
+                  <p className="text-gray-300 text-sm break-words overflow-wrap-anywhere whitespace-pre-wrap">
+                    {preview}
+                    {memory.data.length > preview.length && '...'}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsExpanded(true)}
+                    className="mt-2 text-cyan-400 hover:text-cyan-300 text-xs px-2 py-1 h-auto"
+                  >
+                    View All
+                  </Button>
+                </div>
+              )
+            }
+            
+            // Show full text if expanded or short
+            const isConversationMemoryFull = memory.memory_category === 'conversation' || 
+                                           memory.concept.includes('AI Response') ||
+                                           memory.concept.includes('Generate More')
+            const isLongTextFull = memory.data.length > 300 || memory.data.split('\n\n').length > 2
+            
+            return (
+              <div className="mt-2">
+                <p className="text-gray-300 text-sm break-words overflow-wrap-anywhere whitespace-pre-wrap">
+                  {memory.data}
+                </p>
+                {isExpanded && isConversationMemoryFull && isLongTextFull && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsExpanded(false)}
+                    className="mt-2 text-cyan-400 hover:text-cyan-300 text-xs px-2 py-1 h-auto"
+                  >
+                    Show Less
+                  </Button>
+                )}
+              </div>
+            )
+          })()}
 
           <div className="mt-4 border-t border-cyan-500/20 pt-3">
             <p className="text-xs text-cyan-400 mb-2">CONNECTIONS:</p>

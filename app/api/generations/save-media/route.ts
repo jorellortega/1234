@@ -75,7 +75,13 @@ export async function POST(req: NextRequest) {
 
       const blob = await response.blob()
       const fileExt = mediaType === 'image' ? 'png' : mediaType === 'video' ? 'mp4' : 'mp3'
-      const fileName = `${user.id}/${Date.now()}-${mediaType}.${fileExt}`
+      // Use descriptive names instead of timestamps for better organization
+      const baseName = mediaType === 'image' 
+        ? 'Infinito-Image' 
+        : mediaType === 'video' 
+        ? 'Infinito-Video' 
+        : 'Infinito-Audio'
+      const fileName = `${user.id}/${baseName}-${Date.now()}.${fileExt}`
 
       // Step 2: Upload to Supabase Storage
       console.log('Uploading to storage:', fileName)

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import LibraryControls from "./LibraryControls";
 import Link from "next/link";
-import { Settings, Home, BookUser, BrainCircuit, User, LogOut } from "lucide-react";
+import { Settings, Home, BookUser, BrainCircuit, User, LogOut, Video, Image as ImageIcon, Music, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Row = {
@@ -23,6 +23,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'video' | 'pictures' | 'audio' | 'text'>('all');
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -31,40 +32,52 @@ export default function LibraryPage() {
     router.push("/");
   };
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Get current user session
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        
-        if (authError || !user) {
-          router.push("/login");
-          return;
-        }
-
-        setUser(user);
-
-        // Fetch only user's generations
-        const { data: generations, error: fetchError } = await supabase
-          .from("generations")
-          .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(200);
-
-        if (fetchError) {
-          setError(fetchError.message);
-        } else {
-          setData(generations || []);
-        }
-      } catch (err) {
-        setError("Failed to load library data");
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      // Get current user session
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        router.push("/login");
+        return;
       }
-    };
 
+      setUser(user);
+
+      // Fetch only user's generations
+      const { data: generations, error: fetchError } = await supabase
+        .from("generations")
+        .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (fetchError) {
+        setError(fetchError.message);
+      } else {
+        setData(generations || []);
+      }
+    } catch (err) {
+      setError("Failed to load library data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
+    
+    // Listen for deletion events from detail page
+    const handleGenerationDeleted = (event: CustomEvent<{ id: string }>) => {
+      // Remove the deleted item from state immediately
+      setData(prev => prev.filter(item => item.id !== event.detail.id));
+    };
+    
+    window.addEventListener('generationDeleted', handleGenerationDeleted as EventListener);
+    
+    return () => {
+      window.removeEventListener('generationDeleted', handleGenerationDeleted as EventListener);
+    };
   }, [router]);
 
   if (loading) {
@@ -177,8 +190,69 @@ export default function LibraryPage() {
             </p>
           </div>
 
+          {/* Tabs */}
           <div className="max-w-7xl mx-auto">
-            <LibraryControls initial={data} />
+            <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-6">
+              <button
+                onClick={() => setActiveTab('all')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  activeTab === 'all'
+                    ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/50'
+                    : 'bg-black/20 text-cyan-400 hover:bg-cyan-500/10 border border-cyan-500/30'
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                <span className="text-sm font-medium">All</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('video')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  activeTab === 'video'
+                    ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/50'
+                    : 'bg-black/20 text-pink-400 hover:bg-pink-500/10 border border-pink-500/30'
+                }`}
+              >
+                <Video className="h-4 w-4" />
+                <span className="text-sm font-medium">Video</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('pictures')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  activeTab === 'pictures'
+                    ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/50'
+                    : 'bg-black/20 text-purple-400 hover:bg-purple-500/10 border border-purple-500/30'
+                }`}
+              >
+                <ImageIcon className="h-4 w-4" />
+                <span className="text-sm font-medium">Pictures</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('audio')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  activeTab === 'audio'
+                    ? 'bg-green-500 text-white shadow-lg shadow-green-500/50'
+                    : 'bg-black/20 text-green-400 hover:bg-green-500/10 border border-green-500/30'
+                }`}
+              >
+                <Music className="h-4 w-4" />
+                <span className="text-sm font-medium">Audio</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('text')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  activeTab === 'text'
+                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/50'
+                    : 'bg-black/20 text-blue-400 hover:bg-blue-500/10 border border-blue-500/30'
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                <span className="text-sm font-medium">Text</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto">
+            <LibraryControls initial={data} contentType={activeTab} />
           </div>
         </main>
       </div>

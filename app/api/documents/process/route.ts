@@ -165,43 +165,121 @@ async function simulateTextExtraction(file: File, filename: string): Promise<str
     }
   }
   
-  // For PDFs, use pdf-parse library
+  // For PDFs, use pdf-parse library with pdf2json fallback
   if (file.type.includes('pdf')) {
     try {
       console.log('🔍 [DEBUG] Attempting to parse PDF:', filename, 'Size:', file.size)
       
-      // Use dynamic import to avoid bundling issues with Next.js
-      // Dynamic import works better with Next.js and avoids webpack bundling issues
-      let pdfParse: any
-      try {
-        const pdfParseModule = await import('pdf-parse')
-        pdfParse = pdfParseModule.default || pdfParseModule
-        console.log('✅ [DEBUG] pdf-parse loaded via dynamic import')
-      } catch (importError) {
-        console.error('❌ [ERROR] Failed to load pdf-parse:', importError)
-        // If dynamic import fails, we can't process PDFs
-        throw new Error(`Failed to load PDF parser: ${importError instanceof Error ? importError.message : String(importError)}`)
-      }
-      
       const fileBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(fileBuffer)
       
-      console.log('🔍 [DEBUG] Calling pdfParse with buffer size:', buffer.length)
-      const result = await pdfParse(buffer)
-      
-      const extractedText = result?.text || ''
-      console.log('✅ [DEBUG] PDF parsed successfully:', {
-        textLength: extractedText.length,
-        pages: result?.numpages || 0,
-        textPreview: extractedText.substring(0, 200) || 'NO TEXT'
-      })
-      
-      if (!extractedText || extractedText.trim().length === 0) {
-        console.warn('⚠️ [WARN] PDF parsed but extracted text is empty')
-        return `PDF ${filename} was parsed but contains no extractable text. This might be a scanned image PDF or an empty document.`
+      // Try pdf-parse first (faster and lighter)
+      try {
+        let pdfParse: any
+        try {
+          const pdfParseModule = await import('pdf-parse')
+          pdfParse = pdfParseModule.default || pdfParseModule
+          console.log('✅ [DEBUG] pdf-parse loaded via dynamic import')
+        } catch (importError) {
+          console.error('❌ [ERROR] Failed to load pdf-parse:', importError)
+          throw new Error(`Failed to load PDF parser: ${importError instanceof Error ? importError.message : String(importError)}`)
+        }
+        
+        console.log('🔍 [DEBUG] Calling pdfParse with buffer size:', buffer.length)
+        const result = await pdfParse(buffer)
+        
+        const extractedText = result?.text || ''
+        console.log('✅ [DEBUG] PDF parsed successfully with pdf-parse:', {
+          textLength: extractedText.length,
+          pages: result?.numpages || 0,
+          textPreview: extractedText.substring(0, 200) || 'NO TEXT'
+        })
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          console.warn('⚠️ [WARN] PDF parsed but extracted text is empty')
+          return `PDF ${filename} was parsed but contains no extractable text. This might be a scanned image PDF or an empty document.`
+        }
+        
+        return extractedText
+      } catch (pdfParseError) {
+        // Fallback to pdf2json if pdf-parse fails (handles malformed PDFs better)
+        console.warn('⚠️ [WARN] pdf-parse failed, trying pdf2json fallback:', pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError))
+        
+        try {
+          // Use pdf2json as fallback (more robust for malformed PDFs in Node.js)
+          const PDFParser = require('pdf2json')
+          const pdfParser = new PDFParser(null, 1)
+          
+          console.log('🔍 [DEBUG] Loading PDF with pdf2json, buffer size:', buffer.length)
+          
+          return new Promise<string>((resolve, reject) => {
+            // Set up event handlers before parsing
+            pdfParser.on('pdfParser_dataError', (errData: any) => {
+              console.error('❌ [ERROR] pdf2json parsing error:', errData.parserError)
+              reject(new Error(`pdf2json parsing failed: ${errData.parserError}`))
+            })
+            
+            pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
+              try {
+                console.log('✅ [DEBUG] PDF loaded with pdf2json, pages:', pdfData.Pages?.length || 0)
+                
+                if (!pdfData.Pages || pdfData.Pages.length === 0) {
+                  console.warn('⚠️ [WARN] PDF parsed but contains no pages')
+                  resolve(`PDF ${filename} was parsed but contains no pages. This might be an empty document.`)
+                  return
+                }
+                
+                // Extract text from all pages
+                let extractedText = ''
+                for (const page of pdfData.Pages) {
+                  if (page.Texts && page.Texts.length > 0) {
+                    const pageText = page.Texts.map((text: any) => {
+                      // Decode the text if it's encoded
+                      if (text.R && text.R.length > 0) {
+                        return text.R.map((r: any) => {
+                          try {
+                            return decodeURIComponent(r.T)
+                          } catch (e) {
+                            return r.T
+                          }
+                        }).join('')
+                      }
+                      return text.T
+                    }).join(' ')
+                    extractedText += pageText + '\n\n'
+                  }
+                }
+                
+                console.log('✅ [DEBUG] PDF parsed successfully with pdf2json:', {
+                  textLength: extractedText.length,
+                  pages: pdfData.Pages.length,
+                  textPreview: extractedText.substring(0, 200) || 'NO TEXT'
+                })
+                
+                if (!extractedText || extractedText.trim().length === 0) {
+                  console.warn('⚠️ [WARN] PDF parsed but extracted text is empty')
+                  resolve(`PDF ${filename} was parsed but contains no extractable text. This might be a scanned image PDF or an empty document.`)
+                  return
+                }
+                
+                resolve(extractedText.trim())
+              } catch (error) {
+                reject(error)
+              }
+            })
+            
+            // Parse the PDF
+            pdfParser.parseBuffer(buffer)
+          })
+        } catch (pdf2jsonError) {
+          // Both methods failed
+          console.error('❌ [ERROR] Both pdf-parse and pdf2json failed:', {
+            pdfParseError: pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError),
+            pdf2jsonError: pdf2jsonError instanceof Error ? pdf2jsonError.message : String(pdf2jsonError)
+          })
+          throw pdfParseError // Throw original error
+        }
       }
-      
-      return extractedText
     } catch (error) {
       console.error('❌ [ERROR] Error parsing PDF:', filename, error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'

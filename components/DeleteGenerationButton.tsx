@@ -15,13 +15,15 @@ export default function DeleteGenerationButton({ id }: { id: string }) {
       const r = await fetch(`/api/generations/${id}`, { method: "DELETE" });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || data?.error) throw new Error(data.error || "Delete failed");
+      
+      // Dispatch custom event to notify library page
+      window.dispatchEvent(new CustomEvent('generationDeleted', { detail: { id } }));
+      
       router.push("/library");
-      router.refresh();
     } catch (e: any) {
       setErr(e.message || "Unknown error");
     } finally {
       setBusy(false);
-    }
     }
   }
 

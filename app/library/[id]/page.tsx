@@ -23,6 +23,7 @@ type Row = {
 type Child = {
   id: string;
   created_at: string;
+  output?: string;
 };
 
 export default function GenerationDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -70,16 +71,30 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
 
         setRow(generation);
 
-        // Fetch children
+        // Fetch children (generate more responses)
         const { data: childrenData } = await supabase
           .from("generations")
-          .select("id, created_at")
+          .select("id, created_at, output")
           .eq("parent_id", id)
           .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
+          .order("created_at", { ascending: true }) // Ascending to maintain order
           .limit(50);
 
         setChildren(childrenData || []);
+        
+        // Combine original output with all "generate more" responses for editing/export
+        if (childrenData && childrenData.length > 0) {
+          const combinedOutput = [
+            generation.output || '',
+            ...childrenData.map(c => c.output || '').filter(o => o.trim())
+          ].join('\n\n').trim();
+          
+          // Update the row with combined output
+          setRow({
+            ...generation,
+            output: combinedOutput
+          });
+        }
       } catch (err) {
         setError("Failed to load generation data");
       } finally {
@@ -207,12 +222,6 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-4">
-                <Link
-                  href={`/test-console?prompt=${encodeURIComponent(row.prompt ?? "")}&parent_id=${row.id}`}
-                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
-                >
-                  Re-run in Console
-                </Link>
                 <button
                   onClick={async () => {
                     if (confirm('Are you sure you want to delete this generation? This cannot be undone.')) {
@@ -222,6 +231,9 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
                         });
                         
                         if (!response.ok) throw new Error('Failed to delete');
+                        
+                        // Dispatch custom event to notify library page
+                        window.dispatchEvent(new CustomEvent('generationDeleted', { detail: { id: row.id } }));
                         
                         router.push('/library');
                       } catch (error) {
@@ -241,7 +253,17 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
             <section className="space-y-4 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
               <h2 className="text-xl font-semibold text-white">Output</h2>
               <div className="bg-neutral-800 p-4 rounded-xl border border-neutral-700">
-                <ProgressiveResponse content={row.output ?? ""} responseStyle="detailed" />
+                <ProgressiveResponse 
+                  content={row.output ?? ""} 
+                  responseStyle="detailed" 
+                  generationId={row.id}
+                  onContentChange={async (newContent: string) => {
+                    // Update local state immediately with edited content
+                    console.log('🔄 [PAGE] Updating output state. Old length:', row.output?.length || 0, 'New length:', newContent.length)
+                    setRow(prev => prev ? { ...prev, output: newContent } : null)
+                    console.log('✅ [PAGE] Output state updated')
+                  }}
+                />
               </div>
             </section>
 
@@ -262,16 +284,24 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
 
             {children && children.length > 0 && (
               <section className="space-y-4 bg-neutral-900/50 p-6 rounded-2xl border border-neutral-800">
-                <h2 className="text-xl font-semibold text-white">Re-runs ({children.length})</h2>
-                <ul className="list-disc ml-5 space-y-2">
+                <h2 className="text-xl font-semibold text-white">Generate More Responses ({children.length})</h2>
+                <div className="space-y-3">
                   {children.map((c) => (
-                    <li key={c.id} className="text-gray-300">
-                      <Link href={`/library/${c.id}`} className="text-cyan-400 hover:underline">
-                        {new Date(c.created_at).toLocaleString()}
-                      </Link>
-                    </li>
+                    <div key={c.id} className="bg-neutral-800 p-3 rounded-lg border border-neutral-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-cyan-400">
+                          {new Date(c.created_at).toLocaleString()}
+                        </span>
+                        <Link href={`/library/${c.id}`} className="text-xs text-cyan-400 hover:underline">
+                          View Details →
+                        </Link>
+                      </div>
+                      <div className="text-sm text-gray-300 whitespace-pre-wrap">
+                        {c.output || 'No output'}
+                      </div>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </section>
             )}
           </div>

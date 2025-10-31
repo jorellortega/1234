@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { error } = await supabase.from("generations").insert([{
+    const { data: generation, error } = await supabase.from("generations").insert([{
       prompt: prompt || '',
       output: output || '',
       model: model ?? "mini_llm",
@@ -42,10 +42,10 @@ export async function POST(req: NextRequest) {
       top_k: typeof top_k === "number" ? top_k : null,
       parent_id: typeof parent_id === "string" ? parent_id : null,
       user_id: user.id
-    }]);
+    }]).select().single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, generation_id: generation?.id });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }

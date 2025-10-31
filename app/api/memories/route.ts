@@ -55,12 +55,12 @@ export async function GET(request: Request) {
       query = query.eq('hierarchy_level', parseInt(hierarchyLevel))
     }
     
-    // Order by hierarchy level, then sort order (descending so newest first), then salience, then created_at
+    // Order by created_at descending (newest first), then hierarchy level, then sort order, then salience
     const { data: memories, error } = await query
+      .order('created_at', { ascending: false })
       .order('hierarchy_level', { ascending: true })
       .order('sort_order', { ascending: false })
       .order('salience', { ascending: false })
-      .order('created_at', { ascending: false })
 
     if (error) {
       console.error('Error fetching memories:', error)

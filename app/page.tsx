@@ -12,6 +12,7 @@ import { MemoryReview } from "@/components/MemoryReview"
 import { ProgressiveResponse } from "@/components/ProgressiveResponse"
 import { MemoryFormData } from "@/lib/types"
 import { supabase } from "@/lib/supabase-client"
+import { CreditsPurchaseDialog } from "@/components/CreditsPurchaseDialog"
 
 export default function AIPromptPage() {
   const [prompt, setPrompt] = useState("")
@@ -37,6 +38,7 @@ export default function AIPromptPage() {
   const [authLoading, setAuthLoading] = useState(true)
   const [userCredits, setUserCredits] = useState(0)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [refundedCredits, setRefundedCredits] = useState<number | null>(null)
   
   // Admin preferences state
   const [adminPreferences, setAdminPreferences] = useState<any>(null)
@@ -52,6 +54,11 @@ export default function AIPromptPage() {
   // Voice recognition state
   const [isListening, setIsListening] = useState(false)
   const [recognition, setRecognition] = useState<any>(null)
+  
+  // Track last saved generation ID for threading
+  const [lastGenerationId, setLastGenerationId] = useState<string | null>(null)
+  // Also use ref to track it synchronously (doesn't get lost)
+  const lastGenerationIdRef = useRef<string | null>(null)
   
   // Check authentication status
   useEffect(() => {
@@ -552,6 +559,7 @@ Is there anything else I can help you with?`)
   const [showDocumentReview, setShowDocumentReview] = useState(false)
   const [processedDocumentData, setProcessedDocumentData] = useState<any>(null)
   const [showFullTextDialog, setShowFullTextDialog] = useState(false)
+  const [showCreditsDialog, setShowCreditsDialog] = useState(false)
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [conversationHistory, setConversationHistory] = useState<Array<{
@@ -564,12 +572,23 @@ Is there anything else I can help you with?`)
   }>>([])
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
   const [showThreadView, setShowThreadView] = useState(false)
+  const [threadGenerations, setThreadGenerations] = useState<Array<{
+    id: string,
+    created_at: string,
+    prompt: string,
+    output: string,
+    model: string | null,
+    is_root: boolean,
+    thread_position: number
+  }>>([])
+  const [loadingThread, setLoadingThread] = useState(false)
   const consoleRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Video generation state
   const [videoImage, setVideoImage] = useState<File | null>(null)
   const [videoImagePreview, setVideoImagePreview] = useState<string | null>(null)
+  const [originalImageUrlForVideo, setOriginalImageUrlForVideo] = useState<string | null>(null) // Store original image URL when converting to video
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
@@ -920,17 +939,21 @@ Is there anything else I can help you with?`)
 
   const clearVideoImage = () => {
     setVideoImage(null)
-    setVideoImagePreview(null)
-    setIsConvertingImageToVideo(false) // Clear flag when clearing video image
-    if (videoFileInputRef.current) {
-      videoFileInputRef.current.value = ''
+      setVideoImagePreview(null)
+      setIsConvertingImageToVideo(false) // Clear flag when clearing video image
+      setOriginalImageUrlForVideo(null) // Clear stored image URL
+      if (videoFileInputRef.current) {
+        videoFileInputRef.current.value = ''
+      }
     }
-  }
 
   // Convert generated image to video
   const handleConvertImageToVideo = async (imageUrl: string) => {
     try {
       setError(null)
+      
+      // Store the original image URL so we can show both image and video together
+      setOriginalImageUrlForVideo(imageUrl)
       
       // Fetch the image and convert to File
       const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageUrl)}`)
@@ -964,13 +987,16 @@ Is there anything else I can help you with?`)
       // Scroll to top to show video generation UI
       window.scrollTo({ top: 0, behavior: 'smooth' })
       
-      // Show success message
-      setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
+      // Only set output message if not already in video mode to prevent duplicates
+      if (!isVideoModel) {
+        setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
+      }
       
     } catch (error) {
       console.error('Error converting image to video:', error)
       setError('Failed to load image for video generation')
       setIsConvertingImageToVideo(false)
+      setOriginalImageUrlForVideo(null)
     }
   }
 
@@ -1292,7 +1318,28 @@ Is there anything else I can help you with?`)
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Image generation failed')
+        const errorMessage = errorData.error || 'Image generation failed'
+        
+        // Handle credit refund if provided (from copyright/moderation errors)
+        if (errorData.refunded && errorData.refundAmount) {
+          setUserCredits(errorData.newBalance || userCredits)
+          setRefundedCredits(errorData.refundAmount)
+          // Clear refund message after 5 seconds
+          setTimeout(() => setRefundedCredits(null), 5000)
+          console.log(`✅ Credits refunded. New balance: ${errorData.newBalance}`)
+        }
+        
+        // Check if it's a moderation-related error
+        if (errorMessage && (
+          errorMessage.toLowerCase().includes('moderation') || 
+          errorMessage.toLowerCase().includes('did not pass') ||
+          errorMessage.toLowerCase().includes('content policy') ||
+          errorMessage.toLowerCase().includes('copyright')
+        )) {
+          throw new Error("Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again.")
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -1314,7 +1361,19 @@ Is there anything else I can help you with?`)
 
     } catch (error: any) {
       console.error('Image generation error:', error)
-      setError(error.message || 'Failed to generate image')
+      
+      // Check if it's a moderation-related error and provide a clearer message
+      let errorMessage = error.message || 'Failed to generate image'
+      if (errorMessage && (
+        errorMessage.toLowerCase().includes('moderation') || 
+        errorMessage.toLowerCase().includes('did not pass') ||
+        errorMessage.toLowerCase().includes('content policy') ||
+        errorMessage.toLowerCase().includes('copyright')
+      )) {
+        errorMessage = "Didn't pass copyright review. Remove copyrighted names/brands or explicit content and try again."
+      }
+      
+      setError(errorMessage)
       setImageGenerationProgress('')
       
       // Refresh credits after error (in case there was a refund)
@@ -1447,9 +1506,20 @@ Is there anything else I can help you with?`)
         setVideoUrl(data.url)
         setVideoGenerationProgress('Video generated successfully!')
         setLastPrompt(prompt) // Save prompt for later use
-        setPrompt('') // Clear prompt
-        // Use VIDEO_DISPLAY format so it appears in the AI response
-        setOutput(`[VIDEO_DISPLAY:${data.url}]`)
+        // Don't clear prompt - allow user to edit and regenerate
+        
+        // If we have an original image URL (converting from image), show both image and video
+        // This allows users to see the original image and know they can generate more videos from it
+        if (originalImageUrlForVideo) {
+          setOutput(`[IMAGE_DISPLAY:${originalImageUrlForVideo}]\n\n[VIDEO_DISPLAY:${data.url}]`)
+        } else {
+          // Regular video generation (not from image conversion)
+          setOutput(`[VIDEO_DISPLAY:${data.url}]`)
+        }
+        
+        // Keep isConvertingImageToVideo flag and videoImage state so user can generate more videos
+        // from the same image with different settings (aspect ratio, prompt, etc.)
+        // Only clear if user manually clears it or starts a new image conversion
         
         // Refresh credits after successful generation
         if (user?.id) {
@@ -1479,8 +1549,8 @@ Is there anything else I can help you with?`)
     // If converting from generated image, use the separate image-to-video model
     const modelToUse = isConvertingImageToVideo ? imageToVideoModel : mode
     await handleGenerateVideoWithModel(modelToUse)
-    // Clear the flag after generating
-    setIsConvertingImageToVideo(false)
+    // DON'T clear the flag after generating - keep it so user can generate more videos
+    // from the same image with different settings
   }
 
   // NEW: Handle TRANSMIT button click
@@ -1498,14 +1568,17 @@ Is there anything else I can help you with?`)
       return
     }
     
+    // DON'T reset lastGenerationId here - it should persist for "generate more" requests
+    // Only reset when starting a completely new conversation (clear button or new session)
+    
     // Handle video generation mode - if we're already in video mode (panel is showing), generate!
     if (isVideoModel && mode) {
       console.log('✅ Video mode active, calling handleGenerateVideo with mode:', mode)
       // If converting from generated image, use the separate image-to-video model
       const modelToUse = isConvertingImageToVideo ? imageToVideoModel : mode
       await handleGenerateVideoWithModel(modelToUse)
-      // Clear the flag after generating
-      setIsConvertingImageToVideo(false)
+      // DON'T clear the flag after generating - keep it so user can generate more videos
+      // from the same image with different settings
       return
     }
     
@@ -1541,8 +1614,10 @@ Is there anything else I can help you with?`)
     }
     
     // Smart video detection - only trigger video if user explicitly asks for it
+    // Skip this check if already in video mode to prevent duplicate messages
+    const isAlreadyInVideoMode = isVideoModel
     const videoKeywords = ['video', 'animate', 'animation', 'make it move', 'bring to life', 'make it come alive', 'generate video', 'create video', 'turn into video', 'video from', 'motion', 'come to life', 'video of', 'show me a video']
-    const wantsVideo = videoKeywords.some(keyword => 
+    const wantsVideo = !isAlreadyInVideoMode && videoKeywords.some(keyword => 
       prompt.toLowerCase().includes(keyword.toLowerCase())
     )
     
@@ -1748,27 +1823,24 @@ Please provide a ${responseStyle} answer.`
         
         // Save user question to memory core (skip for image mode to avoid errors)
         if (!isVisionModel) {
-          await saveConversationTurn('user', prompt, '')
+          // Store the prompt before clearing it
+          const userPrompt = prompt
           
-          // Save AI response to memory core
-          await saveConversationTurn('assistant', '', text)
+          await saveConversationTurn('user', userPrompt, '')
+          
+          // Save AI response to memory core and library - THIS SETS lastGenerationId
+          // IMPORTANT: Pass the actual prompt, not empty string!
+          // AWAIT this to ensure it completes before allowing "generate more"
+          await saveConversationTurn('assistant', userPrompt, text)
+          
+          console.log('✅ Initial response saved. lastGenerationId:', lastGenerationId, 'Ref:', lastGenerationIdRef.current)
         }
         
         // Clear the input for the next question
         setPrompt('')
         
-        // Log to Supabase
-        fetch("/api/save-generation", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            prompt, 
-            output: text, 
-            model: "distilgpt2", 
-            temperature, 
-            top_k: topK 
-          }),
-        }).catch(() => {})
+        // REMOVED: Don't use /api/save-generation anymore - it doesn't set user_id or return ID
+        // We use saveConversationTurn which uses /api/generations/create instead
       } else {
         // Streaming path
         let finalText = ""
@@ -1779,29 +1851,24 @@ Please provide a ${responseStyle} answer.`
         
         // Save user question to memory core (skip for image mode to avoid errors)
         if (!isVisionModel) {
-          await saveConversationTurn('user', prompt, '')
+          // Store the prompt before clearing it
+          const userPrompt = prompt
           
-          // Save AI response to memory core
-          await saveConversationTurn('assistant', '', finalText)
+          await saveConversationTurn('user', userPrompt, '')
+          
+          // Save AI response to memory core and library - THIS SETS lastGenerationId
+          // IMPORTANT: Pass the actual prompt, not empty string!
+          // AWAIT this to ensure it completes before allowing "generate more"
+          await saveConversationTurn('assistant', userPrompt, finalText)
+          
+          console.log('✅ Initial response saved (streaming). lastGenerationId:', lastGenerationId, 'Ref:', lastGenerationIdRef.current)
         }
         
         // Clear the input for the next question
         setPrompt('')
         
-        // Log to Supabase
-        if (finalText) {
-          fetch("/api/save-generation", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              prompt, 
-              output: finalText, 
-              model: "distilgpt2", 
-              temperature, 
-              top_k: topK 
-            }),
-          }).catch(() => {})
-        }
+        // REMOVED: Don't use /api/save-generation anymore - it doesn't set user_id or return ID
+        // We use saveConversationTurn which uses /api/generations/create instead
       }
     } catch (e: any) {
       setError(e.message || "Unknown error")
@@ -1881,35 +1948,67 @@ Please provide a ${responseStyle} answer.`
     try {
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        // Only save when we have both user input and AI response (complete conversation)
-        if (role === 'assistant' && userInput.trim() && aiResponse.trim()) {
-          const generationData = {
-            prompt: userInput, // User's question
-            output: aiResponse, // AI's response
-            model: mode,
-            temperature: temperature,
-            top_k: topK,
-            parent_id: currentConversationId || null
-          }
-
-          const libraryResponse = await fetch('/api/generations/create', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify(generationData)
-          })
-          
-          if (libraryResponse.ok) {
-            console.log('Saved complete conversation to library:', generationData)
-          } else {
-            console.error('Failed to save to library:', libraryResponse.status)
-          }
+      if (!session) {
+        console.warn('⚠️ [LIBRARY SAVE] No session found')
+        return
+      }
+      
+      // Only save when we have both user input and AI response (complete conversation)
+      if (role === 'assistant' && userInput.trim() && aiResponse.trim()) {
+        const generationData = {
+          prompt: userInput, // User's question
+          output: aiResponse, // AI's response
+          model: mode,
+          temperature: temperature,
+          top_k: topK,
+          parent_id: currentConversationId || null
         }
+
+        console.log('🔄 [LIBRARY SAVE] Saving to /api/generations/create...', {
+          prompt: userInput.substring(0, 50),
+          outputLength: aiResponse.length,
+          model: mode,
+          hasSession: !!session
+        })
+
+        const libraryResponse = await fetch('/api/generations/create', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify(generationData)
+        })
+        
+        console.log('📡 [LIBRARY SAVE] Response status:', libraryResponse.status, libraryResponse.ok)
+        
+        if (libraryResponse.ok) {
+          const responseData = await libraryResponse.json()
+          console.log('📦 [LIBRARY SAVE] Response data:', responseData)
+          
+          const generationId = responseData.generation_id
+          console.log('🆔 [LIBRARY SAVE] Extracted generation_id:', generationId)
+          
+          if (generationId) {
+            console.log('🔄 [LIBRARY SAVE] Setting lastGenerationId. Before - State:', lastGenerationId, 'Ref:', lastGenerationIdRef.current)
+            setLastGenerationId(generationId)
+            lastGenerationIdRef.current = generationId // Keep ref in sync
+            console.log('✅ [LIBRARY SAVE] Set lastGenerationId. After - State:', generationId, 'Ref:', lastGenerationIdRef.current)
+            console.log('✅ Saved complete conversation to library. ID:', generationId, 'Prompt:', userInput.substring(0, 50))
+          } else {
+            console.error('❌ [LIBRARY SAVE] Save succeeded but no generation_id returned. Full response:', responseData)
+            console.warn('⚠️ Save succeeded but no generation_id returned. Response:', responseData)
+          }
+        } else {
+          const errorText = await libraryResponse.text()
+          console.error('❌ [LIBRARY SAVE] Failed to save to library:', libraryResponse.status, errorText)
+          console.error('❌ Failed to save to library:', libraryResponse.status, errorText)
+        }
+      } else {
+        console.log('⏭️ [LIBRARY SAVE] Skipping save. Role:', role, 'hasUserInput:', !!userInput.trim(), 'hasAiResponse:', !!aiResponse.trim())
       }
     } catch (error) {
+      console.error('❌ [LIBRARY SAVE] Error saving to library:', error)
       console.error('Error saving to library:', error)
     }
     
@@ -2209,14 +2308,21 @@ Please provide a ${responseStyle} answer.`
               <div className="text-right">
                   <Link 
                     href="/credits" 
-                  className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-cyan-400/20 hover:border-cyan-400/40 transition-all cursor-pointer group"
+                  className="inline-flex flex-col items-end gap-1"
                   >
-                  <span className="text-cyan-400 text-xs sm:text-sm group-hover:text-cyan-300 transition-colors">
-                    CREDITS:
-                  </span>
-                  <span className="text-amber-400 font-bold text-sm sm:text-base group-hover:text-amber-300 transition-colors">
-                    {userCredits}
-                  </span>
+                    <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-cyan-400/20 hover:border-cyan-400/40 transition-all cursor-pointer group">
+                      <span className="text-cyan-400 text-xs sm:text-sm group-hover:text-cyan-300 transition-colors">
+                        CREDITS:
+                      </span>
+                      <span className="text-amber-400 font-bold text-sm sm:text-base group-hover:text-amber-300 transition-colors">
+                        {userCredits}
+                      </span>
+                    </div>
+                    {refundedCredits !== null && (
+                      <div className="text-green-400 text-xs animate-fade-in bg-green-900/20 border border-green-500/30 rounded px-2 py-1">
+                        ✅ Refunded {refundedCredits} credits
+                      </div>
+                    )}
                   </Link>
               </div>
             )}
@@ -2701,6 +2807,11 @@ Please provide a ${responseStyle} answer.`
                         </Button>
                       )}
                     </div>
+                    {videoImage && originalImageUrlForVideo && (
+                      <div className="mb-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-green-300 text-xs">
+                        ✅ Image loaded! Change aspect ratio, duration, or prompt and click "GENERATE VIDEO" to create more variations from this image.
+                      </div>
+                    )}
                     
                     {/* Video Settings */}
                     <div className="grid grid-cols-2 gap-3 mb-3">
@@ -2922,29 +3033,62 @@ Please provide a ${responseStyle} answer.`
 
                     {/* Conversation Thread */}
                     <div className="p-3">
-                      <div className="text-xs text-cyan-500 mb-3">Conversation Thread:</div>
-                      <div className="text-xs text-cyan-300 max-h-60 overflow-y-auto space-y-3">
-                        {conversationHistory.map((msg, index) => (
-                          <div key={msg.id || `msg-${index}`} className="border-l-2 border-cyan-500/30 pl-3">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <span className={`text-xs font-medium ${
-                                msg.role === 'user' ? 'text-cyan-400' : 
-                                msg.role === 'assistant' ? 'text-green-400' : 
-                                'text-blue-400'
-                              }`}>
-                                {msg.role === 'user' ? 'You' : 
-                                 msg.role === 'assistant' ? 'AI' : 
-                                 'System'}
-                              </span>
-                              <span className="text-xs text-cyan-600">
-                                {msg.timestamp.toLocaleTimeString()}
-                              </span>
+                      <div className="text-xs text-cyan-500 mb-3">
+                        Conversation Thread ({threadGenerations.length > 0 ? threadGenerations.length : conversationHistory.length} messages):
+                      </div>
+                      <div className="text-xs text-cyan-300 max-h-96 overflow-y-auto space-y-3">
+                        {loadingThread ? (
+                          <div className="text-cyan-400">Loading thread...</div>
+                        ) : threadGenerations.length > 0 ? (
+                          // Show generations from database (includes "generate more" responses)
+                          threadGenerations.map((gen, index) => (
+                            <div key={gen.id} className="border-l-2 border-cyan-500/30 pl-3">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <span className={`text-xs font-medium ${
+                                  gen.is_root ? 'text-green-400' : 'text-cyan-400'
+                                }`}>
+                                  {gen.is_root ? 'Original' : `Expand #${gen.thread_position}`}
+                                </span>
+                                <span className="text-xs text-cyan-600">
+                                  {new Date(gen.created_at).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              {gen.prompt && gen.prompt.trim() && (
+                                <div className="text-xs text-cyan-400 mb-1 font-medium">
+                                  Q: {gen.prompt}
+                                </div>
+                              )}
+                              <div className="text-xs text-cyan-300 leading-relaxed whitespace-pre-wrap">
+                                {gen.output}
+                              </div>
                             </div>
-                            <div className="text-xs text-cyan-300 leading-relaxed">
-                              {msg.content}
+                          ))
+                        ) : conversationHistory.length > 0 ? (
+                          // Fallback to local state if database thread not loaded
+                          conversationHistory.map((msg, index) => (
+                            <div key={msg.id || `msg-${index}`} className="border-l-2 border-cyan-500/30 pl-3">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <span className={`text-xs font-medium ${
+                                  msg.role === 'user' ? 'text-cyan-400' : 
+                                  msg.role === 'assistant' ? 'text-green-400' : 
+                                  'text-blue-400'
+                                }`}>
+                                  {msg.role === 'user' ? 'You' : 
+                                   msg.role === 'assistant' ? 'AI' : 
+                                   'System'}
+                                </span>
+                                <span className="text-xs text-cyan-600">
+                                  {msg.timestamp.toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <div className="text-xs text-cyan-300 leading-relaxed whitespace-pre-wrap">
+                                {msg.content}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))
+                        ) : (
+                          <div className="text-cyan-400/60">No conversation thread yet. Start a conversation to see it here.</div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2953,7 +3097,10 @@ Please provide a ${responseStyle} answer.`
                 {/* Reset Button - Above prompt window on the right */}
                 <div className="flex justify-end mb-2">
                   <Button
-                    onClick={() => window.location.reload()}
+                    onClick={() => {
+                      setLastGenerationId(null) // Clear generation ID for new conversation
+                      window.location.reload()
+                    }}
                     variant="ghost"
                     size="sm"
                     className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white text-xs px-3 py-1 h-8"
@@ -3029,12 +3176,73 @@ Please provide a ${responseStyle} answer.`
                     >
                       <Mic className="h-5 w-5" />
                     </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={`h-10 ${userCredits <= 10 ? 'text-red-400 hover:bg-red-400/10 hover:text-red-300' : 'text-cyan-400 hover:bg-cyan-400/10 hover:text-white'} ${userCredits <= 10 ? 'w-auto px-3 gap-2' : 'w-10'}`}
+                      onClick={() => setShowCreditsDialog(true)}
+                      title={userCredits <= 10 ? "Low credits - Purchase Credits" : "Purchase Credits"}
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      {userCredits <= 10 && (
+                        <span className="text-xs font-semibold">Buy Credits</span>
+                      )}
+                    </Button>
                   </div>
                   
                   {/* Thread Button - Mobile: Full width, Desktop: Middle */}
-                  {conversationHistory.length > 0 && (
+                  {(conversationHistory.length > 0 || lastGenerationId) && (
                     <Button
-                      onClick={() => setShowThreadView(!showThreadView)}
+                      onClick={async () => {
+                        const newShowThreadView = !showThreadView
+                        setShowThreadView(newShowThreadView)
+                        
+                        if (lastGenerationId) {
+                          try {
+                            const { data: { session } } = await supabase.auth.getSession()
+                            if (session) {
+                              const response = await fetch(`/api/generations/thread?id=${lastGenerationId}`, {
+                                headers: {
+                                  'Authorization': `Bearer ${session.access_token}`
+                                }
+                              })
+                              
+                              if (response.ok) {
+                                const data = await response.json()
+                                const thread = data.thread || []
+                                setThreadGenerations(thread)
+                                
+                                // When hiding thread view, restore combined output to show in AI response view
+                                if (!newShowThreadView && thread.length > 0) {
+                                  console.log('🔄 [THREAD] Restoring combined output from thread...')
+                                  // Combine root + all children outputs
+                                  const combinedOutput = thread
+                                    .map((gen: any) => gen.output || '')
+                                    .filter((o: string) => o.trim())
+                                    .join('\n\n')
+                                    .trim()
+                                  
+                                  if (combinedOutput && combinedOutput !== output) {
+                                    console.log('✅ [THREAD] Updating output with combined content. Length:', combinedOutput.length)
+                                    setOutput(combinedOutput)
+                                  }
+                                }
+                                
+                                // When opening thread view, just show the thread data
+                                if (newShowThreadView) {
+                                  setLoadingThread(true)
+                                }
+                              } else {
+                                console.error('Failed to load thread:', response.status)
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Error loading thread:', error)
+                          } finally {
+                            setLoadingThread(false)
+                          }
+                        }
+                      }}
                       className="w-full sm:w-auto px-4 py-2 bg-transparent border border-cyan-500/40 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300 transition-all text-sm font-medium"
                       title={showThreadView ? "Hide conversation thread" : "Show conversation thread"}
                     >
@@ -3393,7 +3601,7 @@ Please provide a ${responseStyle} answer.`
             {/* NEW: Output display */}
             {error && (
               <div className="w-full max-w-3xl mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
-                Error: {error}
+                {error}
               </div>
             )}
             
@@ -3416,6 +3624,63 @@ Please provide a ${responseStyle} answer.`
                 imageToVideoModel={imageToVideoModel}
                 onImageToVideoModelChange={(value) => handleModelChange(value, 'imageToVideo')}
                 isModelEnabled={isModelEnabled}
+                generationId={lastGenerationId}
+                onContentChange={async (newContent: string) => {
+                  // CRITICAL: Update local output state immediately with the edited content
+                  // This replaces the old combined content with the new edited version
+                  console.log('🔄 [PAGE] Updating output state. Old length:', output.length, 'New length:', newContent.length)
+                  console.log('🔄 [PAGE] New content preview:', newContent.substring(0, 100))
+                  
+                  // Use functional update to ensure we're setting the exact new content
+                  setOutput(() => newContent)
+                  
+                  console.log('✅ [PAGE] Output state set to:', newContent.substring(0, 100))
+                }}
+                onShowPrevious={async () => {
+                  // Fetch and display previous "generate more" responses
+                  if (lastGenerationId) {
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession()
+                      if (session) {
+                        const threadResponse = await fetch(`/api/generations/thread?id=${lastGenerationId}`, {
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`
+                          }
+                        })
+                        
+                          if (threadResponse.ok) {
+                            const threadData = await threadResponse.json()
+                            const thread = threadData.thread || []
+                            
+                            // Check if there are any child generations (generate more responses)
+                            if (thread.length > 1) {
+                              const children = thread.slice(1) // All children after root
+                              const existingChildOutput = children.map((c: any) => c.output || '').filter((o: string) => o.trim()).join('\n\n')
+                              
+                              if (existingChildOutput) {
+                                console.log('✅ [SHOW PREVIOUS] Found existing "generate more" response. Showing it.')
+                                // Combine root + existing children
+                                const rootOutput = thread[0]?.output || ''
+                                const combinedOutput = rootOutput && existingChildOutput
+                                  ? `${rootOutput}\n\n${existingChildOutput}`
+                                  : existingChildOutput || rootOutput
+                                
+                                setOutput(combinedOutput)
+                              } else {
+                                console.log('ℹ️ [SHOW PREVIOUS] No previous "generate more" responses found.')
+                                // Update the button visibility by triggering a re-check
+                                // The useEffect in ProgressiveResponse will handle this
+                              }
+                            } else {
+                              console.log('ℹ️ [SHOW PREVIOUS] No previous "generate more" responses found.')
+                            }
+                          }
+                      }
+                    } catch (error) {
+                      console.error('Error fetching previous generate more:', error)
+                    }
+                  }
+                }}
                 onShowMore={async (topic: string) => {
                   // Reset audio state when expanding content so user can generate audio for expanded content
                   setAudioUrl(null)
@@ -3482,6 +3747,135 @@ IMPORTANT RESTRICTIONS:
                     
                     // Truncate to exactly 4 paragraphs
                     response = truncateToFourParagraphs(response)
+                    
+                    // IMMEDIATELY update output to include "generate more" text so it persists
+                    // This makes it editable/exportable and prevents it from disappearing
+                    setOutput(prevOutput => {
+                      // If there's existing output, append the generate more text with a separator
+                      if (prevOutput && prevOutput.trim()) {
+                        return `${prevOutput}\n\n${response}`
+                      }
+                      return response
+                    })
+                    
+                    // Return response immediately (don't wait for save - makes it faster)
+                    // Save happens in background AFTER response is shown
+                    // Use ref to ensure we have the latest value even if state hasn't updated
+                    const currentGenerationId = lastGenerationIdRef.current || lastGenerationId
+                    
+                    console.log('🔍 [GENERATE MORE] Checking IDs for save:', {
+                      lastGenerationId: lastGenerationId,
+                      lastGenerationIdRef: lastGenerationIdRef.current,
+                      currentGenerationId: currentGenerationId,
+                      hasResponse: !!response && response.trim().length > 0,
+                      responseLength: response?.length || 0
+                    })
+                    
+                    // Save in background (fire and forget) - AFTER returning response
+                    // This makes the response appear faster
+                    if (response && response.trim() && currentGenerationId) {
+                      console.log('✅ [GENERATE MORE] All checks passed. Queuing background save. Parent ID:', currentGenerationId)
+                      
+                      // Use setTimeout to save after response is displayed
+                      setTimeout(async () => {
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession()
+                          if (!session) {
+                            console.warn('⚠️ No session for background save')
+                            return
+                          }
+                          
+                          const showMorePrompt = `Expand on: "${topic}"`
+                          const showMoreData = {
+                            prompt: showMorePrompt,
+                            output: response,
+                            model: mode,
+                            temperature: temperature,
+                            top_k: topK,
+                            parent_id: currentGenerationId // Link to original generation
+                          }
+                          
+                          console.log('🔄 Background saving "generate more" response...')
+                          
+                          // Save to generations table
+                          const saveResponse = await fetch('/api/generations/create', {
+                            method: 'POST',
+                            headers: { 
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${session.access_token}`
+                            },
+                            body: JSON.stringify(showMoreData)
+                          })
+                          
+                          if (saveResponse.ok) {
+                            const saveData = await saveResponse.json()
+                            console.log('✅ Saved "generate more" response to library. Parent ID:', currentGenerationId, 'New ID:', saveData.generation_id)
+                            
+                            // The ProgressiveResponse component will detect the new child on its next check
+                            // No need to manually update hasPreviousResponse - the useEffect will handle it
+                            
+                            // Refresh thread view if it's currently open
+                            if (showThreadView && currentGenerationId) {
+                              try {
+                                console.log('🔄 Refreshing thread view...')
+                                const threadResponse = await fetch(`/api/generations/thread?id=${currentGenerationId}`, {
+                                  headers: {
+                                    'Authorization': `Bearer ${session.access_token}`
+                                  }
+                                })
+                                
+                                if (threadResponse.ok) {
+                                  const threadData = await threadResponse.json()
+                                  console.log('✅ Thread refreshed. Found', threadData.thread?.length || 0, 'generations')
+                                  setThreadGenerations(threadData.thread || [])
+                                }
+                              } catch (refreshError) {
+                                console.error('❌ Error refreshing thread:', refreshError)
+                              }
+                            }
+                            
+                            // Also save to memory core
+                            try {
+                              const memoryData = {
+                                concept: `Conversation Turn: AI Response (Generate More)`,
+                                data: response,
+                                salience: 0.7,
+                                connections: ['conversation', 'ai_chat', 'memory_core', 'generate_more'],
+                                memory_type: 'semantic',
+                                priority: 6,
+                                memory_category: 'conversation',
+                                parent_id: null,
+                                hierarchy_level: 0
+                              }
+                              
+                              const memoryResponse = await fetch('/api/memories', {
+                                method: 'POST',
+                                headers: { 
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${session.access_token}`
+                                },
+                                body: JSON.stringify(memoryData)
+                              })
+                              
+                              if (memoryResponse.ok) {
+                                console.log('✅ Saved "generate more" response to memory core')
+                              }
+                            } catch (memoryError) {
+                              console.error('❌ Error saving to memory core:', memoryError)
+                            }
+                          } else {
+                            const errorText = await saveResponse.text()
+                            console.error('❌ Failed to save "generate more":', saveResponse.status, errorText)
+                          }
+                        } catch (saveError) {
+                          console.error('❌ Error in background save:', saveError)
+                        }
+                      }, 100) // Small delay to ensure response is displayed first
+                    } else {
+                      if (!currentGenerationId) {
+                        console.warn('⚠️ Cannot save "generate more" - lastGenerationId is null. Make sure initial response is saved first.')
+                      }
+                    }
                     
                     return response
                   } catch (error) {
@@ -3751,6 +4145,13 @@ IMPORTANT RESTRICTIONS:
             onSave={handleSaveExtractedMemories}
           />
         )}
+
+        {/* Credits Purchase Dialog */}
+        <CreditsPurchaseDialog
+          open={showCreditsDialog}
+          onOpenChange={setShowCreditsDialog}
+          currentCredits={userCredits}
+        />
 
         {/* Full Text Dialog */}
         {showFullTextDialog && processedDocumentData && (

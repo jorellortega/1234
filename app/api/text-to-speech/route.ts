@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
     const audioBuffer = await response.arrayBuffer();
     
     // Upload to Supabase Storage
-    const fileName = `audio-${Date.now()}.mp3`;
+    const fileName = `Infinito-Audio-${Date.now()}.mp3`;
     const { data: uploadData, error: uploadError } = await supabase
       .storage
       .from('media-files')

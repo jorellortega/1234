@@ -306,10 +306,12 @@ export default function ProfilePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button variant="outline" className="w-full border-orange-500/30 text-orange-400 hover:bg-orange-500/10">
-                  <History className="h-4 w-4 mr-2" />
-                  View Transactions
-                </Button>
+                <Link href="/transactions">
+                  <Button variant="outline" className="w-full border-orange-500/30 text-orange-400 hover:bg-orange-500/10">
+                    <History className="h-4 w-4 mr-2" />
+                    View Transactions
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>

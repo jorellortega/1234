@@ -23,7 +23,7 @@ function t(s?: string | null, n = 140) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-export default function LibraryControls({ initial }: { initial: Row[] }) {
+export default function LibraryControls({ initial, contentType = 'all' }: { initial: Row[]; contentType?: 'all' | 'video' | 'pictures' | 'audio' | 'text' }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [model, setModel] = useState("");
@@ -41,9 +41,30 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  // Maintain local state for real-time updates
+  const [data, setData] = useState<Row[]>(initial);
+
+  // Update local data when initial prop changes (e.g., from parent refetch)
+  useEffect(() => {
+    setData(initial);
+  }, [initial]);
 
   const rows = useMemo(() => {
-    return initial.filter((r) => {
+    return data.filter((r) => {
+      // Filter by content type first
+      if (contentType !== 'all') {
+        const output = r.output ?? '';
+        const hasImage = /\[IMAGE_DISPLAY:(.*?)\]/.test(output);
+        const hasVideo = /\[VIDEO_DISPLAY:(.*?)\]/.test(output);
+        const hasAudio = /\[AUDIO_DISPLAY:(.*?)\]/.test(output);
+        const isTextOnly = !hasImage && !hasVideo && !hasAudio && output.trim().length > 0;
+        
+        if (contentType === 'pictures' && !hasImage) return false;
+        if (contentType === 'video' && !hasVideo) return false;
+        if (contentType === 'audio' && !hasAudio) return false;
+        if (contentType === 'text' && !isTextOnly) return false;
+      }
+      
       const s = (r.prompt ?? "") + " " + (r.output ?? "");
       if (q && !s.toLowerCase().includes(q.toLowerCase())) return false;
       if (model && (r.model ?? "").toLowerCase().indexOf(model.toLowerCase()) === -1) return false;
@@ -60,7 +81,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
 
       return true;
     });
-  }, [initial, q, model, tmin, tmax, kmin, kmax, from, to, tag]);
+  }, [data, q, model, tmin, tmax, kmin, kmax, from, to, tag, contentType]);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -88,15 +109,40 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
     if (selectedIds.length === 0) return;
     if (!confirm(`Delete ${selectedIds.length} selected item(s)? This cannot be undone.`)) return;
     try {
+      // Optimistically remove items from state
+      const idsToDelete = new Set(selectedIds);
+      setData(prev => prev.filter(r => !idsToDelete.has(r.id)));
+      clearSelection();
+      
       const r = await fetch("/api/generations/bulk-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedIds }),
       });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || data?.error) throw new Error(data.error || "Delete failed");
-      clearSelection();
-      router.refresh();
+      const responseData = await r.json().catch(() => ({}));
+      if (!r.ok || responseData?.error) {
+        // Revert on error - refetch from server
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: generations } = await supabase
+            .from("generations")
+            .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(200);
+          if (generations) setData(generations);
+        }
+        throw new Error(responseData.error || "Delete failed");
+      }
+      // Close preview if deleted item was being previewed
+      if (previewItem && idsToDelete.has(previewItem.id)) {
+        handleClosePreview();
+      }
+      
+      // Dispatch events to notify parent (library page) if it's listening
+      selectedIds.forEach(id => {
+        window.dispatchEvent(new CustomEvent('generationDeleted', { detail: { id } }));
+      });
     } catch (e) {
       alert((e as Error).message || "Unknown error");
     }
@@ -152,18 +198,40 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!previewItem || !confirm('Are you sure you want to delete this generation?')) return;
+  const handleDelete = async (id: string, fromPreview = false) => {
+    const itemToDelete = fromPreview ? previewItem : rows.find(r => r.id === id);
+    if (!itemToDelete || !confirm('Are you sure you want to delete this generation?')) return;
+    
+    const deletedId = itemToDelete.id;
     
     try {
-      const response = await fetch(`/api/generations/${previewItem.id}`, {
+      // Optimistically remove from state
+      setData(prev => prev.filter(r => r.id !== deletedId));
+      if (fromPreview) {
+        handleClosePreview();
+      }
+      
+      // Dispatch event to notify parent (library page) if it's listening
+      window.dispatchEvent(new CustomEvent('generationDeleted', { detail: { id: deletedId } }));
+      
+      const response = await fetch(`/api/generations/${deletedId}`, {
         method: 'DELETE'
       });
       
-      if (!response.ok) throw new Error('Failed to delete');
-      
-      handleClosePreview();
-      router.refresh();
+      if (!response.ok) {
+        // Revert on error - refetch from server
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: generations } = await supabase
+            .from("generations")
+            .select("id, created_at, prompt, output, model, temperature, top_k, tags, notes")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(200);
+          if (generations) setData(generations);
+        }
+        throw new Error('Failed to delete');
+      }
     } catch (error) {
       console.error('Delete failed:', error);
       alert('Failed to delete generation');
@@ -279,9 +347,9 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
               <th className="text-left p-2 sm:p-3">Prompt</th>
               <th className="text-left p-2 sm:p-3 hidden md:table-cell">Tags</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Notes</th>
-              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Model</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Temp</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Top-K</th>
+              <th className="text-left p-2 sm:p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -421,9 +489,20 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                 <td className="p-2 sm:p-3 max-w-[220px] hidden lg:table-cell">
                   {r.notes ? <span className="px-2 py-0.5 rounded-lg bg-neutral-800 text-xs">📝 notes</span> : ""}
                 </td>
-                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.model ?? "mini_llm"}</td>
                 <td className="p-2 sm:p-3 hidden lg:table-cell">{r.temperature ?? ""}</td>
                 <td className="p-2 sm:p-3 hidden lg:table-cell">{r.top_k ?? ""}</td>
+                <td className="p-2 sm:p-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(r.id, false);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-red-600/80 hover:bg-red-600 text-white text-xs transition-colors"
+                    title="Delete this generation"
+                  >
+                    <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 inline" />
+                  </button>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -588,7 +667,7 @@ export default function LibraryControls({ initial }: { initial: Row[] }) {
                 Download
               </Button>
               <Button
-                onClick={handleDelete}
+                onClick={() => handleDelete(previewItem.id, true)}
                 variant="outline"
                 className="border-red-500/50 text-red-400 hover:bg-red-500/10"
                 size="sm"
