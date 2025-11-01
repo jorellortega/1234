@@ -197,15 +197,15 @@ export function ProgressiveResponse({
     let displayContent = content;
     if (content.includes('[IMAGE_DISPLAY:')) {
       // Remove the IMAGE_DISPLAY tag from the text
-      displayContent = content.replace(/\[IMAGE_DISPLAY:[^\]]+\]/g, '').trim();
+      displayContent = displayContent.replace(/\[IMAGE_DISPLAY:[^\]]+\]/g, '').trim();
     }
     if (content.includes('[VIDEO_DISPLAY:')) {
       // Remove the VIDEO_DISPLAY tag from the text
-      displayContent = content.replace(/\[VIDEO_DISPLAY:[^\]]+\]/g, '').trim();
+      displayContent = displayContent.replace(/\[VIDEO_DISPLAY:[^\]]+\]/g, '').trim();
     }
     if (content.includes('[AUDIO_DISPLAY:')) {
       // Remove the AUDIO_DISPLAY tag from the text
-      displayContent = content.replace(/\[AUDIO_DISPLAY:[^\]]+\]/g, '').trim();
+      displayContent = displayContent.replace(/\[AUDIO_DISPLAY:[^\]]+\]/g, '').trim();
     }
     
     if (content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {

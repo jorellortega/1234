@@ -59,103 +59,179 @@ export default function PricingDashboard() {
   // Pricing data with 60% markup
   // OpenAI Standard Tier pricing per 1M tokens (input + output) converted to per-message cost
   // Assuming typical message: 500 input tokens + 500 output tokens = 1000 tokens = 0.001M tokens
+  // Updated to match OpenAI's official pricing structure (Standard Tier by default)
   const textModels = [
-    // GPT-5 Series
-    { name: 'GPT-5', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: '$1.25/1M in + $10/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Mini', apiCost: 0.001125, infinitoCost: 0.0018, apiProvider: 'OpenAI', unit: 'per message', note: '$0.25/1M in + $2.00/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Nano', apiCost: 0.000225, infinitoCost: 0.00036, apiProvider: 'OpenAI', unit: 'per message', note: '$0.05/1M in + $0.40/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Chat Latest', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: '$1.25/1M in + $10/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Codex', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: '$1.25/1M in + $10/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Pro', apiCost: 0.0675, infinitoCost: 0.108, apiProvider: 'OpenAI', unit: 'per message', note: '$15/1M in + $120/1M out', category: 'GPT-5 Series' },
-    { name: 'GPT-5 Search API', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: '$1.25/1M in + $10/1M out', category: 'GPT-5 Series' },
+    // GPT-5 Series (Standard)
+    { name: 'GPT-5', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.25/1M in + $10/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Mini', apiCost: 0.001125, infinitoCost: 0.0018, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.25/1M in + $2.00/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Nano', apiCost: 0.000225, infinitoCost: 0.00036, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.05/1M in + $0.40/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Chat Latest', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.25/1M in + $10/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Codex', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.25/1M in + $10/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Pro', apiCost: 0.0675, infinitoCost: 0.108, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $15/1M in + $120/1M out', tier: 'Standard', category: 'GPT-5 Series' },
+    { name: 'GPT-5 Search API', apiCost: 0.00563, infinitoCost: 0.009, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.25/1M in + $10/1M out', tier: 'Standard', category: 'GPT-5 Series' },
 
-    // GPT-4.1 Series
-    { name: 'GPT-4.1', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: '$2.00/1M in + $8.00/1M out', category: 'GPT-4.1 Series' },
-    { name: 'GPT-4.1 Mini', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: '$0.40/1M in + $1.60/1M out', category: 'GPT-4.1 Series' },
-    { name: 'GPT-4.1 Nano', apiCost: 0.00025, infinitoCost: 0.0004, apiProvider: 'OpenAI', unit: 'per message', note: '$0.10/1M in + $0.40/1M out', category: 'GPT-4.1 Series' },
+    // GPT-4.1 Series (Standard)
+    { name: 'GPT-4.1', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.00/1M in + $8.00/1M out', tier: 'Standard', category: 'GPT-4.1 Series' },
+    { name: 'GPT-4.1 Mini', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.40/1M in + $1.60/1M out', tier: 'Standard', category: 'GPT-4.1 Series' },
+    { name: 'GPT-4.1 Nano', apiCost: 0.00025, infinitoCost: 0.0004, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.10/1M in + $0.40/1M out', tier: 'Standard', category: 'GPT-4.1 Series' },
 
-    // GPT-4o Series
-    { name: 'GPT-4o', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: '$2.50/1M in + $10/1M out', category: 'GPT-4o Series' },
-    { name: 'GPT-4o (2024-05-13)', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: '$5.00/1M in + $15/1M out', category: 'GPT-4o Series' },
-    { name: 'GPT-4o Mini', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: '$0.15/1M in + $0.60/1M out', category: 'GPT-4o Series' },
+    // GPT-4o Series (Standard)
+    { name: 'GPT-4o', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.50/1M in + $10/1M out', tier: 'Standard', category: 'GPT-4o Series' },
+    { name: 'GPT-4o (2024-05-13)', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $5.00/1M in + $15/1M out', tier: 'Standard', category: 'GPT-4o Series' },
+    { name: 'GPT-4o Mini', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.15/1M in + $0.60/1M out', tier: 'Standard', category: 'GPT-4o Series' },
 
-    // O-Series (Reasoning)
-    { name: 'O1', apiCost: 0.0375, infinitoCost: 0.06, apiProvider: 'OpenAI', unit: 'per message', note: '$15/1M in + $60/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O1 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: '$1.10/1M in + $4.40/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O1 Pro', apiCost: 0.375, infinitoCost: 0.6, apiProvider: 'OpenAI', unit: 'per message', note: '$150/1M in + $600/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O3', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: '$2.00/1M in + $8.00/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O3 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: '$1.10/1M in + $4.40/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O3 Pro', apiCost: 0.05, infinitoCost: 0.08, apiProvider: 'OpenAI', unit: 'per message', note: '$20/1M in + $80/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O3 Deep Research', apiCost: 0.025, infinitoCost: 0.04, apiProvider: 'OpenAI', unit: 'per message', note: '$10/1M in + $40/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O4 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: '$1.10/1M in + $4.40/1M out', category: 'O-Series (Reasoning)' },
-    { name: 'O4 Mini Deep Research', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: '$2.00/1M in + $8.00/1M out', category: 'O-Series (Reasoning)' },
+    // O-Series (Reasoning) - Standard
+    { name: 'O1', apiCost: 0.0375, infinitoCost: 0.06, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $15/1M in + $60/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O1 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.10/1M in + $4.40/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O1 Pro', apiCost: 0.375, infinitoCost: 0.6, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $150/1M in + $600/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O3', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.00/1M in + $8.00/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O3 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.10/1M in + $4.40/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O3 Pro', apiCost: 0.05, infinitoCost: 0.08, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $20/1M in + $80/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O3 Deep Research', apiCost: 0.025, infinitoCost: 0.04, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $10/1M in + $40/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O4 Mini', apiCost: 0.00275, infinitoCost: 0.0044, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.10/1M in + $4.40/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
+    { name: 'O4 Mini Deep Research', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.00/1M in + $8.00/1M out', tier: 'Standard', category: 'O-Series (Reasoning)' },
 
-    // Real-Time Models
-    { name: 'GPT Realtime', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: '$4.00/1M in + $16/1M out', category: 'Real-Time Models' },
-    { name: 'GPT Realtime Mini', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: '$0.60/1M in + $2.40/1M out', category: 'Real-Time Models' },
-    { name: 'GPT-4o Realtime Preview', apiCost: 0.0125, infinitoCost: 0.02, apiProvider: 'OpenAI', unit: 'per message', note: '$5.00/1M in + $20/1M out', category: 'Real-Time Models' },
-    { name: 'GPT-4o Mini Realtime Preview', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: '$0.60/1M in + $2.40/1M out', category: 'Real-Time Models' },
+    // Real-Time Models (Standard)
+    { name: 'GPT Realtime', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $4.00/1M in + $16/1M out', tier: 'Standard', category: 'Real-Time Models' },
+    { name: 'GPT Realtime Mini', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.60/1M in + $2.40/1M out', tier: 'Standard', category: 'Real-Time Models' },
+    { name: 'GPT-4o Realtime Preview', apiCost: 0.0125, infinitoCost: 0.02, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $5.00/1M in + $20/1M out', tier: 'Standard', category: 'Real-Time Models' },
+    { name: 'GPT-4o Mini Realtime Preview', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.60/1M in + $2.40/1M out', tier: 'Standard', category: 'Real-Time Models' },
 
-    // Audio Models
-    { name: 'GPT Audio', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: '$2.50/1M in + $10/1M out', category: 'Audio Models' },
-    { name: 'GPT Audio Mini', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: '$0.60/1M in + $2.40/1M out', category: 'Audio Models' },
-    { name: 'GPT-4o Audio Preview', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: '$2.50/1M in + $10/1M out', category: 'Audio Models' },
-    { name: 'GPT-4o Mini Audio Preview', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: '$0.15/1M in + $0.60/1M out', category: 'Audio Models' },
+    // Audio Models (Standard)
+    { name: 'GPT Audio', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.50/1M in + $10/1M out', tier: 'Standard', category: 'Audio Models' },
+    { name: 'GPT Audio Mini', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.60/1M in + $2.40/1M out', tier: 'Standard', category: 'Audio Models' },
+    { name: 'GPT-4o Audio Preview', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.50/1M in + $10/1M out', tier: 'Standard', category: 'Audio Models' },
+    { name: 'GPT-4o Mini Audio Preview', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.15/1M in + $0.60/1M out', tier: 'Standard', category: 'Audio Models' },
 
-    // Search Models
-    { name: 'GPT-4o Search Preview', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: '$2.50/1M in + $10/1M out', category: 'Search Models' },
-    { name: 'GPT-4o Mini Search Preview', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: '$0.15/1M in + $0.60/1M out', category: 'Search Models' },
+    // Search Models (Standard)
+    { name: 'GPT-4o Search Preview', apiCost: 0.00625, infinitoCost: 0.01, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.50/1M in + $10/1M out', tier: 'Standard', category: 'Search Models' },
+    { name: 'GPT-4o Mini Search Preview', apiCost: 0.000375, infinitoCost: 0.0006, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.15/1M in + $0.60/1M out', tier: 'Standard', category: 'Search Models' },
 
-    // Codex Models
-    { name: 'Codex Mini Latest', apiCost: 0.00375, infinitoCost: 0.006, apiProvider: 'OpenAI', unit: 'per message', note: '$1.50/1M in + $6.00/1M out', category: 'Codex Models' },
+    // Codex Models (Standard)
+    { name: 'Codex Mini Latest', apiCost: 0.00375, infinitoCost: 0.006, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.50/1M in + $6.00/1M out', tier: 'Standard', category: 'Codex Models' },
 
-    // Special Models
-    { name: 'Computer Use Preview', apiCost: 0.0075, infinitoCost: 0.012, apiProvider: 'OpenAI', unit: 'per message', note: '$3.00/1M in + $12/1M out', category: 'Special Models' },
+    // Special Models (Standard)
+    { name: 'Computer Use Preview', apiCost: 0.0075, infinitoCost: 0.012, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $3.00/1M in + $12/1M out', tier: 'Standard', category: 'Special Models' },
 
-    // Legacy GPT-4
-    { name: 'ChatGPT-4o Latest', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: '$5.00/1M in + $15/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 Turbo', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: '$10/1M in + $30/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 (0125 Preview)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: '$10/1M in + $30/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 (1106 Preview)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: '$10/1M in + $30/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 Vision (1106)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: '$10/1M in + $30/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 (0613)', apiCost: 0.045, infinitoCost: 0.072, apiProvider: 'OpenAI', unit: 'per message', note: '$30/1M in + $60/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 (0314)', apiCost: 0.045, infinitoCost: 0.072, apiProvider: 'OpenAI', unit: 'per message', note: '$30/1M in + $60/1M out', category: 'Legacy GPT-4' },
-    { name: 'GPT-4 32K', apiCost: 0.09, infinitoCost: 0.144, apiProvider: 'OpenAI', unit: 'per message', note: '$60/1M in + $120/1M out', category: 'Legacy GPT-4' },
+    // Legacy GPT-4 (Standard)
+    { name: 'ChatGPT-4o Latest', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $5.00/1M in + $15/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 Turbo (2024-04-09)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $10/1M in + $30/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 (0125 Preview)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $10/1M in + $30/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 (1106 Preview)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $10/1M in + $30/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 Vision (1106)', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $10/1M in + $30/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 (0613)', apiCost: 0.045, infinitoCost: 0.072, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $30/1M in + $60/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 (0314)', apiCost: 0.045, infinitoCost: 0.072, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $30/1M in + $60/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
+    { name: 'GPT-4 32K', apiCost: 0.09, infinitoCost: 0.144, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $60/1M in + $120/1M out', tier: 'Standard', category: 'Legacy GPT-4' },
 
-    // Legacy GPT-3.5
-    { name: 'GPT-3.5 Turbo', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: '$0.50/1M in + $1.50/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 Turbo (0125)', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: '$0.50/1M in + $1.50/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 Turbo (1106)', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: '$1.00/1M in + $2.00/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 Turbo (0613)', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: '$1.50/1M in + $2.00/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 (0301)', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: '$1.50/1M in + $2.00/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 Turbo Instruct', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: '$1.50/1M in + $2.00/1M out', category: 'Legacy GPT-3.5' },
-    { name: 'GPT-3.5 Turbo 16K', apiCost: 0.0035, infinitoCost: 0.0056, apiProvider: 'OpenAI', unit: 'per message', note: '$3.00/1M in + $4.00/1M out', category: 'Legacy GPT-3.5' },
+    // Legacy GPT-3.5 (Standard)
+    { name: 'GPT-3.5 Turbo', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.50/1M in + $1.50/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 Turbo (0125)', apiCost: 0.001, infinitoCost: 0.0016, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.50/1M in + $1.50/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 Turbo (1106)', apiCost: 0.0015, infinitoCost: 0.0024, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.00/1M in + $2.00/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 Turbo (0613)', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.50/1M in + $2.00/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 (0301)', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.50/1M in + $2.00/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 Turbo Instruct', apiCost: 0.00175, infinitoCost: 0.0028, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $1.50/1M in + $2.00/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
+    { name: 'GPT-3.5 Turbo 16K', apiCost: 0.0035, infinitoCost: 0.0056, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $3.00/1M in + $4.00/1M out', tier: 'Standard', category: 'Legacy GPT-3.5' },
 
-    // Base Models
-    { name: 'Davinci-002', apiCost: 0.002, infinitoCost: 0.0032, apiProvider: 'OpenAI', unit: 'per message', note: '$2.00/1M in + $2.00/1M out', category: 'Base Models' },
-    { name: 'Babbage-002', apiCost: 0.0004, infinitoCost: 0.00064, apiProvider: 'OpenAI', unit: 'per message', note: '$0.40/1M in + $0.40/1M out', category: 'Base Models' },
+    // Base Models (Standard)
+    { name: 'Davinci-002', apiCost: 0.002, infinitoCost: 0.0032, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $2.00/1M in + $2.00/1M out', tier: 'Standard', category: 'Base Models' },
+    { name: 'Babbage-002', apiCost: 0.0004, infinitoCost: 0.00064, apiProvider: 'OpenAI', unit: 'per message', note: 'Standard: $0.40/1M in + $0.40/1M out', tier: 'Standard', category: 'Base Models' },
 
     // Local Models
-    { name: 'Llama (Zephyr)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per message', note: 'Free local model', category: 'Local Models' },
-    { name: 'Mistral (Maestro)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per message', note: 'Free local model', category: 'Local Models' },
+    { name: 'Llama (Zephyr)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per message', note: 'Free local model', tier: 'Local', category: 'Local Models' },
+    { name: 'Mistral (Maestro)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per message', note: 'Free local model', tier: 'Local', category: 'Local Models' },
   ]
 
-  const imageModels = [
-    { name: 'DALL-E 3', apiCost: 40, infinitoCost: 40, apiProvider: 'OpenAI', unit: 'per image', note: 'Varies by resolution' },
+  // Image Generation (Prices per image)
+  const imageGenerationModels = [
+    { name: 'GPT Image 1 - Low', apiCost: 0.011, infinitoCost: 0.0176, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Low' },
+    { name: 'GPT Image 1 - Low', apiCost: 0.016, infinitoCost: 0.0256, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'Low' },
+    { name: 'GPT Image 1 - Medium', apiCost: 0.042, infinitoCost: 0.0672, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Medium' },
+    { name: 'GPT Image 1 - Medium', apiCost: 0.063, infinitoCost: 0.1008, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'Medium' },
+    { name: 'GPT Image 1 - High', apiCost: 0.167, infinitoCost: 0.2672, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'High' },
+    { name: 'GPT Image 1 - High', apiCost: 0.25, infinitoCost: 0.4, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'High' },
+    { name: 'GPT Image 1 Mini - Low', apiCost: 0.005, infinitoCost: 0.008, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Low' },
+    { name: 'GPT Image 1 Mini - Low', apiCost: 0.006, infinitoCost: 0.0096, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'Low' },
+    { name: 'GPT Image 1 Mini - Medium', apiCost: 0.011, infinitoCost: 0.0176, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Medium' },
+    { name: 'GPT Image 1 Mini - Medium', apiCost: 0.015, infinitoCost: 0.024, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'Medium' },
+    { name: 'GPT Image 1 Mini - High', apiCost: 0.036, infinitoCost: 0.0576, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'High' },
+    { name: 'GPT Image 1 Mini - High', apiCost: 0.052, infinitoCost: 0.0832, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'High' },
+    { name: 'DALL·E 3 - Standard', apiCost: 0.04, infinitoCost: 0.064, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Standard' },
+    { name: 'DALL·E 3 - Standard', apiCost: 0.08, infinitoCost: 0.128, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'Standard' },
+    { name: 'DALL·E 3 - HD', apiCost: 0.08, infinitoCost: 0.128, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'HD' },
+    { name: 'DALL·E 3 - HD', apiCost: 0.12, infinitoCost: 0.192, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536 / 1536x1024', quality: 'HD' },
+    { name: 'DALL·E 2 - Standard', apiCost: 0.016, infinitoCost: 0.0256, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1024', quality: 'Standard' },
+    { name: 'DALL·E 2 - Standard', apiCost: 0.018, infinitoCost: 0.0288, apiProvider: 'OpenAI', unit: 'per image', note: '1024x1536', quality: 'Standard' },
+    { name: 'DALL·E 2 - Standard', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per image', note: '1536x1024', quality: 'Standard' },
+    // RunwayML models
     { name: 'Gen4 Image', apiCost: 5, infinitoCost: 8, apiProvider: 'RunwayML', unit: 'per 720p/1080p image' },
     { name: 'Gen4 Image Turbo', apiCost: 2, infinitoCost: 3, apiProvider: 'RunwayML', unit: 'per image (any res)' },
     { name: 'Gemini 2.5 Flash', apiCost: 5, infinitoCost: 8, apiProvider: 'RunwayML', unit: 'per image' },
+    // Local models
     { name: 'BLIP (Vision)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per image' },
     { name: 'LLaVA (Vision)', apiCost: 0, infinitoCost: 0, apiProvider: 'Local/Ollama', unit: 'per image' },
   ]
 
+  // Video Models (Prices per second)
   const videoModels = [
+    // OpenAI Sora models
+    { name: 'Sora 2', apiCost: 0.10, infinitoCost: 0.16, apiProvider: 'OpenAI', unit: 'per second', note: '720x1280 Portrait / 1280x720 Landscape' },
+    { name: 'Sora 2 Pro', apiCost: 0.30, infinitoCost: 0.48, apiProvider: 'OpenAI', unit: 'per second', note: '720x1280 Portrait / 1280x720 Landscape' },
+    { name: 'Sora 2 Pro', apiCost: 0.50, infinitoCost: 0.80, apiProvider: 'OpenAI', unit: 'per second', note: '1024x1792 Portrait / 1792x1024 Landscape' },
+    // RunwayML models
     { name: 'Gen4 Turbo (I2V)', apiCost: 5, infinitoCost: 8, apiProvider: 'RunwayML', unit: 'per second', note: '2-10s duration' },
     { name: 'Gen3a Turbo (I2V)', apiCost: 10, infinitoCost: 16, apiProvider: 'RunwayML', unit: 'per second', note: '5s or 10s duration' },
     { name: 'VEO 3.1 (T2V/I2V)', apiCost: 40, infinitoCost: 64, apiProvider: 'RunwayML', unit: 'per second', note: '4s, 6s, or 8s duration' },
     { name: 'VEO 3.1 Fast (T2V/I2V)', apiCost: 20, infinitoCost: 32, apiProvider: 'RunwayML', unit: 'per second', note: '4s, 6s, or 8s duration' },
     { name: 'VEO 3 (T2V/I2V)', apiCost: 40, infinitoCost: 64, apiProvider: 'RunwayML', unit: 'per second', note: '8s duration only' },
     { name: 'Gen4 Aleph (V2V)', apiCost: 15, infinitoCost: 24, apiProvider: 'RunwayML', unit: 'per second', note: 'Video-to-video' },
+  ]
+
+  // Image Tokens (Prices per 1M tokens)
+  const imageTokenModels = [
+    { name: 'GPT Image 1', apiCost: 10.00, infinitoCost: 16.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Image 1', apiCost: 2.50, infinitoCost: 4.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT Image 1', apiCost: 40.00, infinitoCost: 64.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT Image 1 Mini', apiCost: 2.50, infinitoCost: 4.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Image 1 Mini', apiCost: 0.25, infinitoCost: 0.40, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT Image 1 Mini', apiCost: 8.00, infinitoCost: 12.80, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT Realtime', apiCost: 5.00, infinitoCost: 8.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Realtime', apiCost: 0.50, infinitoCost: 0.80, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT Realtime Mini', apiCost: 0.80, infinitoCost: 1.28, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Realtime Mini', apiCost: 0.08, infinitoCost: 0.128, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+  ]
+
+  // Audio Tokens (Prices per 1M tokens)
+  const audioTokenModels = [
+    { name: 'GPT Realtime', apiCost: 32.00, infinitoCost: 51.20, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Realtime', apiCost: 0.40, infinitoCost: 0.64, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT Realtime', apiCost: 64.00, infinitoCost: 102.40, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT Realtime Mini', apiCost: 10.00, infinitoCost: 16.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Realtime Mini', apiCost: 0.30, infinitoCost: 0.48, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT Realtime Mini', apiCost: 20.00, infinitoCost: 32.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT-4o Realtime Preview', apiCost: 40.00, infinitoCost: 64.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT-4o Realtime Preview', apiCost: 2.50, infinitoCost: 4.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT-4o Realtime Preview', apiCost: 80.00, infinitoCost: 128.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT-4o Mini Realtime Preview', apiCost: 10.00, infinitoCost: 16.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT-4o Mini Realtime Preview', apiCost: 0.30, infinitoCost: 0.48, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Cached Input', type: 'Cached Input' },
+    { name: 'GPT-4o Mini Realtime Preview', apiCost: 20.00, infinitoCost: 32.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT Audio', apiCost: 32.00, infinitoCost: 51.20, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Audio', apiCost: 64.00, infinitoCost: 102.40, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT Audio Mini', apiCost: 10.00, infinitoCost: 16.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT Audio Mini', apiCost: 20.00, infinitoCost: 32.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT-4o Audio Preview', apiCost: 40.00, infinitoCost: 64.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT-4o Audio Preview', apiCost: 80.00, infinitoCost: 128.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+    { name: 'GPT-4o Mini Audio Preview', apiCost: 10.00, infinitoCost: 16.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Input', type: 'Input' },
+    { name: 'GPT-4o Mini Audio Preview', apiCost: 20.00, infinitoCost: 32.00, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Output', type: 'Output' },
+  ]
+
+  // Embeddings (Prices per 1M tokens)
+  const embeddingModels = [
+    { name: 'text-embedding-3-small', apiCost: 0.02, infinitoCost: 0.032, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Standard', type: 'Standard' },
+    { name: 'text-embedding-3-small', apiCost: 0.01, infinitoCost: 0.016, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Batch', type: 'Batch' },
+    { name: 'text-embedding-3-large', apiCost: 0.13, infinitoCost: 0.208, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Standard', type: 'Standard' },
+    { name: 'text-embedding-3-large', apiCost: 0.065, infinitoCost: 0.104, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Batch', type: 'Batch' },
+    { name: 'text-embedding-ada-002', apiCost: 0.10, infinitoCost: 0.16, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Standard', type: 'Standard' },
+    { name: 'text-embedding-ada-002', apiCost: 0.05, infinitoCost: 0.08, apiProvider: 'OpenAI', unit: 'per 1M tokens', note: 'Batch', type: 'Batch' },
   ]
 
   const calculateProfit = (apiCost: number, infinitoCost: number) => {
@@ -168,8 +244,11 @@ export default function PricingDashboard() {
     // Separate text models (in dollars) from media models (in credits)
     const textApiCost = textModels.reduce((sum, m) => sum + m.apiCost, 0)
     const textInfinitoCost = textModels.reduce((sum, m) => sum + m.infinitoCost, 0)
-    const mediaApiCost = [...imageModels, ...videoModels].reduce((sum, m) => sum + m.apiCost, 0)
-    const mediaInfinitoCost = [...imageModels, ...videoModels].reduce((sum, m) => sum + m.infinitoCost, 0)
+    // Media models include: image generation (dollars), image tokens (dollars), video (mixed), audio tokens (dollars), embeddings (dollars)
+    const imageGenApiCost = imageGenerationModels.filter(m => m.apiProvider === 'OpenAI').reduce((sum, m) => sum + m.apiCost, 0)
+    const videoApiCost = videoModels.filter(m => m.apiProvider === 'OpenAI').reduce((sum, m) => sum + m.apiCost, 0)
+    const mediaApiCost = imageGenApiCost + videoApiCost + imageTokenModels.reduce((sum, m) => sum + m.apiCost, 0) + audioTokenModels.reduce((sum, m) => sum + m.apiCost, 0) + embeddingModels.reduce((sum, m) => sum + m.apiCost, 0)
+    const mediaInfinitoCost = imageGenerationModels.filter(m => m.apiProvider === 'OpenAI').reduce((sum, m) => sum + m.infinitoCost, 0) + videoModels.filter(m => m.apiProvider === 'OpenAI').reduce((sum, m) => sum + m.infinitoCost, 0) + imageTokenModels.reduce((sum, m) => sum + m.infinitoCost, 0) + audioTokenModels.reduce((sum, m) => sum + m.infinitoCost, 0) + embeddingModels.reduce((sum, m) => sum + m.infinitoCost, 0)
     
     const textProfit = textInfinitoCost - textApiCost
     const mediaProfit = mediaInfinitoCost - mediaApiCost
@@ -309,14 +388,16 @@ export default function PricingDashboard() {
           })}
         </div>
 
-        {/* Image Models Table */}
+        {/* Image Generation Table */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-purple-400 font-mono mb-4">🖼️ IMAGE MODELS</h2>
-          <div className="bg-black/50 border border-purple-500/30 rounded-lg overflow-hidden">
+          <h2 className="text-2xl font-bold text-purple-400 font-mono mb-4">🖼️ IMAGE GENERATION (Prices per image)</h2>
+          <div className="bg-black/50 border border-purple-500/30 rounded-lg overflow-hidden overflow-x-auto">
             <table className="w-full font-mono text-sm">
               <thead className="bg-purple-900/30 border-b border-purple-500/30">
                 <tr>
                   <th className="text-left p-4 text-purple-400">Model</th>
+                  <th className="text-left p-4 text-purple-400">Quality</th>
+                  <th className="text-left p-4 text-purple-400">Resolution</th>
                   <th className="text-left p-4 text-purple-400">Provider</th>
                   <th className="text-right p-4 text-cyan-400">API Cost</th>
                   <th className="text-right p-4 text-purple-400">INFINITO</th>
@@ -325,20 +406,55 @@ export default function PricingDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {imageModels.map((model, idx) => {
+                {imageGenerationModels.map((model, idx) => {
                   const { profit, margin } = calculateProfit(model.apiCost, model.infinitoCost)
                   const isFree = model.apiCost === 0
                   return (
                     <tr key={idx} className="border-b border-purple-500/10 hover:bg-purple-500/5 transition-colors">
-                      <td className="p-4 text-white">
-                        {model.name}
-                        {model.note && <span className="text-xs text-gray-500 ml-2">({model.note})</span>}
-                      </td>
+                      <td className="p-4 text-white">{model.name}</td>
+                      <td className="p-4 text-gray-400">{model.quality || '-'}</td>
+                      <td className="p-4 text-gray-400 text-xs">{model.note}</td>
                       <td className="p-4 text-gray-400">{model.apiProvider}</td>
-                      <td className="text-right p-4 text-cyan-300">{isFree ? 'FREE' : `${model.apiCost} credits`}</td>
-                      <td className="text-right p-4 text-purple-300">{isFree ? 'FREE' : `${model.infinitoCost} credits`}</td>
-                      <td className="text-right p-4 text-green-300">{isFree ? '-' : `+${profit} credits`}</td>
+                      <td className="text-right p-4 text-cyan-300">{isFree ? 'FREE' : `$${model.apiCost.toFixed(3)}`}</td>
+                      <td className="text-right p-4 text-purple-300">{isFree ? 'FREE' : `$${model.infinitoCost.toFixed(3)}`}</td>
+                      <td className="text-right p-4 text-green-300">{isFree ? '-' : `+$${profit.toFixed(3)}`}</td>
                       <td className="text-right p-4 text-yellow-300">{isFree ? '-' : `${margin}%`}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Image Tokens Table */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-purple-400 font-mono mb-4">🖼️ IMAGE TOKENS (Prices per 1M tokens)</h2>
+          <div className="bg-black/50 border border-purple-500/30 rounded-lg overflow-hidden overflow-x-auto">
+            <table className="w-full font-mono text-sm">
+              <thead className="bg-purple-900/30 border-b border-purple-500/30">
+                <tr>
+                  <th className="text-left p-4 text-purple-400">Model</th>
+                  <th className="text-left p-4 text-purple-400">Type</th>
+                  <th className="text-left p-4 text-purple-400">Provider</th>
+                  <th className="text-right p-4 text-cyan-400">API Cost</th>
+                  <th className="text-right p-4 text-purple-400">INFINITO</th>
+                  <th className="text-right p-4 text-green-400">Net Profit</th>
+                  <th className="text-right p-4 text-yellow-400">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {imageTokenModels.map((model, idx) => {
+                  const { profit, margin } = calculateProfit(model.apiCost, model.infinitoCost)
+                  return (
+                    <tr key={idx} className="border-b border-purple-500/10 hover:bg-purple-500/5 transition-colors">
+                      <td className="p-4 text-white">{model.name}</td>
+                      <td className="p-4 text-gray-400">{model.type}</td>
+                      <td className="p-4 text-gray-400">{model.apiProvider}</td>
+                      <td className="text-right p-4 text-cyan-300">${model.apiCost.toFixed(2)}</td>
+                      <td className="text-right p-4 text-purple-300">${model.infinitoCost.toFixed(2)}</td>
+                      <td className="text-right p-4 text-green-300">+${profit.toFixed(2)}</td>
+                      <td className="text-right p-4 text-yellow-300">{margin}%</td>
                     </tr>
                   )
                 })}
@@ -349,12 +465,13 @@ export default function PricingDashboard() {
 
         {/* Video Models Table */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-pink-400 font-mono mb-4">🎬 VIDEO MODELS</h2>
-          <div className="bg-black/50 border border-pink-500/30 rounded-lg overflow-hidden">
+          <h2 className="text-2xl font-bold text-pink-400 font-mono mb-4">🎬 VIDEO MODELS (Prices per second)</h2>
+          <div className="bg-black/50 border border-pink-500/30 rounded-lg overflow-hidden overflow-x-auto">
             <table className="w-full font-mono text-sm">
               <thead className="bg-pink-900/30 border-b border-pink-500/30">
                 <tr>
                   <th className="text-left p-4 text-pink-400">Model</th>
+                  <th className="text-left p-4 text-pink-400">Resolution</th>
                   <th className="text-left p-4 text-pink-400">Provider</th>
                   <th className="text-right p-4 text-cyan-400">API Cost</th>
                   <th className="text-right p-4 text-purple-400">INFINITO</th>
@@ -365,13 +482,87 @@ export default function PricingDashboard() {
               <tbody>
                 {videoModels.map((model, idx) => {
                   const { profit, margin } = calculateProfit(model.apiCost, model.infinitoCost)
+                  const isDollar = model.apiProvider === 'OpenAI'
                   return (
                     <tr key={idx} className="border-b border-pink-500/10 hover:bg-pink-500/5 transition-colors">
                       <td className="p-4 text-white">{model.name}</td>
+                      <td className="p-4 text-gray-400 text-xs">{model.note}</td>
                       <td className="p-4 text-gray-400">{model.apiProvider}</td>
-                      <td className="text-right p-4 text-cyan-300">{model.apiCost} credits</td>
-                      <td className="text-right p-4 text-purple-300">{model.infinitoCost} credits</td>
-                      <td className="text-right p-4 text-green-300">+{profit} credits</td>
+                      <td className="text-right p-4 text-cyan-300">{isDollar ? `$${model.apiCost.toFixed(2)}` : `${model.apiCost} credits`}</td>
+                      <td className="text-right p-4 text-purple-300">{isDollar ? `$${model.infinitoCost.toFixed(2)}` : `${model.infinitoCost} credits`}</td>
+                      <td className="text-right p-4 text-green-300">{isDollar ? `+$${profit.toFixed(2)}` : `+${profit} credits`}</td>
+                      <td className="text-right p-4 text-yellow-300">{margin}%</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Audio Tokens Table */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-orange-400 font-mono mb-4">🎵 AUDIO TOKENS (Prices per 1M tokens)</h2>
+          <div className="bg-black/50 border border-orange-500/30 rounded-lg overflow-hidden overflow-x-auto">
+            <table className="w-full font-mono text-sm">
+              <thead className="bg-orange-900/30 border-b border-orange-500/30">
+                <tr>
+                  <th className="text-left p-4 text-orange-400">Model</th>
+                  <th className="text-left p-4 text-orange-400">Type</th>
+                  <th className="text-left p-4 text-orange-400">Provider</th>
+                  <th className="text-right p-4 text-cyan-400">API Cost</th>
+                  <th className="text-right p-4 text-purple-400">INFINITO</th>
+                  <th className="text-right p-4 text-green-400">Net Profit</th>
+                  <th className="text-right p-4 text-yellow-400">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audioTokenModels.map((model, idx) => {
+                  const { profit, margin } = calculateProfit(model.apiCost, model.infinitoCost)
+                  return (
+                    <tr key={idx} className="border-b border-orange-500/10 hover:bg-orange-500/5 transition-colors">
+                      <td className="p-4 text-white">{model.name}</td>
+                      <td className="p-4 text-gray-400">{model.type}</td>
+                      <td className="p-4 text-gray-400">{model.apiProvider}</td>
+                      <td className="text-right p-4 text-cyan-300">${model.apiCost.toFixed(2)}</td>
+                      <td className="text-right p-4 text-purple-300">${model.infinitoCost.toFixed(2)}</td>
+                      <td className="text-right p-4 text-green-300">+${profit.toFixed(2)}</td>
+                      <td className="text-right p-4 text-yellow-300">{margin}%</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Embeddings Table */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-indigo-400 font-mono mb-4">🔗 EMBEDDINGS (Prices per 1M tokens)</h2>
+          <div className="bg-black/50 border border-indigo-500/30 rounded-lg overflow-hidden overflow-x-auto">
+            <table className="w-full font-mono text-sm">
+              <thead className="bg-indigo-900/30 border-b border-indigo-500/30">
+                <tr>
+                  <th className="text-left p-4 text-indigo-400">Model</th>
+                  <th className="text-left p-4 text-indigo-400">Tier</th>
+                  <th className="text-left p-4 text-indigo-400">Provider</th>
+                  <th className="text-right p-4 text-cyan-400">API Cost</th>
+                  <th className="text-right p-4 text-purple-400">INFINITO</th>
+                  <th className="text-right p-4 text-green-400">Net Profit</th>
+                  <th className="text-right p-4 text-yellow-400">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {embeddingModels.map((model, idx) => {
+                  const { profit, margin } = calculateProfit(model.apiCost, model.infinitoCost)
+                  return (
+                    <tr key={idx} className="border-b border-indigo-500/10 hover:bg-indigo-500/5 transition-colors">
+                      <td className="p-4 text-white">{model.name}</td>
+                      <td className="p-4 text-gray-400">{model.type}</td>
+                      <td className="p-4 text-gray-400">{model.apiProvider}</td>
+                      <td className="text-right p-4 text-cyan-300">${model.apiCost.toFixed(3)}</td>
+                      <td className="text-right p-4 text-purple-300">${model.infinitoCost.toFixed(3)}</td>
+                      <td className="text-right p-4 text-green-300">+${profit.toFixed(3)}</td>
                       <td className="text-right p-4 text-yellow-300">{margin}%</td>
                     </tr>
                   )
@@ -432,7 +623,8 @@ export default function PricingDashboard() {
         {/* Footer */}
         <div className="text-center text-gray-500 text-sm font-mono mt-12">
           <p>All pricing data updated with 60% markup formula</p>
-          <p className="mt-2">Last updated: October 28, 2025</p>
+          <p className="mt-2">Text models use OpenAI Standard tier pricing by default</p>
+          <p className="mt-1">Last updated: January 2025</p>
         </div>
       </div>
     </div>
