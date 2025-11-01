@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, Zap, Home, ArrowRight } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const [credits, setCredits] = useState(0)
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
@@ -132,5 +132,31 @@ export default function PaymentSuccessPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="relative min-h-screen w-full">
+        <div className="aztec-background" />
+        <div className="animated-grid" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
+          <div className="max-w-2xl mx-auto text-center">
+            <div className="mb-8">
+              <CheckCircle className="h-24 w-24 text-green-400 mx-auto mb-6 animate-pulse" />
+              <h1 className="text-4xl md:text-6xl font-bold mb-4 tracking-widest infinito-gradient">
+                PAYMENT SUCCESSFUL
+              </h1>
+              <p className="text-xl text-cyan-300 mb-8">
+                Loading...
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    }>
+      <PaymentSuccessContent />
+    </Suspense>
   )
 }
