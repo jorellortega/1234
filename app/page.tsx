@@ -2277,13 +2277,6 @@ Please provide a ${responseStyle} answer.`
                   <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
                   <span className="hidden sm:inline text-sm">Memory</span>
                 </Link>
-                <Link
-                  href="/video-mode"
-                  className="flex items-center gap-1 sm:gap-2 text-pink-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-pink-400/10"
-                >
-                  <Video className="h-4 w-4 sm:h-5 sm:w-5" />
-                  <span className="hidden sm:inline text-sm">Video Mode</span>
-                </Link>
               </>
             )}
             {user ? (
