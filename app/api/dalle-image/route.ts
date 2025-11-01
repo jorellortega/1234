@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 // Refund credits to user in case of image generation failure
-async function refundCredits(userId: string, amount: number) {
+async function refundCredits(userId: string, amount: number, reason?: string) {
   try {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -17,7 +17,7 @@ async function refundCredits(userId: string, amount: number) {
     
     console.log(`💰 Refunding ${amount} credits to user ${userId}`)
     
-    // Get current credits
+    // Get current credits before refund
     const { data: profile, error: fetchError } = await supabaseAdmin
       .from('user_profiles')
       .select('credits')
@@ -29,19 +29,23 @@ async function refundCredits(userId: string, amount: number) {
       return { success: false, error: fetchError }
     }
     
-    const newCredits = (profile.credits || 0) + amount
+    const oldCredits = profile.credits || 0
     
-    // Add credits back
-    const { error: updateError } = await supabaseAdmin
-      .from('user_profiles')
-      .update({ credits: newCredits })
-      .eq('id', userId)
+    // Use add_user_credits function which also logs the transaction
+    const { error: refundError } = await supabaseAdmin.rpc('add_user_credits', {
+      user_id: userId,
+      credits_to_add: amount,
+      transaction_type: 'refund',
+      description: reason || 'Credit refund for failed image generation',
+      reference_id: `refund_${Date.now()}`
+    })
     
-    if (updateError) {
-      console.error('❌ Failed to refund credits:', updateError)
-      return { success: false, error: updateError }
+    if (refundError) {
+      console.error('❌ Failed to refund credits:', refundError)
+      return { success: false, error: refundError }
     }
     
+    const newCredits = oldCredits + amount
     console.log(`✅ Refunded ${amount} credits. New balance: ${newCredits}`)
     return { success: true, newBalance: newCredits }
   } catch (error) {

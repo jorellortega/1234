@@ -222,6 +222,12 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-4">
+                <Link
+                  href={`/test-console?prompt=${encodeURIComponent(row.prompt ?? "")}&parent_id=${row.id}`}
+                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
+                >
+                  Re-run in Console
+                </Link>
                 <button
                   onClick={async () => {
                     if (confirm('Are you sure you want to delete this generation? This cannot be undone.')) {

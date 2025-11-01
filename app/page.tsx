@@ -1324,8 +1324,8 @@ Is there anything else I can help you with?`)
         if (errorData.refunded && errorData.refundAmount) {
           setUserCredits(errorData.newBalance || userCredits)
           setRefundedCredits(errorData.refundAmount)
-          // Clear refund message after 5 seconds
-          setTimeout(() => setRefundedCredits(null), 5000)
+          // Clear refund message after 10 seconds
+          setTimeout(() => setRefundedCredits(null), 10000)
           console.log(`✅ Credits refunded. New balance: ${errorData.newBalance}`)
         }
         
@@ -3406,7 +3406,7 @@ Please provide a ${responseStyle} answer.`
                     disabled={isLoadingVoices}
                   >
                     <SelectTrigger className="w-full sm:w-64 h-10 sm:h-8 bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400 focus:border-cyan-400 focus:ring-cyan-400/50 text-sm font-mono uppercase tracking-wider">
-                      <SelectValue placeholder={isLoadingVoices ? "Loading voices..." : availableVoices.length === 0 ? "No voices available" : "Select Default Voice"} />
+                      <SelectValue placeholder={isLoadingVoices ? "Loading voices..." : availableVoices.length === 0 ? "No voices available" : "Select Voice"} />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md max-h-60">
                       {availableVoices.length > 0 ? (
@@ -4151,6 +4151,7 @@ IMPORTANT RESTRICTIONS:
           open={showCreditsDialog}
           onOpenChange={setShowCreditsDialog}
           currentCredits={userCredits}
+          returnUrl={typeof window !== 'undefined' ? window.location.href : undefined}
         />
 
         {/* Full Text Dialog */}

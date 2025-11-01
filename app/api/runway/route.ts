@@ -6,13 +6,26 @@ import { cookies } from 'next/headers'
 /**
  * RunwayML Video Generation API
  * 
- * Pricing Structure:
- * - RunwayML API Cost: 10 credits per video
- * - User Cost: 26 credits per video (60% markup)
- * - Profit Margin: 16 credits per video
+ * Pricing Structure (60% markup on RunwayML API cost):
+ * - Gen4 Turbo: 40 credits (RunwayML: 25)
+ * - Gen3a Turbo: 80 credits (RunwayML: 50)
+ * - VEO 3.1: 320 credits (RunwayML: 200)
+ * - VEO 3.1 Fast: 160 credits (RunwayML: 100)
+ * - VEO 3: 512 credits (RunwayML: 320, 8 seconds)
+ * - Gen4 Aleph: 120 credits (RunwayML: 75)
  * 
  * Note: Credits are deducted by the frontend before calling this API
  */
+
+// Video model credit costs (60% markup on RunwayML API cost)
+const VIDEO_CREDITS: Record<string, number> = {
+  'gen4_turbo': 40,
+  'gen3a_turbo': 80,
+  'veo3.1': 320,
+  'veo3.1_fast': 160,
+  'veo3': 512,
+  'gen4_aleph': 120
+}
 
 // Initialize Runway client with API key from environment
 const getRunwayClient = () => {
@@ -24,7 +37,7 @@ const getRunwayClient = () => {
 }
 
 // Refund credits to user in case of video generation failure
-async function refundCredits(userId: string, amount: number) {
+async function refundCredits(userId: string, amount: number, reason?: string) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -34,7 +47,7 @@ async function refundCredits(userId: string, amount: number) {
     
     console.log(`💰 Refunding ${amount} credits to user ${userId}`)
     
-    // Get current credits
+    // Get current credits before refund
     const { data: profile, error: fetchError } = await supabaseAdmin
       .from('user_profiles')
       .select('credits')
@@ -46,19 +59,23 @@ async function refundCredits(userId: string, amount: number) {
       return { success: false, error: fetchError }
     }
     
-    const newCredits = (profile.credits || 0) + amount
+    const oldCredits = profile.credits || 0
     
-    // Add credits back
-    const { error: updateError } = await supabaseAdmin
-      .from('user_profiles')
-      .update({ credits: newCredits })
-      .eq('id', userId)
+    // Use add_user_credits function which also logs the transaction
+    const { error: refundError } = await supabaseAdmin.rpc('add_user_credits', {
+      user_id: userId,
+      credits_to_add: amount,
+      transaction_type: 'refund',
+      description: reason || 'Credit refund for failed generation',
+      reference_id: `refund_${Date.now()}`
+    })
     
-    if (updateError) {
-      console.error('❌ Failed to refund credits:', updateError)
-      return { success: false, error: updateError }
+    if (refundError) {
+      console.error('❌ Failed to refund credits:', refundError)
+      return { success: false, error: refundError }
     }
     
+    const newCredits = oldCredits + amount
     console.log(`✅ Refunded ${amount} credits. New balance: ${newCredits}`)
     return { success: true, newBalance: newCredits }
   } catch (error) {
@@ -234,7 +251,8 @@ export async function POST(req: NextRequest) {
       let taskId = result.id
       let videoUrl = null
       let attempts = 0
-      const maxAttempts = 240 // 20 minutes (5 seconds per attempt) - text-to-video takes longer
+      // VEO models need more time (up to 30+ minutes), others are faster
+      const maxAttempts = model.startsWith('veo') ? 600 : 240 // 50 minutes for VEO, 20 minutes for others
 
       console.log(`🎬 Video generation started with task ID: ${taskId}`)
       console.log(`📝 Model: ${model}, Duration: ${duration}s, Ratio: ${ratio}`)
@@ -316,8 +334,8 @@ export async function POST(req: NextRequest) {
     } catch (error: any) {
       console.error('RunwayML API error:', error)
       
-      // Refund credits for failed video generation
-      const REFUND_AMOUNT = 26 // Same as the deducted amount
+      // Refund credits for failed video generation based on model used
+      const REFUND_AMOUNT = VIDEO_CREDITS[model] || 40 // Default to gen4_turbo pricing if unknown
       const refundResult = await refundCredits(user.id, REFUND_AMOUNT)
       
       if (refundResult.success) {
@@ -330,13 +348,13 @@ export async function POST(req: NextRequest) {
       if (error.message && error.message.includes('You do not have enough credits')) {
         // Different messages for admin vs regular users
         const creditsErrorMessage = isAdmin
-          ? 'Insufficient RunwayML API credits. Your INFINITO credits have been refunded. Please add credits to your RunwayML account at https://app.runwayml.com/billing or try a cheaper model (Gen4 Turbo uses only 25 RunwayML credits vs 200 for VEO 3).'
-          : 'Video generation service temporarily unavailable. Your credits have been refunded. Please try again later or contact support.'
+          ? `Insufficient RunwayML API credits. Your ${REFUND_AMOUNT} INFINITO credits have been refunded. Please add credits to your RunwayML account at https://app.runwayml.com/billing or try a cheaper model (Gen4 Turbo uses only 25 RunwayML credits vs 200 for VEO 3).`
+          : 'INFINITO is having trouble processing your request right now. We\'re working on it. Your credits have been refunded. Please check back later.'
         
         return NextResponse.json(
           { 
             error: creditsErrorMessage,
-            details: isAdmin ? 'RunwayML account credit balance too low' : 'Service unavailable',
+            details: isAdmin ? 'RunwayML account credit balance too low' : 'Service temporarily unavailable',
             runwaymlError: true,
             refunded: refundResult.success,
             newBalance: refundResult.newBalance
@@ -348,12 +366,12 @@ export async function POST(req: NextRequest) {
       // General error message - hide technical details from regular users
       const generalErrorMessage = isAdmin
         ? 'Video generation failed: ' + (error.message || 'Unknown error')
-        : 'Video generation failed. Your credits have been refunded. Please try again or contact support.'
+        : 'INFINITO is having trouble processing your request right now. We\'re working on it. Your credits have been refunded. Please check back later.'
       
       return NextResponse.json(
         { 
           error: generalErrorMessage,
-          details: isAdmin ? (error.response?.data || error.message) : 'An error occurred',
+          details: isAdmin ? (error.response?.data || error.message) : 'Service temporarily unavailable',
           refunded: refundResult.success,
           newBalance: refundResult.newBalance
         },

@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
         }
         const creditsToRefund = imageCredits[modelToUse] || 8
         
-        // Import refund function (similar to runway video route)
+        // Refund using database function that logs the transaction
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
         
@@ -181,13 +181,19 @@ export async function POST(req: NextRequest) {
             .single()
           
           if (profile) {
-            const newCredits = (profile.credits || 0) + creditsToRefund
-            const { error: updateError } = await supabaseAdmin
-              .from('user_profiles')
-              .update({ credits: newCredits })
-              .eq('id', user.id)
+            const oldCredits = profile.credits || 0
             
-            if (!updateError) {
+            // Use add_user_credits function which also logs the transaction
+            const { error: refundError } = await supabaseAdmin.rpc('add_user_credits', {
+              user_id: user.id,
+              credits_to_add: creditsToRefund,
+              transaction_type: 'refund',
+              description: 'Credit refund for moderation error',
+              reference_id: `refund_${Date.now()}`
+            })
+            
+            if (!refundError) {
+              const newCredits = oldCredits + creditsToRefund
               console.log(`✅ Refunded ${creditsToRefund} credits. New balance: ${newCredits}`)
               return NextResponse.json(
                 { 

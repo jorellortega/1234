@@ -145,7 +145,8 @@ export default function CreditsPage() {
         body: JSON.stringify({
           priceId: tier.id,
           credits: tier.credits,
-          price: tier.price
+          price: tier.price,
+          returnUrl: window.location.href
         }),
       })
       
@@ -215,7 +216,8 @@ export default function CreditsPage() {
         body: JSON.stringify({
           priceId: 'custom',
           credits: customCredits,
-          price: price
+          price: price,
+          returnUrl: window.location.href
         }),
       })
 

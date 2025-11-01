@@ -17,12 +17,14 @@ interface CreditsPurchaseDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentCredits?: number
+  returnUrl?: string
 }
 
 export function CreditsPurchaseDialog({ 
   open, 
   onOpenChange,
-  currentCredits = 0 
+  currentCredits = 0,
+  returnUrl 
 }: CreditsPurchaseDialogProps) {
   const [user, setUser] = useState<any>(null)
   const [processing, setProcessing] = useState<string | null>(null)
@@ -89,7 +91,8 @@ export function CreditsPurchaseDialog({
         body: JSON.stringify({
           priceId: 'custom',
           credits: customCredits,
-          price: price
+          price: price,
+          returnUrl: returnUrl || window.location.href
         }),
       })
 

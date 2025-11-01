@@ -730,7 +730,7 @@ export function ProgressiveResponse({
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `infinito-video-${Date.now()}.mp4`;
+                    a.download = `Infinito Video.mp4`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -853,10 +853,12 @@ export function ProgressiveResponse({
         </div>
       ) : (
         <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
-          {/* Concise part - always visible */}
-          <div className="mb-3">
-            {concisePart}
-          </div>
+          {/* Concise part - only show if progressive mode, otherwise handled below */}
+          {shouldShowProgressive && (
+            <div className="mb-3">
+              {concisePart}
+            </div>
+          )}
         
         {/* Display the generated image if present */}
         {(() => {
@@ -981,7 +983,7 @@ export function ProgressiveResponse({
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `infinito-video-${Date.now()}.mp4`;
+                a.download = `Infinito Video.mp4`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);

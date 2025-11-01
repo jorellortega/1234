@@ -175,7 +175,7 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `infinito-video-${Date.now()}.mp4`;
+        a.download = `Infinito Video.mp4`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

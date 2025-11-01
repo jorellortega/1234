@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, Zap, Home, ArrowRight } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
@@ -9,6 +10,8 @@ import { supabase } from "@/lib/supabase-client"
 export default function PaymentSuccessPage() {
   const [credits, setCredits] = useState(0)
   const [loading, setLoading] = useState(true)
+  const searchParams = useSearchParams()
+  const returnUrl = searchParams.get('returnUrl')
 
   useEffect(() => {
     const fetchCredits = async () => {
@@ -39,6 +42,14 @@ export default function PaymentSuccessPage() {
           
           setCredits(profile?.credits || 0)
           console.log('✅ Credits set to:', profile?.credits || 0)
+          
+          // If there's a returnUrl, automatically redirect after a short delay
+          if (returnUrl) {
+            console.log('🔙 Return URL detected, will redirect to:', returnUrl)
+            setTimeout(() => {
+              window.location.href = returnUrl
+            }, 2000) // 2 second delay to show success message
+          }
         } else {
           console.log('⚠️ No user found, setting credits to 0')
           setCredits(0)
@@ -56,7 +67,7 @@ export default function PaymentSuccessPage() {
     }
 
     fetchCredits()
-  }, [])
+  }, [returnUrl])
 
   return (
     <div className="relative min-h-screen w-full">
@@ -76,16 +87,25 @@ export default function PaymentSuccessPage() {
           </div>
 
           {!loading && (
-            <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-6 mb-8">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <Zap className="h-6 w-6 text-cyan-400" />
-                <span className="text-cyan-300 text-lg">Your Credits:</span>
-                <span className="text-cyan-400 font-bold text-2xl">{credits}</span>
+            <>
+              <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-6 mb-8">
+                <div className="flex items-center justify-center gap-3 mb-4">
+                  <Zap className="h-6 w-6 text-cyan-400" />
+                  <span className="text-cyan-300 text-lg">Your Credits:</span>
+                  <span className="text-cyan-400 font-bold text-2xl">{credits}</span>
+                </div>
+                <p className="text-cyan-300 text-sm">
+                  You can now use these credits to generate AI responses
+                </p>
               </div>
-              <p className="text-cyan-300 text-sm">
-                You can now use these credits to generate AI responses
-              </p>
-            </div>
+              {returnUrl && (
+                <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-6">
+                  <p className="text-green-400 text-sm animate-pulse">
+                    📍 Redirecting you back to continue your work...
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           <div className="space-y-4">

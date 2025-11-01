@@ -10,8 +10,8 @@ export async function POST(request: Request) {
   try {
     console.log('🔍 Stripe API: Starting checkout session creation')
     
-    const { priceId, credits, price } = await request.json()
-    console.log('📦 Request data:', { priceId, credits, price })
+    const { priceId, credits, price, returnUrl } = await request.json()
+    console.log('📦 Request data:', { priceId, credits, price, returnUrl })
 
     // Check if Stripe key is configured
     if (!process.env.STRIPE_SECRET_KEY) {
@@ -111,12 +111,13 @@ export async function POST(request: Request) {
         },
       ],
       mode: 'payment',
-      success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}${returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''}`,
       cancel_url: `${baseUrl}/payment/cancel`,
       metadata: {
         userId: user.id,
         credits: credits.toString(),
         priceId: priceId,
+        ...(returnUrl && { returnUrl }),
       },
       customer_email: user.email,
     })
