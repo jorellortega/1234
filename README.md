@@ -16,9 +16,25 @@ See `package.json` for all Node.js dependencies.
 
 ## 🔧 Environment Variables
 
+See [ENV_SETUP_TEMPLATE.md](./ENV_SETUP_TEMPLATE.md) for complete setup instructions.
+
+**Quick reference:**
 ```env
+# Core Configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Video Generation APIs
+RUNWAYML_API_SECRET=key_xxxxxxxxxxxxx
+KLING_ACCESS_KEY=ak_xxxxxxxxxxxxxxxxxxxxxxxxx
+KLING_SECRET_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Payment Processing
+STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxx
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxx
+
+# Backend
 NEXT_PUBLIC_API_BASE_URL=your_railway_backend_url
 ```
 

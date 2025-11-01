@@ -915,10 +915,14 @@ Is there anything else I can help you with?`)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
+      // Import the image for both vision and video use
       setSelectedImage(file)
+      setVideoImage(file)
       const reader = new FileReader()
       reader.onload = (e) => {
-        setImagePreview(e.target?.result as string)
+        const imageData = e.target?.result as string
+        setImagePreview(imageData)
+        setVideoImagePreview(imageData)
       }
       reader.readAsDataURL(file)
       setError(null)
@@ -1003,6 +1007,54 @@ Is there anything else I can help you with?`)
       setError('Failed to load image for video generation')
       setIsConvertingImageToVideo(false)
       setOriginalImageUrlForVideo(null)
+    }
+  }
+
+  // Convert loaded/dragged image to video
+  const handleConvertLoadedImageToVideo = () => {
+    if (!videoImage && !selectedImage) {
+      setError('No image loaded to convert to video')
+      return
+    }
+
+    try {
+      setError(null)
+      
+      // The image is already loaded, so we just need to set it up for video generation
+      // Make sure videoImage is set (use selectedImage if videoImage isn't set)
+      if (!videoImage && selectedImage) {
+        setVideoImage(selectedImage)
+        if (!videoImagePreview && imagePreview) {
+          setVideoImagePreview(imagePreview)
+        }
+      }
+      
+      // Set flag to use imageToVideoModel instead of selected video model
+      setIsConvertingImageToVideo(true)
+      
+      // Switch to video mode - use imageToVideoModel instead of defaulting
+      const videoModels = ['gen4_turbo', 'gen3a_turbo', 'veo3.1', 'veo3.1_fast', 'veo3', 'gen4_aleph', 'kling_i2v']
+      const isCurrentlyVideoModel = videoModels.includes(mode)
+      if (!isCurrentlyVideoModel) {
+        // Use the selected imageToVideoModel
+        setMode(imageToVideoModel || 'gen4_turbo')
+      }
+      
+      // Set a helpful prompt
+      setPrompt('Add motion and animation to this image')
+      
+      // Scroll to top to show video generation UI
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      
+      // Set output message (only if not already in video mode to prevent duplicates)
+      if (!isCurrentlyVideoModel) {
+        setOutput('✅ Image loaded! Ready to convert to video. You can edit the prompt or click "GENERATE VIDEO" to continue.')
+      }
+      
+    } catch (error) {
+      console.error('Error converting loaded image to video:', error)
+      setError('Failed to prepare image for video generation')
+      setIsConvertingImageToVideo(false)
     }
   }
 
@@ -2737,7 +2789,18 @@ Please provide a ${responseStyle} answer.`
                       <div className="flex-1">
                         <p className="text-cyan-300 text-sm font-medium">{selectedImage?.name || videoImage?.name}</p>
                         <p className="text-cyan-400 text-xs mb-2">{((selectedImage?.size || videoImage?.size || 0) / 1024 / 1024).toFixed(2)} MB</p>
-                        <p className="text-green-400 text-xs">✅ Ready! You can ask questions about it or generate a video from it.</p>
+                        <p className="text-green-400 text-xs mb-2">✅ Ready! You can ask questions about it or generate a video from it.</p>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            onClick={handleConvertLoadedImageToVideo}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-3 text-xs border-pink-500/50 text-pink-400 hover:bg-pink-500/10"
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Generate Video
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>

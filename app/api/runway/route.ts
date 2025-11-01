@@ -13,6 +13,7 @@ import { cookies } from 'next/headers'
  * - VEO 3.1 Fast: 160 credits (RunwayML: 100)
  * - VEO 3: 512 credits (RunwayML: 320, 8 seconds)
  * - Gen4 Aleph: 120 credits (RunwayML: 75)
+ * - Act Two: 40 credits (RunwayML: 25)
  * 
  * Note: Credits are deducted by the frontend before calling this API
  */
@@ -24,7 +25,8 @@ const VIDEO_CREDITS: Record<string, number> = {
   'veo3.1': 320,
   'veo3.1_fast': 160,
   'veo3': 512,
-  'gen4_aleph': 120
+  'gen4_aleph': 120,
+  'act_two': 40
 }
 
 // Initialize Runway client with API key from environment
@@ -135,6 +137,8 @@ export async function POST(req: NextRequest) {
     const model = formData.get('model') as string
     const duration = parseInt(formData.get('duration') as string) || 5
     const file = formData.get('file') as File | null
+    const characterFile = formData.get('character_file') as File | null
+    const referenceFile = formData.get('reference_file') as File | null
     const ratio = formData.get('ratio') as string || '768:1280' // Default to portrait
 
     if (!prompt) {
@@ -162,6 +166,20 @@ export async function POST(req: NextRequest) {
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
       imageBase64 = `data:${file.type};base64,${buffer.toString('base64')}`
+    }
+
+    // Convert Act Two files to base64 if provided
+    let characterBase64: string | undefined
+    let referenceBase64: string | undefined
+    if (characterFile) {
+      const arrayBuffer = await characterFile.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      characterBase64 = `data:${characterFile.type};base64,${buffer.toString('base64')}`
+    }
+    if (referenceFile) {
+      const arrayBuffer = await referenceFile.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      referenceBase64 = `data:${referenceFile.type};base64,${buffer.toString('base64')}`
     }
 
     // Handle different model types
@@ -230,6 +248,36 @@ export async function POST(req: NextRequest) {
               ratio: ratio as any,
             })
           }
+          break
+
+        case 'act_two':
+          // Act Two model - character animation with character image/video + reference
+          if (!characterBase64) {
+            return NextResponse.json(
+              { error: 'act_two requires a character image input' },
+              { status: 400 }
+            )
+          }
+          
+          // Use reference video if provided, otherwise use character image as reference
+          const referenceUri = referenceBase64 || characterBase64
+          const referenceType = referenceBase64 ? 'video' : 'image'
+          
+          result = await runway.tasks.create({
+            model: 'act_two',
+            inputs: {
+              character: {
+                type: 'image',
+                uri: characterBase64,
+              },
+              reference: {
+                type: referenceType,
+                uri: referenceUri,
+              },
+              bodyControl: false,
+              ratio: ratio as any,
+            },
+          })
           break
 
         case 'gen4_aleph':
