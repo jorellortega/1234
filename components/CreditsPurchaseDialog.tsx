@@ -136,53 +136,53 @@ export function CreditsPurchaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-black/95 to-gray-900/95 border-cyan-500/30">
+      <DialogContent className="w-[95vw] max-w-md sm:max-w-lg md:max-w-2xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-black/95 to-gray-900/95 border-cyan-500/30 p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-cyan-400 mb-2">
+          <DialogTitle className="text-xl sm:text-2xl font-bold text-cyan-400 mb-2">
             Purchase Credits
           </DialogTitle>
           {user && (
-            <div className="flex items-center gap-2 text-sm text-cyan-300 mb-4">
-              <Zap className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-cyan-300 mb-4">
+              <Zap className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Current Credits: <span className="font-bold text-cyan-400">{currentCredits}</span></span>
             </div>
           )}
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Custom Amount Section */}
           <div>
-            <div className="text-center mb-4">
+            <div className="text-center mb-3 sm:mb-4">
               <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="p-2 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg">
-                  <Plus className="h-5 w-5 text-white" />
+                <div className="p-1.5 sm:p-2 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg">
+                  <Plus className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                 </div>
-                <h4 className="text-xl font-bold text-green-400">
+                <h4 className="text-lg sm:text-xl font-bold text-green-400">
                   Choose Your Amount
                 </h4>
               </div>
-              <p className="text-base text-green-300">
+              <p className="text-sm sm:text-base text-green-300">
                 Select the exact number of credits you need
               </p>
             </div>
             
             <Card className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 backdrop-blur-md border-2 border-green-400/50 shadow-2xl shadow-green-500/30">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-6">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col gap-4 sm:gap-6">
                   
                   {/* Price Display */}
-                  <div className="text-center bg-gradient-to-br from-green-900/20 to-emerald-900/20 rounded-2xl p-6 md:p-8 border-2 border-green-400/30">
-                    <div className="flex items-center justify-center gap-3 md:gap-4 mb-3">
+                  <div className="text-center bg-gradient-to-br from-green-900/20 to-emerald-900/20 rounded-2xl p-3 sm:p-6 md:p-8 border-2 border-green-400/30">
+                    <div className="flex items-center justify-center gap-2 sm:gap-3 md:gap-4 mb-2 sm:mb-3">
                       <Button
                         variant="outline"
                         size="lg"
                         onClick={() => adjustCustomPrice(-1)}
                         disabled={(customCredits * 0.048) <= MIN_PRICE}
-                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-lg px-4 py-3 h-14"
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-2 sm:px-4 py-2 sm:py-3 h-10 sm:h-14 flex-shrink-0"
                       >
-                        <Minus className="h-6 w-6" />
+                        <Minus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
-                      <div className="relative inline-flex min-w-[120px]">
+                      <div className="relative inline-flex min-w-[100px] sm:min-w-[120px] flex-1 max-w-full">
                         <Input
                           type="number"
                           value={(customCredits * 0.048).toFixed(2)}
@@ -195,13 +195,13 @@ export function CreditsPurchaseDialog({
                               }
                             }
                           }}
-                          size={Math.max(8, ((customCredits * 0.048).toFixed(2).length + 2))}
-                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-400 text-4xl md:text-5xl font-bold w-auto min-w-[120px] max-w-[400px] h-14 md:h-16 pl-8 md:pl-10 pr-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                          size={Math.max(4, ((customCredits * 0.048).toFixed(2).length))}
+                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-400 text-2xl sm:text-4xl md:text-5xl font-bold w-full h-10 sm:h-14 md:h-16 pl-6 sm:pl-8 md:pl-10 pr-2 sm:pr-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                           min={MIN_PRICE}
                           max={MAX_PRICE}
                           step="0.01"
                         />
-                        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-4xl md:text-5xl font-bold text-green-400 pointer-events-none">
+                        <div className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 text-2xl sm:text-4xl md:text-5xl font-bold text-green-400 pointer-events-none">
                           $
                         </div>
                       </div>
@@ -210,18 +210,18 @@ export function CreditsPurchaseDialog({
                         size="lg"
                         onClick={() => adjustCustomPrice(1)}
                         disabled={(customCredits * 0.048) >= MAX_PRICE}
-                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-lg px-4 py-3 h-14"
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-2 sm:px-4 py-2 sm:py-3 h-10 sm:h-14 flex-shrink-0"
                       >
-                        <Plus className="h-6 w-6" />
+                        <Plus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
                     </div>
-                    <div className="text-green-300 text-2xl font-semibold mb-2">
+                    <div className="text-green-300 text-xl sm:text-2xl font-semibold mb-1 sm:mb-2">
                       {customCredits} Credits
                     </div>
                     <div className="text-[10px] text-green-500/40 font-medium">
                       $0.048 per credit
                     </div>
-                    <div className="mt-4 text-sm text-green-400">
+                    <div className="mt-2 sm:mt-4 text-xs sm:text-sm text-green-400">
                       ⚡ Instant delivery after payment
                     </div>
                   </div>
@@ -231,16 +231,16 @@ export function CreditsPurchaseDialog({
                     <Button
                       onClick={handleCustomPurchase}
                       disabled={processing === 'custom'}
-                      className="w-full bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 hover:brightness-110 text-white font-bold px-8 md:px-12 py-4 text-xl tracking-wider transition-all disabled:opacity-50 shadow-2xl shadow-green-500/30 hover:shadow-green-400/40 hover:scale-105 active:scale-100 ring-2 ring-green-400/50 ring-offset-2 ring-offset-black/50"
+                      className="w-full bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 hover:brightness-110 text-white font-bold px-4 sm:px-8 md:px-12 py-3 sm:py-4 text-lg sm:text-xl tracking-wider transition-all disabled:opacity-50 shadow-2xl shadow-green-500/30 hover:shadow-green-400/40 hover:scale-105 active:scale-100 ring-2 ring-green-400/50 ring-offset-2 ring-offset-black/50"
                     >
                       {processing === 'custom' ? (
-                        <div className="flex items-center justify-center gap-3">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <div className="flex items-center justify-center gap-2 sm:gap-3">
+                          <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white"></div>
                           Processing...
                         </div>
                       ) : (
-                        <div className="flex items-center justify-center gap-3">
-                          <Zap className="h-6 w-6" />
+                        <div className="flex items-center justify-center gap-2 sm:gap-3">
+                          <Zap className="h-5 w-5 sm:h-6 sm:w-6" />
                           Buy {customCredits} Credits
                         </div>
                       )}
@@ -248,18 +248,18 @@ export function CreditsPurchaseDialog({
                   </div>
                   
                   {/* Amount Controls */}
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-center gap-4">
+                  <div className="space-y-4 sm:space-y-6">
+                    <div className="flex items-center justify-center gap-2 sm:gap-4">
                       <Button
                         variant="outline"
                         size="lg"
                         onClick={() => adjustCustomCredits(-10)}
                         disabled={customCredits <= MIN_CREDITS}
-                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-lg px-4 py-3 h-14"
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-2 sm:px-4 py-2 sm:py-3 h-10 sm:h-14 flex-shrink-0"
                       >
-                        <Minus className="h-6 w-6" />
+                        <Minus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
-                      <div className="relative inline-flex min-w-[150px]">
+                      <div className="relative inline-flex min-w-[120px] sm:min-w-[150px] flex-1 max-w-full">
                         <Input
                           type="number"
                           value={customCredits}
@@ -269,12 +269,12 @@ export function CreditsPurchaseDialog({
                               setCustomCredits(value)
                             }
                           }}
-                          size={Math.max(8, (customCredits.toString().length + 2))}
-                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-300 text-3xl md:text-4xl font-bold w-auto min-w-[150px] max-w-[300px] h-14 px-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                          size={Math.max(4, customCredits.toString().length)}
+                          className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-300 text-2xl sm:text-3xl md:text-4xl font-bold w-full h-10 sm:h-14 px-2 sm:px-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                           min={MIN_CREDITS}
                           max={MAX_CREDITS}
                         />
-                        <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-green-500 font-medium whitespace-nowrap">
+                        <div className="absolute -bottom-5 sm:-bottom-6 left-1/2 transform -translate-x-1/2 text-[10px] sm:text-xs text-green-500 font-medium whitespace-nowrap">
                           CREDITS
                         </div>
                       </div>
@@ -283,13 +283,13 @@ export function CreditsPurchaseDialog({
                         size="lg"
                         onClick={() => adjustCustomCredits(10)}
                         disabled={customCredits >= MAX_CREDITS}
-                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-lg px-4 py-3 h-14"
+                        className="border-2 border-green-500/50 text-green-400 hover:bg-green-500/20 text-base sm:text-lg px-2 sm:px-4 py-2 sm:py-3 h-10 sm:h-14 flex-shrink-0"
                       >
-                        <Plus className="h-6 w-6" />
+                        <Plus className="h-5 w-5 sm:h-6 sm:w-6" />
                       </Button>
                     </div>
                     
-                    <p className="text-[10px] text-green-500 text-center opacity-70">
+                    <p className="text-[9px] sm:text-[10px] text-green-500 text-center opacity-70 px-2">
                       Min: {MIN_CREDITS} credits (${MIN_PRICE.toFixed(2)}) • Max: {MAX_CREDITS.toLocaleString()} credits (${MAX_PRICE.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})})
                     </p>
                   </div>
