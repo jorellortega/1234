@@ -31,7 +31,7 @@ export default function AIPromptPage() {
   const needsOllama = mode === "llama" || mode === "mistral"
   const isVisionModel = mode === "blip" || mode === "llava"
   const isImageGenModel = mode === "dalle_image" || mode === "runway_image" || mode === "gen4_image" || mode === "gen4_image_turbo" || mode === "gemini_2.5_flash" || mode === "gpt-image-1"
-  const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph" || mode === "veo3.1" || mode === "veo3.1_fast" || mode === "veo3"
+  const isVideoModel = mode === "gen4_turbo" || mode === "gen3a_turbo" || mode === "gen4_aleph" || mode === "veo3.1" || mode === "veo3.1_fast" || mode === "veo3" || mode === "kling_t2v" || mode === "kling_i2v" || mode === "kling_lipsync" || mode === "kling_avatar"
   
   // Authentication state
   const [user, setUser] = useState<any>(null)
@@ -592,6 +592,7 @@ Is there anything else I can help you with?`)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
+  const [videoProgressPercentage, setVideoProgressPercentage] = useState<number>(0)
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
   const [videoRatio, setVideoRatio] = useState<string>('720:1280') // Default to portrait (RunwayML compatible)
   const videoFileInputRef = useRef<HTMLInputElement>(null)
@@ -638,6 +639,11 @@ Is there anything else I can help you with?`)
       // GEN models support RunwayML's standard ratios
       if (!['720:1280', '1280:720', '1104:832', '832:1104', '960:960', '1584:672'].includes(videoRatio)) {
         setVideoRatio('720:1280') // Default to portrait for GEN
+      }
+    } else if (mode === 'kling_t2v' || mode === 'kling_i2v' || mode === 'kling_lipsync' || mode === 'kling_avatar') {
+      // Kling AI models support: 1280:720 (16:9), 720:1280 (9:16), 960:960 (1:1)
+      if (!['1280:720', '720:1280', '960:960'].includes(videoRatio)) {
+        setVideoRatio('720:1280') // Default to portrait for Kling
       }
     }
   }, [mode])
@@ -1420,6 +1426,7 @@ Is there anything else I can help you with?`)
       setError(null)
       setVideoUrl(null)
       setVideoGenerationProgress('INFINITO is preparing your video...')
+      setVideoProgressPercentage(5)
 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -1433,7 +1440,12 @@ Is there anything else I can help you with?`)
         'veo3.1': 320,           // RunwayML: 200 credits + 60% markup
         'veo3.1_fast': 160,      // RunwayML: 100 credits + 60% markup
         'veo3': 512,             // RunwayML: 320 credits (8s) + 60% markup
-        'gen4_aleph': 120        // RunwayML: 75 credits + 60% markup
+        'gen4_aleph': 120,       // RunwayML: 75 credits + 60% markup
+        'act_two': 40,           // RunwayML: 25 credits + 60% markup
+        'kling_t2v': 50,         // Kling AI: TBD + markup
+        'kling_i2v': 50,         // Kling AI: TBD + markup
+        'kling_lipsync': 50,     // Kling AI: TBD + markup
+        'kling_avatar': 50       // Kling AI: TBD + markup
       }
       const requiredCredits = videoCredits[modelToUse] || 40 // Default to gen4_turbo pricing
       
@@ -1452,6 +1464,7 @@ Is there anything else I can help you with?`)
       const creditData = await creditResponse.json()
       if (!creditData.success) {
         setError(creditData.message || `Insufficient credits. Video generation costs ${requiredCredits} INFINITO credits.`)
+        setVideoGenerationProgress('')
         return
       }
 
@@ -1463,6 +1476,9 @@ Is there anything else I can help you with?`)
       if (user?.id) {
         setTimeout(() => fetchUserCredits(user.id), 500)
       }
+
+      setVideoGenerationProgress('Credits verified, preparing video...')
+      setVideoProgressPercentage(20)
 
       // Prepare form data
       const formData = new FormData()
@@ -1476,12 +1492,21 @@ Is there anything else I can help you with?`)
       }
 
       setVideoGenerationProgress('INFINITO is processing your video...')
-
-      // Send to backend
-      const response = await fetch('/api/runway', {
+      setVideoProgressPercentage(30)
+      
+      // Simulate progress during API call
+      const progressInterval = setInterval(() => {
+        setVideoProgressPercentage(prev => Math.min(prev + 2, 90))
+      }, 2000)
+      
+      // Send to backend - route to appropriate API based on model
+      const apiEndpoint = modelToUse.startsWith('kling') ? '/api/kling' : '/api/runway'
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         body: formData,
       })
+      
+      clearInterval(progressInterval)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -1505,6 +1530,7 @@ Is there anything else I can help you with?`)
       if (data.success && data.url) {
         setVideoUrl(data.url)
         setVideoGenerationProgress('Video generated successfully!')
+        setVideoProgressPercentage(100)
         setLastPrompt(prompt) // Save prompt for later use
         // Don't clear prompt - allow user to edit and regenerate
         
@@ -1533,6 +1559,7 @@ Is there anything else I can help you with?`)
       console.error('Video generation error:', error)
       setError(error.message || 'Failed to generate video')
       setVideoGenerationProgress('')
+      setVideoProgressPercentage(0)
       
       // Refresh credits after error (in case there was a refund)
       if (user?.id) {
@@ -2250,6 +2277,13 @@ Please provide a ${responseStyle} answer.`
                   <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
                   <span className="hidden sm:inline text-sm">Memory</span>
                 </Link>
+                <Link
+                  href="/video-mode"
+                  className="flex items-center gap-1 sm:gap-2 text-pink-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-pink-400/10"
+                >
+                  <Video className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline text-sm">Video Mode</span>
+                </Link>
               </>
             )}
             {user ? (
@@ -2502,6 +2536,13 @@ Please provide a ${responseStyle} answer.`
                       {isModelEnabled('veo3') && <SelectItem value="veo3" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">VEO 3 (T2V/I2V) {isAdmin && '- 32cr/s'}</SelectItem>}
                       {/* Video to Video Model */}
                       {isModelEnabled('gen4_aleph') && <SelectItem value="gen4_aleph" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">GEN-4 ALEPH (V2V) {isAdmin && '- 7.5cr/s'}</SelectItem>}
+                      {/* Act Two and Kling AI */}
+                      {isModelEnabled('act_two') && <SelectItem value="act_two" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">ACT TWO (Character) {isAdmin && '- 2.5cr/s'}</SelectItem>}
+                      {/* Kling AI Models */}
+                      {isModelEnabled('kling_t2v') && <SelectItem value="kling_t2v" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">🎬 KLING T2V {isAdmin && '- TBD'}</SelectItem>}
+                      {isModelEnabled('kling_i2v') && <SelectItem value="kling_i2v" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">🖼️ KLING I2V {isAdmin && '- TBD'}</SelectItem>}
+                      {isModelEnabled('kling_lipsync') && <SelectItem value="kling_lipsync" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">👄 KLING LIP-SYNC {isAdmin && '- TBD'}</SelectItem>}
+                      {isModelEnabled('kling_avatar') && <SelectItem value="kling_avatar" className="text-pink-300 hover:bg-pink-500/20 focus:bg-pink-500/20 font-mono uppercase">👤 KLING AVATAR {isAdmin && '- TBD'}</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2533,16 +2574,19 @@ Please provide a ${responseStyle} answer.`
                         selectedVideoModel === 'veo3.1_fast' ? '160' :
                         selectedVideoModel === 'veo3' ? '512' :
                         selectedVideoModel === 'gen4_aleph' ? '120' :
+                        selectedVideoModel === 'act_two' ? '40' :
+                        (selectedVideoModel === 'kling_t2v' || selectedVideoModel === 'kling_i2v' || selectedVideoModel === 'kling_lipsync' || selectedVideoModel === 'kling_avatar') ? '50' :
                         '40'
-                      } INFINITO (RunwayML: {
+                      } INFINITO {(selectedVideoModel === 'kling_t2v' || selectedVideoModel === 'kling_i2v' || selectedVideoModel === 'kling_lipsync' || selectedVideoModel === 'kling_avatar') ? '(Kling AI: TBD)' : `(RunwayML: ${
                         selectedVideoModel === 'gen4_turbo' ? '25' :
                         selectedVideoModel === 'gen3a_turbo' ? '50' :
                         selectedVideoModel === 'veo3.1' ? '200' :
                         selectedVideoModel === 'veo3.1_fast' ? '100' :
                         selectedVideoModel === 'veo3' ? '320' :
                         selectedVideoModel === 'gen4_aleph' ? '75' :
+                        selectedVideoModel === 'act_two' ? '25' :
                         '25'
-                      } credits + 60%)
+                      } credits + 60%)`}
                     </span>
                   )}
                 </p>
@@ -2854,6 +2898,15 @@ Please provide a ${responseStyle} answer.`
                               <option value="1920:1080">Horizontal HD (1920:1080)</option>
                             </>
                           )}
+                          
+                          {/* Kling AI models options */}
+                          {(mode === 'kling_t2v' || mode === 'kling_i2v' || mode === 'kling_lipsync' || mode === 'kling_avatar') && (
+                            <>
+                              <option value="1280:720">16:9 Landscape</option>
+                              <option value="720:1280">9:16 Portrait</option>
+                              <option value="960:960">1:1 Square</option>
+                            </>
+                          )}
                         </select>
                       </div>
                     </div>
@@ -2935,11 +2988,26 @@ Please provide a ${responseStyle} answer.`
 
                     {/* Video Generation Progress */}
                     {isGeneratingVideo && (
-                      <div className="relative overflow-hidden bg-gradient-to-r from-pink-600 via-purple-600 to-pink-700 p-5 rounded-md border-2 border-pink-400/60 mb-3">
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
-                        <div className="relative flex items-center justify-center gap-3">
-                          <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/40 border-t-white"></div>
-                          <span className="text-white/80 text-lg sm:text-xl font-bold tracking-[0.2em] uppercase">{videoGenerationProgress || 'GENERATING VIDEO...'}</span>
+                      <div className="space-y-3 mb-3">
+                        <div className="relative overflow-hidden bg-gradient-to-r from-pink-600 via-purple-600 to-pink-700 p-5 rounded-md border-2 border-pink-400/60">
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                          <div className="relative flex items-center justify-center gap-3">
+                            <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/40 border-t-white"></div>
+                            <span className="text-white/80 text-lg sm:text-xl font-bold tracking-[0.2em] uppercase">{videoGenerationProgress || 'GENERATING VIDEO...'}</span>
+                          </div>
+                        </div>
+                        {/* Progress Bar */}
+                        <div className="w-full bg-black/40 rounded-full h-3 border border-pink-500/50 overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 transition-all duration-500 ease-out"
+                            style={{ width: `${videoProgressPercentage}%` }}
+                          />
+                        </div>
+                        {/* Percentage Display */}
+                        <div className="text-center">
+                          <span className="text-cyan-400 text-2xl font-bold">
+                            {videoProgressPercentage}%
+                          </span>
                         </div>
                       </div>
                     )}
