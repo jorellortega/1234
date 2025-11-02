@@ -26,6 +26,7 @@ export default function AIPromptPage() {
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null)
   const [selectedAudioModel, setSelectedAudioModel] = useState<string | null>(null)
   const [imageToVideoModel, setImageToVideoModel] = useState<string>('gen4_turbo') // Separate model for image-to-video conversion (gen4_aleph is V2V, not I2V)
+  const [previousVideoModel, setPreviousVideoModel] = useState<string | null>(null) // Track previous model to detect changes
   
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const needsOllama = mode === "llama" || mode === "mistral"
@@ -593,7 +594,7 @@ Is there anything else I can help you with?`)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
   const [videoGenerationProgress, setVideoGenerationProgress] = useState<string>('')
   const [videoProgressPercentage, setVideoProgressPercentage] = useState<number>(0)
-  const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [videoDuration, setVideoDuration] = useState<2 | 4 | 5 | 6 | 8 | 10>(5)
   const [videoRatio, setVideoRatio] = useState<string>('720:1280') // Default to portrait (RunwayML compatible)
   const videoFileInputRef = useRef<HTMLInputElement>(null)
   const [isConvertingImageToVideo, setIsConvertingImageToVideo] = useState(false) // Flag to track if converting from generated image
@@ -627,26 +628,65 @@ Is there anything else I can help you with?`)
     }
   }, [user])
 
-  // Update video aspect ratio when mode changes to ensure compatibility
+  // Update video aspect ratio and duration when video model changes to ensure compatibility
+  // Watch both mode (for legacy compatibility) and selectedVideoModel (current implementation)
   useEffect(() => {
-    // Set default aspect ratio based on video model
-    if (mode === 'veo3' || mode === 'veo3.1' || mode === 'veo3.1_fast') {
+    // Determine which video model to use - prefer selectedVideoModel over mode
+    const currentVideoModel = selectedVideoModel || (isVideoModel ? mode : null)
+    
+    if (!currentVideoModel) {
+      // Clear previous model tracking when not in video mode
+      if (previousVideoModel) setPreviousVideoModel(null)
+      return
+    }
+    
+    // Check if model actually changed - if so, reset to defaults
+    const modelChanged = previousVideoModel && previousVideoModel !== currentVideoModel
+    const isFirstModel = !previousVideoModel && currentVideoModel
+    
+    // Update previous model tracking
+    if (currentVideoModel !== previousVideoModel) {
+      setPreviousVideoModel(currentVideoModel)
+    }
+    
+    // Set default aspect ratio and duration based on video model
+    // Reset to defaults when switching models OR if current values are invalid
+    if (currentVideoModel === 'veo3' || currentVideoModel === 'veo3.1' || currentVideoModel === 'veo3.1_fast') {
       // VEO models support: 720:1280, 1280:720, 1080:1920, 1920:1080
-      if (!['720:1280', '1280:720', '1080:1920', '1920:1080'].includes(videoRatio)) {
+      // Reset to default if model changed OR if current ratio is not supported
+      if (modelChanged || isFirstModel || !['720:1280', '1280:720', '1080:1920', '1920:1080'].includes(videoRatio)) {
         setVideoRatio('720:1280') // Default to portrait for VEO
       }
-    } else if (mode === 'gen3a_turbo' || mode === 'gen4_turbo' || mode === 'gen4_aleph') {
+      // VEO 3.1 and 3.1_fast support: 4, 6, or 8 seconds - reset if model changed or invalid
+      if ((currentVideoModel === 'veo3.1' || currentVideoModel === 'veo3.1_fast')) {
+        if (modelChanged || isFirstModel || ![4, 6, 8].includes(videoDuration)) {
+          setVideoDuration(6) // Default to 6 seconds for VEO 3.1
+        }
+      }
+      // VEO 3 only supports 8 seconds - always force reset if changed or invalid
+      if (currentVideoModel === 'veo3' && (modelChanged || isFirstModel || videoDuration !== 8)) {
+        setVideoDuration(8) // Must be 8 seconds for VEO 3
+      }
+    } else if (currentVideoModel === 'gen3a_turbo' || currentVideoModel === 'gen4_turbo' || currentVideoModel === 'gen4_aleph') {
       // GEN models support RunwayML's standard ratios
-      if (!['720:1280', '1280:720', '1104:832', '832:1104', '960:960', '1584:672'].includes(videoRatio)) {
+      if (modelChanged || isFirstModel || !['720:1280', '1280:720', '1104:832', '832:1104', '960:960', '1584:672'].includes(videoRatio)) {
         setVideoRatio('720:1280') // Default to portrait for GEN
       }
-    } else if (mode === 'kling_t2v' || mode === 'kling_i2v' || mode === 'kling_lipsync' || mode === 'kling_avatar') {
+      // GEN-3A TURBO supports: 5 or 10 seconds - reset if model changed or invalid
+      if (currentVideoModel === 'gen3a_turbo' && (modelChanged || isFirstModel || ![5, 10].includes(videoDuration))) {
+        setVideoDuration(5) // Default to 5 seconds for GEN-3A
+      }
+      // GEN-4 TURBO supports: 2-10 seconds (but only allow 2, 5, or 10 in UI) - reset if model changed or invalid
+      if (currentVideoModel === 'gen4_turbo' && (modelChanged || isFirstModel || ![2, 5, 10].includes(videoDuration))) {
+        setVideoDuration(5) // Default to 5 seconds for GEN-4
+      }
+    } else if (currentVideoModel === 'kling_t2v' || currentVideoModel === 'kling_i2v' || currentVideoModel === 'kling_lipsync' || currentVideoModel === 'kling_avatar') {
       // Kling AI models support: 1280:720 (16:9), 720:1280 (9:16), 960:960 (1:1)
-      if (!['1280:720', '720:1280', '960:960'].includes(videoRatio)) {
+      if (modelChanged || isFirstModel || !['1280:720', '720:1280', '960:960'].includes(videoRatio)) {
         setVideoRatio('720:1280') // Default to portrait for Kling
       }
     }
-  }, [mode])
+  }, [mode, selectedVideoModel, videoRatio, videoDuration, isVideoModel, previousVideoModel])
 
   // Initialize voice recognition
   useEffect(() => {
@@ -2919,11 +2959,43 @@ Please provide a ${responseStyle} answer.`
                         <label className="text-pink-400 text-xs block mb-1">Duration (seconds)</label>
                         <select
                           value={videoDuration}
-                          onChange={(e) => setVideoDuration(parseInt(e.target.value) as 5 | 10)}
+                          onChange={(e) => setVideoDuration(parseInt(e.target.value) as 2 | 4 | 5 | 6 | 8 | 10)}
                           className="w-full bg-black/30 border border-pink-500/30 rounded px-2 py-1 text-pink-300 text-sm"
                         >
-                          <option value="5">5 seconds</option>
-                          <option value="10">10 seconds</option>
+                          {/* VEO models: 4, 6, or 8 seconds */}
+                          {(mode === 'veo3.1' || mode === 'veo3.1_fast') && (
+                            <>
+                              <option value="4">4 seconds</option>
+                              <option value="6">6 seconds</option>
+                              <option value="8">8 seconds</option>
+                            </>
+                          )}
+                          {/* VEO 3: only 8 seconds */}
+                          {mode === 'veo3' && (
+                            <option value="8">8 seconds</option>
+                          )}
+                          {/* GEN-3A TURBO: 5 or 10 seconds */}
+                          {mode === 'gen3a_turbo' && (
+                            <>
+                              <option value="5">5 seconds</option>
+                              <option value="10">10 seconds</option>
+                            </>
+                          )}
+                          {/* GEN-4 TURBO: 2-10 seconds */}
+                          {mode === 'gen4_turbo' && (
+                            <>
+                              <option value="2">2 seconds</option>
+                              <option value="5">5 seconds</option>
+                              <option value="10">10 seconds</option>
+                            </>
+                          )}
+                          {/* Default for other models */}
+                          {!['veo3', 'veo3.1', 'veo3.1_fast', 'gen3a_turbo', 'gen4_turbo'].includes(mode) && (
+                            <>
+                              <option value="5">5 seconds</option>
+                              <option value="10">10 seconds</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       <div>
@@ -2948,10 +3020,10 @@ Please provide a ${responseStyle} answer.`
                           {/* VEO models options (text-to-video and image-to-video) */}
                           {(mode === 'veo3' || mode === 'veo3.1' || mode === 'veo3.1_fast') && (
                             <>
-                              <option value="720:1280">Portrait (720:1280)</option>
-                              <option value="1280:720">Landscape (1280:720)</option>
-                              <option value="1080:1920">Vertical HD (1080:1920)</option>
-                              <option value="1920:1080">Horizontal HD (1920:1080)</option>
+                              <option value="1280:720">16:9 Landscape</option>
+                              <option value="720:1280">9:16 Portrait</option>
+                              <option value="1920:1080">1920:1080 Horizontal HD</option>
+                              <option value="1080:1920">1080:1920 Vertical HD</option>
                             </>
                           )}
                           
