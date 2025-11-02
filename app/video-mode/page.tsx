@@ -57,10 +57,97 @@ export default function VideoModePage() {
   const klingStartFrameInputRef = useRef<HTMLInputElement>(null)
   const klingEndFrameInputRef = useRef<HTMLInputElement>(null)
   
-  // Check authentication
+  // Save state to localStorage
+  const saveGenerationState = () => {
+    try {
+      const state = {
+        prompt,
+        enhancedPrompt,
+        selectedVideoModel,
+        selectedLLM,
+        videoDuration,
+        videoRatio,
+        // Note: File objects can't be serialized, so we save preview URLs
+        videoImagePreview,
+        actTwoCharacterPreview,
+        actTwoReferencePreview,
+        klingStartFramePreview,
+        klingEndFramePreview,
+        timestamp: Date.now()
+      }
+      localStorage.setItem('video_mode_state', JSON.stringify(state))
+    } catch (error) {
+      console.error('Error saving state:', error)
+    }
+  }
+
+  // Restore state from localStorage
+  const restoreGenerationState = () => {
+    try {
+      const saved = localStorage.getItem('video_mode_state')
+      if (!saved) return false
+
+      const state = JSON.parse(saved)
+      // Only restore if state is recent (within 1 hour)
+      if (Date.now() - state.timestamp > 3600000) {
+        localStorage.removeItem('video_mode_state')
+        return false
+      }
+
+      setPrompt(state.prompt || '')
+      setEnhancedPrompt(state.enhancedPrompt || '')
+      if (state.selectedVideoModel) setSelectedVideoModel(state.selectedVideoModel)
+      if (state.selectedLLM) setSelectedLLM(state.selectedLLM)
+      if (state.videoDuration) setVideoDuration(state.videoDuration)
+      if (state.videoRatio) setVideoRatio(state.videoRatio)
+      if (state.videoImagePreview) setVideoImagePreview(state.videoImagePreview)
+      if (state.actTwoCharacterPreview) setActTwoCharacterPreview(state.actTwoCharacterPreview)
+      if (state.actTwoReferencePreview) setActTwoReferencePreview(state.actTwoReferencePreview)
+      if (state.klingStartFramePreview) setKlingStartFramePreview(state.klingStartFramePreview)
+      if (state.klingEndFramePreview) setKlingEndFramePreview(state.klingEndFramePreview)
+
+      // Clear saved state after restoring
+      localStorage.removeItem('video_mode_state')
+      return true
+    } catch (error) {
+      console.error('Error restoring state:', error)
+      localStorage.removeItem('video_mode_state')
+      return false
+    }
+  }
+
+  // Listen for save state event from dialog
+  useEffect(() => {
+    const handleSaveState = () => {
+      saveGenerationState()
+    }
+    window.addEventListener('save-generation-state', handleSaveState)
+    return () => window.removeEventListener('save-generation-state', handleSaveState)
+  }, [prompt, enhancedPrompt, selectedVideoModel, selectedLLM, videoDuration, videoRatio, videoImagePreview, actTwoCharacterPreview, actTwoReferencePreview, klingStartFramePreview, klingEndFramePreview])
+
+  // Check authentication and restore state on mount
   useEffect(() => {
     const getUser = async () => {
       try {
+        // Check if we're returning from payment and restore state
+        const pendingReturn = localStorage.getItem('pending_return')
+        if (pendingReturn) {
+          try {
+            const returnData = JSON.parse(pendingReturn)
+            if (returnData.pathname === '/video-mode' && Date.now() - returnData.timestamp < 3600000) {
+              restoreGenerationState()
+              // Refresh credits after returning from payment
+              const { data: { user } } = await supabase.auth.getUser()
+              if (user) {
+                await fetchUserCredits(user.id)
+              }
+            }
+            localStorage.removeItem('pending_return')
+          } catch (e) {
+            console.error('Error processing pending return:', e)
+          }
+        }
+
         const { data: { user } } = await supabase.auth.getUser()
         setUser(user)
         
@@ -90,6 +177,44 @@ export default function VideoModePage() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Update video aspect ratio and duration when model changes to ensure compatibility
+  useEffect(() => {
+    // Set default aspect ratio based on video model
+    if (selectedVideoModel === 'veo3' || selectedVideoModel === 'veo3.1' || selectedVideoModel === 'veo3.1_fast') {
+      // VEO models support: 720:1280, 1280:720, 1080:1920, 1920:1080
+      if (!['720:1280', '1280:720', '1080:1920', '1920:1080'].includes(videoRatio)) {
+        setVideoRatio('720:1280') // Default to portrait for VEO
+      }
+      // VEO 3.1 and 3.1_fast support: 4, 6, or 8 seconds
+      if ((selectedVideoModel === 'veo3.1' || selectedVideoModel === 'veo3.1_fast') && ![4, 6, 8].includes(videoDuration)) {
+        setVideoDuration(6) // Default to 6 seconds for VEO 3.1
+      }
+      // VEO 3 only supports 8 seconds
+      if (selectedVideoModel === 'veo3' && videoDuration !== 8) {
+        setVideoDuration(8) // Must be 8 seconds for VEO 3
+      }
+    } else if (selectedVideoModel === 'gen3a_turbo') {
+      // GEN-3A supports: 1280:768, 768:1280
+      if (!['1280:768', '768:1280'].includes(videoRatio)) {
+        setVideoRatio('768:1280') // Default to portrait for GEN-3A
+      }
+      // GEN-3A supports: 5 or 10 seconds
+      if (![5, 10].includes(videoDuration)) {
+        setVideoDuration(5) // Default to 5 seconds for GEN-3A
+      }
+    } else if (selectedVideoModel === 'gen4_turbo') {
+      // GEN-4 TURBO supports: 2-10 seconds
+      if (![2, 5, 10].includes(videoDuration)) {
+        setVideoDuration(5) // Default to 5 seconds for GEN-4
+      }
+    } else if (selectedVideoModel === 'kling_i2v' || selectedVideoModel === 'kling_t2v' || selectedVideoModel === 'kling_lipsync' || selectedVideoModel === 'kling_avatar') {
+      // Kling AI models support: 1280:720 (16:9), 720:1280 (9:16), 960:960 (1:1)
+      if (!['1280:720', '720:1280', '960:960'].includes(videoRatio)) {
+        setVideoRatio('720:1280') // Default to portrait for Kling
+      }
+    }
+  }, [selectedVideoModel, videoRatio, videoDuration])
 
   // Fetch user credits
   const fetchUserCredits = async (userId: string) => {
@@ -1075,6 +1200,13 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                           <SelectItem value="1280:768">5:3 Horizontal</SelectItem>
                           <SelectItem value="768:1280">3:5 Vertical</SelectItem>
                         </>
+                      ) : (selectedVideoModel === 'veo3' || selectedVideoModel === 'veo3.1' || selectedVideoModel === 'veo3.1_fast') ? (
+                        <>
+                          <SelectItem value="1280:720">16:9 Landscape</SelectItem>
+                          <SelectItem value="720:1280">9:16 Portrait</SelectItem>
+                          <SelectItem value="1920:1080">1920:1080 Horizontal HD</SelectItem>
+                          <SelectItem value="1080:1920">1080:1920 Vertical HD</SelectItem>
+                        </>
                       ) : (
                         <>
                           <SelectItem value="1280:720">16:9 Landscape</SelectItem>
@@ -1183,8 +1315,9 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         {/* Credits Purchase Dialog */}
         <CreditsPurchaseDialog 
           open={showCreditsDialog} 
-          onClose={() => setShowCreditsDialog(false)}
+          onOpenChange={setShowCreditsDialog}
           currentCredits={userCredits}
+          returnUrl={typeof window !== 'undefined' ? window.location.href : '/video-mode'}
         />
       </div>
     </div>

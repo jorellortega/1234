@@ -44,11 +44,12 @@ function PaymentSuccessContent() {
           console.log('✅ Credits set to:', profile?.credits || 0)
           
           // If there's a returnUrl, automatically redirect after a short delay
+          // This allows users to return to their generation page and resume work
           if (returnUrl) {
             console.log('🔙 Return URL detected, will redirect to:', returnUrl)
             setTimeout(() => {
               window.location.href = returnUrl
-            }, 2000) // 2 second delay to show success message
+            }, 1500) // 1.5 second delay to show success message, then return to work
           }
         } else {
           console.log('⚠️ No user found, setting credits to 0')
