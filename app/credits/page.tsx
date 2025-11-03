@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -80,6 +80,9 @@ export default function CreditsPage() {
   const [currentCredits, setCurrentCredits] = useState(0)
   const [processing, setProcessing] = useState<string | null>(null)
   const [customCredits, setCustomCredits] = useState(50)
+  const [customCreditsString, setCustomCreditsString] = useState<string>('50') // String version for input
+  const [customPrice, setCustomPrice] = useState<string>('2.40') // Initialize with price string
+  const isUserTypingRef = useRef(false) // Track if user is manually typing
   const MIN_CREDITS = 30 // Minimum credits = $1.44 / $0.048 (Stripe minimum $1.00)
   const MIN_PRICE = 1.44
   const MAX_PRICE = 999999.99 // Stripe maximum price
@@ -111,6 +114,15 @@ export default function CreditsPage() {
 
     getUser()
   }, [])
+
+  // Sync customPrice and customCreditsString when customCredits changes from buttons only (not from user typing)
+  useEffect(() => {
+    if (!isUserTypingRef.current) {
+      const calculatedPrice = (customCredits * 0.048).toFixed(2)
+      setCustomPrice(calculatedPrice)
+      setCustomCreditsString(customCredits.toString())
+    }
+  }, [customCredits])
 
   const handlePurchase = async (tier: PricingTier) => {
     if (!user) {
@@ -179,8 +191,11 @@ export default function CreditsPage() {
       return
     }
 
-    // Calculate price: $0.048 per credit (includes 60% markup)
-    const price = customCredits * 0.048
+    // Use the user's entered price, or calculate from credits if price is invalid
+    const enteredPrice = parseFloat(customPrice)
+    const price = (!isNaN(enteredPrice) && enteredPrice >= MIN_PRICE && enteredPrice <= MAX_PRICE) 
+      ? enteredPrice 
+      : customCredits * 0.048
 
     if (price < MIN_PRICE) {
       alert(`Minimum purchase is $${MIN_PRICE.toFixed(2)} (${MIN_CREDITS} credits). Stripe requires a minimum payment of $1.00.`)
@@ -338,18 +353,40 @@ export default function CreditsPage() {
                       <div className="relative inline-flex min-w-[120px]">
                         <Input
                           type="number"
-                          value={(customCredits * 0.048).toFixed(2)}
+                          value={customPrice}
                           onChange={(e) => {
-                            const value = parseFloat(e.target.value) || MIN_PRICE
-                            if (value >= MIN_PRICE && value <= MAX_PRICE) {
-                              // Calculate credits from price (round to nearest integer)
+                            const newValue = e.target.value
+                            isUserTypingRef.current = true
+                            // Allow empty input while typing
+                            if (newValue === '') {
+                              setCustomPrice('')
+                              return
+                            }
+                            setCustomPrice(newValue)
+                          }}
+                          onBlur={(e) => {
+                            // Validate and correct on blur if invalid, then update credits
+                            const value = parseFloat(e.target.value)
+                            if (isNaN(value) || value < MIN_PRICE || value > MAX_PRICE) {
+                              const defaultPrice = (customCredits * 0.048).toFixed(2)
+                              setCustomPrice(defaultPrice)
+                              isUserTypingRef.current = false
+                            } else {
+                              // Valid value - preserve the exact price entered, calculate credits for it
                               const newCredits = Math.round(value / 0.048)
                               if (newCredits >= MIN_CREDITS && newCredits <= MAX_CREDITS) {
                                 setCustomCredits(newCredits)
+                                // Keep the exact price the user entered (don't recalculate from credits)
+                                setCustomPrice(value.toFixed(2))
+                              } else {
+                                // Invalid credits range, revert to calculated price
+                                const calculatedPrice = (customCredits * 0.048).toFixed(2)
+                                setCustomPrice(calculatedPrice)
                               }
+                              isUserTypingRef.current = false
                             }
                           }}
-                          size={Math.max(8, ((customCredits * 0.048).toFixed(2).length + 2))}
+                          size={Math.max(8, customPrice.length)}
                           className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-400 text-3xl sm:text-4xl md:text-5xl font-bold w-auto min-w-[120px] max-w-[400px] h-12 sm:h-14 md:h-16 pl-6 sm:pl-8 md:pl-10 pr-2 sm:pr-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                           min={MIN_PRICE}
                           max={MAX_PRICE}
@@ -416,14 +453,30 @@ export default function CreditsPage() {
                       <div className="relative inline-flex min-w-[150px]">
                         <Input
                           type="number"
-                          value={customCredits}
+                          value={customCreditsString}
                           onChange={(e) => {
-                            const value = parseInt(e.target.value) || MIN_CREDITS
-                            if (value >= MIN_CREDITS && value <= MAX_CREDITS) {
+                            const newValue = e.target.value
+                            isUserTypingRef.current = true
+                            // Allow empty input while typing
+                            if (newValue === '') {
+                              setCustomCreditsString('')
+                              return
+                            }
+                            setCustomCreditsString(newValue)
+                          }}
+                          onBlur={(e) => {
+                            // Validate and correct on blur if invalid
+                            const value = parseInt(e.target.value)
+                            if (isNaN(value) || value < MIN_CREDITS || value > MAX_CREDITS) {
+                              setCustomCreditsString(customCredits.toString())
+                              isUserTypingRef.current = false
+                            } else {
+                              // Valid value, update credits
                               setCustomCredits(value)
+                              isUserTypingRef.current = false
                             }
                           }}
-                          size={Math.max(8, (customCredits.toString().length + 2))}
+                          size={Math.max(8, (customCreditsString.length + 2))}
                           className="text-center bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-2 border-green-400/60 text-green-300 text-2xl sm:text-3xl md:text-4xl font-bold w-auto min-w-[150px] max-w-[300px] h-12 sm:h-14 px-2 sm:px-4 focus:border-green-400 focus:ring-2 focus:ring-green-400/30 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                           min={MIN_CREDITS}
                           max={MAX_CREDITS}

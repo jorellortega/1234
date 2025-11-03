@@ -161,7 +161,7 @@ export default function GenerationDetail({ params }: { params: Promise<{ id: str
               className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
             >
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">Memory Core</span>
+              <span className="hidden sm:inline text-sm">Memory</span>
             </Link>
             <Link
               href="/ai-settings"

@@ -260,21 +260,34 @@ export function ProgressiveResponse({
     }
   }
 
-  const handleExportPDF = () => {
-    // Get prompt from URL or current input if available
-    const urlParams = new URLSearchParams(window.location.search)
-    const prompt = urlParams.get('prompt') || ''
-    
-    // Use expanded content if available, otherwise use original content
-    const contentToExport = isExpanded && detailedContent 
-      ? `${concisePart}\n\n${detailedContent}` 
-      : content
-    
-    // Generate PDF export URL
-    const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(contentToExport)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
-    
-    // Open in new window
-    window.open(pdfUrl, '_blank')
+  const handleExportPDF = async () => {
+    try {
+      // Get prompt from URL or current input if available
+      const urlParams = new URLSearchParams(window.location.search)
+      const prompt = urlParams.get('prompt') || ''
+      
+      // Use expanded content if available, otherwise use original content
+      const contentToExport = isExpanded && detailedContent 
+        ? `${concisePart}\n\n${detailedContent}` 
+        : content
+      
+      // Generate PDF export URL
+      const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(contentToExport)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
+      
+      // Fetch the PDF as a blob
+      const response = await fetch(pdfUrl)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'infinito-response.pdf'
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Failed to download PDF:', error)
+    }
   }
 
   const handleShowMore = async () => {
@@ -512,15 +525,24 @@ export function ProgressiveResponse({
     }
   }
 
-  const downloadAudio = () => {
+  const downloadAudio = async () => {
     if (!audioUrl) return
 
-    const link = document.createElement('a')
-    link.href = audioUrl
-    link.download = `Infinito Audio.mp3`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    try {
+      // Use API proxy to ensure proper filename
+      const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioUrl)}`)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Infinito-Audio.mp3`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Failed to download audio:', error)
+    }
   }
 
   const handleGenerateAudio = () => {
@@ -721,8 +743,17 @@ export function ProgressiveResponse({
                   const audioMatch = content.match(/\[AUDIO_DISPLAY:(.*?)\]/);
                   
                   if (imageMatch) {
-                    // Download image via API proxy
-                    window.open(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`, '_blank');
+                    // Download image via API proxy using blob
+                    const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`);
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Infinito Image.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
                   } else if (videoMatch) {
                     // Download video
                     const response = await fetch(videoMatch[1]);
@@ -736,13 +767,13 @@ export function ProgressiveResponse({
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
                   } else if (audioMatch) {
-                    // Download audio
-                    const response = await fetch(audioMatch[1]);
+                    // Download audio via API proxy
+                    const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioMatch[1])}`);
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `Infinito Audio.mp3`;
+                    a.download = `Infinito-Audio.mp3`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -869,7 +900,16 @@ export function ProgressiveResponse({
             const handleDownload = async () => {
               try {
                 // Use API proxy to avoid CORS issues
-                window.open(`/api/download-image?url=${encodeURIComponent(imageUrl)}`, '_blank');
+                const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageUrl)}`);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Infinito Image.png`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
               } catch (error) {
                 console.error('Failed to download image:', error);
               }
@@ -1061,12 +1101,13 @@ export function ProgressiveResponse({
           if (audioUrl) {
             const handleDownloadAudio = async () => {
               try {
-                const response = await fetch(audioUrl);
+                // Use API proxy to ensure proper filename
+                const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioUrl)}`);
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `Infinito Audio.mp3`;
+                a.download = `Infinito-Audio.mp3`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);

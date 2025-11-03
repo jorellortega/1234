@@ -115,12 +115,20 @@ export async function POST(req: NextRequest) {
     }
 
     // Determine which OpenAI image model to use
-    const imageModel = model || 'dall-e-3' // Default to DALL-E 3
+    // Note: OpenAI only supports dall-e-3 and dall-e-2. gpt-image-1 is mapped to dall-e-3
+    const originalModel = model || 'dall-e-3' // Keep original for user-facing messages
+    let imageModel = originalModel // This will be mapped for API calls
+    
+    // Map gpt-image-1 to dall-e-3 since it's not a real OpenAI model
+    if (imageModel === 'gpt-image-1') {
+      imageModel = 'dall-e-3'
+    }
+    
     const validModels = ['dall-e-3', 'dall-e-2', 'gpt-image-1']
     
-    if (!validModels.includes(imageModel)) {
+    if (!validModels.includes(originalModel)) {
       return NextResponse.json(
-        { error: `Invalid model. Must be one of: ${validModels.join(', ')}` },
+        { error: `Invalid model. Must be one of: dall-e-3, dall-e-2, or gpt-image-1 (mapped to dall-e-3)` },
         { status: 400 }
       )
     }
@@ -204,10 +212,27 @@ export async function POST(req: NextRequest) {
       }
 
       const dalleData = await dalleResponse.json()
+      
+      // Log the response for debugging
+      console.log('OpenAI API Response:', JSON.stringify(dalleData, null, 2))
+      
       const imageUrl = dalleData.data?.[0]?.url
       
       if (!imageUrl) {
-        throw new Error('No image URL received from image generation service')
+        // Log the full response structure for debugging
+        console.error('No image URL in response. Response structure:', {
+          hasData: !!dalleData.data,
+          dataLength: dalleData.data?.length,
+          firstItem: dalleData.data?.[0],
+          fullResponse: dalleData
+        })
+        
+        // Check if it's an error response
+        if (dalleData.error) {
+          throw new Error(`OpenAI API error: ${dalleData.error.message || JSON.stringify(dalleData.error)}`)
+        }
+        
+        throw new Error('No image URL received from image generation service. The API response may have a different format for this model.')
       }
 
       // Model-specific messages
@@ -222,8 +247,8 @@ export async function POST(req: NextRequest) {
         url: imageUrl,
         prompt: prompt,
         type: 'image',
-        model: imageModel,
-        message: modelMessages[imageModel] || `Generated using ${imageModel}.`
+        model: originalModel, // Return original model name for user-facing purposes
+        message: modelMessages[originalModel] || `Generated using ${originalModel}.`
       })
 
     } catch (error: any) {
@@ -238,13 +263,13 @@ export async function POST(req: NextRequest) {
       
       // Refund credits if it's a moderation/copyright error
       if (isModerationError) {
-        // Calculate credits to refund based on model
+        // Calculate credits to refund based on original model
         const imageCredits: Record<string, number> = {
           'dall-e-3': 40,
           'dall-e-2': 40,
           'gpt-image-1': 40
         }
-        const creditsToRefund = imageCredits[imageModel] || 40
+        const creditsToRefund = imageCredits[originalModel] || 40
         
         const refundResult = await refundCredits(user.id, creditsToRefund)
         

@@ -230,6 +230,15 @@ export async function POST(req: NextRequest) {
             }
           }
           
+          // VEO models have reversed aspect ratio behavior - swap them
+          const veoRatioMap: Record<string, string> = {
+            '1280:720': '720:1280',
+            '720:1280': '1280:720',
+            '1920:1080': '1080:1920',
+            '1080:1920': '1920:1080'
+          }
+          const veoRatio = veoRatioMap[ratio] || ratio
+          
           if (imageBase64) {
             // Image-to-Video mode
             result = await runway.imageToVideo.create({
@@ -237,7 +246,7 @@ export async function POST(req: NextRequest) {
               promptImage: imageBase64,
               promptText: prompt,
               duration: veoDuration as any,
-              ratio: ratio as any,
+              ratio: veoRatio as any,
             })
           } else {
             // Text-to-Video mode (no image required!)
@@ -245,7 +254,7 @@ export async function POST(req: NextRequest) {
               model: model as 'veo3.1' | 'veo3.1_fast' | 'veo3',
               promptText: prompt,
               duration: veoDuration as any,
-              ratio: ratio as any,
+              ratio: veoRatio as any,
             })
           }
           break

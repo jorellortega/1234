@@ -4,18 +4,46 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Home, BookUser, BrainCircuit, User, LogOut, Settings, CreditCard, RefreshCw, Wand2, Image as ImageIcon } from "lucide-react"
+import { Home, BookUser, BrainCircuit, User, LogOut, CreditCard, RefreshCw, Wand2, Image as ImageIcon, Upload, X, Eye, EyeOff, Check, Loader2, Paintbrush, Eraser, Square } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { CreditsPurchaseDialog } from "@/components/CreditsPurchaseDialog"
+import { HudPanel } from "@/components/hud-panel"
+import { AztecIcon } from "@/components/aztec-icon"
 
 export default function ImageModePage() {
   // State
   const [prompt, setPrompt] = useState("")
   const [enhancedPrompt, setEnhancedPrompt] = useState("")
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null) // Original before any edits
+  const [imageHistory, setImageHistory] = useState<Array<{ url: string, label: string, timestamp: number }>>([]) // All versions
   const [selectedImageModel, setSelectedImageModel] = useState<string>("gen4_image")
   const [selectedLLM, setSelectedLLM] = useState<string>("gpt-4o")
   const [imageRatio, setImageRatio] = useState("1024:1024")
+  
+  // Image upload for scanning
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false)
+  const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Save state
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  
+  // Inpainting state
+  const [showInpainting, setShowInpainting] = useState(false)
+  const [inpaintingPrompt, setInpaintingPrompt] = useState("")
+  const [selectedInpaintModel, setSelectedInpaintModel] = useState<string>("dall-e-2")
+  const [isInpainting, setIsInpainting] = useState(false)
+  const [inpaintingProgress, setInpaintingProgress] = useState<string>('')
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const imageCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [brushSize, setBrushSize] = useState(30)
   
   // Loading states
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
@@ -33,6 +61,9 @@ export default function ImageModePage() {
   
   // Admin preferences
   const [adminPreferences, setAdminPreferences] = useState<any>(null)
+  
+  // Panel visibility state
+  const [showPanels, setShowPanels] = useState(false)
   
   // Save state to localStorage
   const saveGenerationState = () => {
@@ -295,6 +326,8 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       setIsGeneratingImage(true)
       setError(null)
       setImageUrl(null)
+      setOriginalImageUrl(null)
+      setImageHistory([])
       setImageGenerationProgress('Preparing image generation...')
       setProgressPercentage(5)
 
@@ -388,6 +421,17 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         setProgressPercentage(prev => Math.min(prev + 2, 90))
       }, 2000)
       
+      // Map frontend model names to API model names
+      const modelMapping: Record<string, string> = {
+        'dalle_image': 'dall-e-3',
+        'gpt-image-1': 'gpt-image-1',
+        'gen4_image': 'gen4_image',
+        'gen4_image_turbo': 'gen4_image_turbo',
+        'gemini_2.5_flash': 'gemini_2.5_flash',
+        'runway_image': 'runway_image'
+      }
+      const apiModel = modelMapping[selectedImageModel] || selectedImageModel
+      
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
@@ -395,7 +439,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         },
         body: JSON.stringify({
           prompt: prompt,
-          model: selectedImageModel,
+          model: apiModel,
         }),
       })
       
@@ -423,7 +467,11 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       const data = await response.json()
       
       if (data.success && data.url) {
-        setImageUrl(data.url)
+        // Set as original since this is the first generated image
+        const cacheBustUrl = `${data.url}${data.url.includes('?') ? '&' : '?'}_t=${Date.now()}`
+        setImageUrl(cacheBustUrl)
+        setOriginalImageUrl(cacheBustUrl)
+        setImageHistory([{ url: cacheBustUrl, label: 'Original', timestamp: Date.now() }])
         setImageGenerationProgress('Image generated successfully!')
         setProgressPercentage(100)
       } else {
@@ -450,6 +498,707 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
+  }
+
+  // Drag and drop handlers for image upload
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      const file = files[0]
+      
+      if (file.type.startsWith('image/')) {
+        setSelectedImage(file)
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const imageData = e.target?.result as string
+          setImagePreview(imageData)
+        }
+        reader.readAsDataURL(file)
+        setError(null)
+        setImageAnalysisResult(null)
+      } else {
+        setError('Please drop a valid image file (JPG, PNG, GIF, etc.)')
+      }
+    }
+  }
+
+  // Image upload handler
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const imageData = e.target?.result as string
+        setImagePreview(imageData)
+      }
+      reader.readAsDataURL(file)
+      setError(null)
+      setImageAnalysisResult(null)
+    } else {
+      setError('Please select a valid image file')
+    }
+  }
+
+  const clearSelectedImage = () => {
+    setSelectedImage(null)
+    setImagePreview(null)
+    setImageAnalysisResult(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  // Analyze image with AI vision model
+  const handleAnalyzeImage = async () => {
+    if (!selectedImage || !imagePreview) {
+      setError('Please upload an image first')
+      return
+    }
+
+    if (!user) {
+      setError('Please log in to analyze images')
+      return
+    }
+
+    try {
+      setIsAnalyzingImage(true)
+      setError(null)
+      setImageAnalysisResult(null)
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      // Use BLIP model for image analysis (it's free)
+      const analysisPrompt = prompt.trim() || 'Please describe this image in detail. What do you see? What are the key elements, colors, composition, and overall mood or theme?'
+      
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          prompt: analysisPrompt,
+          mode: 'blip', // Use BLIP vision model
+          temperature: 0.7,
+          max_tokens: 500,
+          response_style: 'detailed',
+          image: imagePreview
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to analyze image')
+      }
+
+      const data = await response.json()
+      const analysis = data.output || data.response || 'Analysis completed'
+      setImageAnalysisResult(analysis)
+
+      // Refresh credits
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
+    } catch (error: any) {
+      console.error('Image analysis error:', error)
+      setError(error.message || 'Failed to analyze image')
+    } finally {
+      setIsAnalyzingImage(false)
+    }
+  }
+
+  // Save image to library
+  const handleSaveImage = async () => {
+    if (!imageUrl) {
+      setSaveError('No image to save')
+      return
+    }
+
+    const promptToSave = prompt || enhancedPrompt || 'Image generation'
+    if (!promptToSave.trim()) {
+      setSaveError('Cannot save: Please provide a prompt')
+      return
+    }
+
+    setIsSaving(true)
+    setSaveStatus('saving')
+    setSaveError(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Please log in to save images')
+      }
+
+      // Map frontend model names to API model names for saving
+      const modelMapping: Record<string, string> = {
+        'dalle_image': 'dall-e-3',
+        'gpt-image-1': 'gpt-image-1',
+        'gen4_image': 'gen4_image',
+        'gen4_image_turbo': 'gen4_image_turbo',
+        'gemini_2.5_flash': 'gemini_2.5_flash',
+        'runway_image': 'runway_image'
+      }
+      const apiModel = modelMapping[selectedImageModel] || selectedImageModel
+
+      const response = await fetch('/api/generations/save-media', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          mediaUrl: imageUrl,
+          mediaType: 'image',
+          prompt: promptToSave,
+          model: apiModel
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save image')
+      }
+
+      setSaveStatus('saved')
+      console.log('Image saved successfully:', data)
+      
+      // Reset to idle after 3 seconds
+      setTimeout(() => {
+        setSaveStatus('idle')
+      }, 3000)
+
+    } catch (error: any) {
+      console.error('Save image error:', error)
+      setSaveStatus('error')
+      setSaveError(error.message || 'Failed to save image')
+      
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setSaveStatus('idle')
+        setSaveError(null)
+      }, 5000)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Debug: Monitor imageUrl changes
+  useEffect(() => {
+    console.log('[INPAINT DEBUG] imageUrl state changed:', imageUrl)
+    if (imageUrl) {
+      console.log('[INPAINT DEBUG] imageUrl length:', imageUrl.length, 'starts with:', imageUrl.substring(0, 50))
+    }
+  }, [imageUrl])
+
+  // Canvas setup for inpainting mask - only run when entering inpainting mode
+  useEffect(() => {
+    // Only set up canvas when entering inpainting mode (showInpainting becomes true)
+    // Don't re-run when imageUrl changes while in inpainting mode
+    if (!showInpainting || !imageUrl) {
+      console.log('[INPAINT DEBUG] Canvas setup skipped - showInpainting:', showInpainting, 'hasImageUrl:', !!imageUrl)
+      return
+    }
+    
+    console.log('[INPAINT DEBUG] Canvas setup triggered, showInpainting:', showInpainting, 'imageUrl:', imageUrl.substring(0, 100))
+    // Store current imageUrl to prevent stale closure issues
+    const currentImageUrl = imageUrl
+    
+    // Small delay to ensure canvas refs are set
+    const timeoutId = setTimeout(() => {
+      // Double-check we're still in inpainting mode before proceeding
+      if (!showInpainting) {
+        console.log('[INPAINT DEBUG] Canvas setup cancelled - inpainting mode closed')
+        return
+      }
+      
+      if (!imageCanvasRef.current || !maskCanvasRef.current) {
+        console.log('[INPAINT DEBUG] Canvas refs not ready')
+        return
+      }
+      
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      
+      // Use proxy route for external images to avoid CORS issues
+      const loadImage = async () => {
+        try {
+          // Check if it's an external URL (not a data URL or blob URL)
+          const isExternalUrl = currentImageUrl.startsWith('http://') || currentImageUrl.startsWith('https://')
+          
+          if (isExternalUrl) {
+            // Use our proxy API to load the image with CORS headers
+            const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(currentImageUrl)}`
+            img.src = proxyUrl
+          } else {
+            // Data URLs or blob URLs don't need proxying
+            img.src = currentImageUrl
+          }
+        } catch (error) {
+          console.error('[INPAINT DEBUG] Error setting up image source:', error)
+          setError('Failed to load image for inpainting. Please try again.')
+        }
+      }
+      
+      img.onload = () => {
+          // Keep the same size as displayed (max 800px height to match image display)
+          const maxHeight = 800
+          let width = img.width
+          let height = img.height
+          
+          // Scale down if needed
+          if (height > maxHeight) {
+            const scale = maxHeight / height
+            width = img.width * scale
+            height = maxHeight
+          }
+          
+          // Set both canvases to same size - use displayed size for canvas dimensions
+          // but keep internal resolution at image resolution for quality
+          if (imageCanvasRef.current) {
+            imageCanvasRef.current.width = img.width
+            imageCanvasRef.current.height = img.height
+            // Set display size
+            imageCanvasRef.current.style.width = `${width}px`
+            imageCanvasRef.current.style.height = `${height}px`
+            imageCanvasRef.current.style.maxWidth = '100%'
+            imageCanvasRef.current.style.maxHeight = '800px'
+          }
+          if (maskCanvasRef.current) {
+            maskCanvasRef.current.width = img.width
+            maskCanvasRef.current.height = img.height
+            // Set display size to match image canvas
+            maskCanvasRef.current.style.width = `${width}px`
+            maskCanvasRef.current.style.height = `${height}px`
+            maskCanvasRef.current.style.maxWidth = '100%'
+            maskCanvasRef.current.style.maxHeight = '800px'
+            // Position absolutely over image canvas
+            maskCanvasRef.current.style.position = 'absolute'
+            maskCanvasRef.current.style.top = '0'
+            maskCanvasRef.current.style.left = '0'
+          }
+          
+          // Draw the actual image on the background canvas
+          const imgCtx = imageCanvasRef.current.getContext('2d')
+          if (imgCtx) {
+            imgCtx.drawImage(img, 0, 0, img.width, img.height)
+          }
+          
+          // Initialize mask canvas - start with fully white (white = keep, black = edit)
+          const maskCtx = maskCanvasRef.current.getContext('2d')
+          if (maskCtx) {
+            // Fill entire canvas with white (transparent white won't work - need solid white)
+            maskCtx.fillStyle = 'white'
+            maskCtx.fillRect(0, 0, img.width, img.height)
+            console.log('[INPAINT DEBUG] Mask canvas initialized with white background (all areas will be kept)')
+          }
+        }
+        img.onerror = (error) => {
+          console.error('[INPAINT DEBUG] Failed to load image for inpainting:', error)
+          console.error('[INPAINT DEBUG] Failed URL was:', currentImageUrl)
+          setError('Failed to load image. Please ensure the image URL is accessible.')
+        }
+        
+        loadImage()
+      }, 100)
+      
+      // Cleanup function to clear timeout if component unmounts or state changes
+      return () => {
+        clearTimeout(timeoutId)
+      }
+    // Only depend on showInpainting - when it becomes true, set up canvas with current imageUrl
+    // Don't re-run when imageUrl changes during inpainting mode
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInpainting])
+
+  // Handle mask drawing
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!maskCanvasRef.current) return
+    setIsDrawing(true)
+    const rect = maskCanvasRef.current.getBoundingClientRect()
+    const ctx = maskCanvasRef.current.getContext('2d')
+    if (!ctx) return
+    
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    
+    // Scale coordinates to match actual canvas size
+    const scaleX = maskCanvasRef.current.width / rect.width
+    const scaleY = maskCanvasRef.current.height / rect.height
+    const canvasX = x * scaleX
+    const canvasY = y * scaleY
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)' // Black with some transparency so image shows through
+    ctx.beginPath()
+    ctx.arc(canvasX, canvasY, brushSize / 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !maskCanvasRef.current) return
+    const rect = maskCanvasRef.current.getBoundingClientRect()
+    const ctx = maskCanvasRef.current.getContext('2d')
+    if (!ctx) return
+    
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    
+    // Scale coordinates to match actual canvas size
+    const scaleX = maskCanvasRef.current.width / rect.width
+    const scaleY = maskCanvasRef.current.height / rect.height
+    const canvasX = x * scaleX
+    const canvasY = y * scaleY
+    
+    // Draw with fully opaque black for better mask detection
+    ctx.fillStyle = 'rgba(0, 0, 0, 1)' // Fully opaque black for clear mask
+    ctx.beginPath()
+    ctx.arc(canvasX, canvasY, brushSize / 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const handleCanvasMouseUp = () => {
+    setIsDrawing(false)
+  }
+
+  const clearMask = () => {
+    if (!maskCanvasRef.current) return
+    const ctx = maskCanvasRef.current.getContext('2d')
+    if (!ctx) return
+    // Clear mask - reset to white (keep everything)
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height)
+    console.log('[INPAINT DEBUG] Mask cleared - reset to white')
+  }
+
+  // Handle inpainting
+  const handleInpaint = async () => {
+    console.log('[INPAINT DEBUG] Starting inpainting process...')
+    console.log('[INPAINT DEBUG] Current imageUrl:', imageUrl)
+    console.log('[INPAINT DEBUG] Has maskCanvas:', !!maskCanvasRef.current)
+    console.log('[INPAINT DEBUG] Inpainting prompt:', inpaintingPrompt)
+    
+    if (!imageUrl || !maskCanvasRef.current || !inpaintingPrompt.trim()) {
+      console.error('[INPAINT DEBUG] Validation failed:', {
+        hasImageUrl: !!imageUrl,
+        hasMaskCanvas: !!maskCanvasRef.current,
+        hasPrompt: !!inpaintingPrompt.trim()
+      })
+      setError('Please draw a mask and enter an inpainting prompt')
+      return
+    }
+
+    if (!user) {
+      console.error('[INPAINT DEBUG] No user logged in')
+      setError('Please log in to use inpainting')
+      return
+    }
+
+    // Store original image URL before processing
+    const originalImageUrl = imageUrl
+    console.log('[INPAINT DEBUG] Stored original imageUrl:', originalImageUrl)
+
+    try {
+      setIsInpainting(true)
+      setError(null)
+      setInpaintingProgress('Preparing inpainting...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+      console.log('[INPAINT DEBUG] Session obtained')
+
+      // Check credits (inpainting costs 15 credits)
+      const requiredCredits = 15
+      const creditResponse = await fetch('/api/credits/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          requiredCredits: requiredCredits,
+          operation: 'check_and_deduct'
+        })
+      })
+
+      const creditData = await creditResponse.json()
+      console.log('[INPAINT DEBUG] Credit check result:', creditData)
+      if (!creditData.success) {
+        console.error('[INPAINT DEBUG] Credit check failed:', creditData)
+        setError(creditData.message || `Insufficient credits. Inpainting costs ${requiredCredits} credits.`)
+        setIsInpainting(false)
+        return
+      }
+
+      if (creditData.credits !== undefined) {
+        setUserCredits(creditData.credits)
+        console.log('[INPAINT DEBUG] Credits updated:', creditData.credits)
+      }
+
+      // Get mask as data URL - invert colors for OpenAI API (white = keep, black = edit)
+      if (!maskCanvasRef.current) {
+        throw new Error('Mask canvas not initialized')
+      }
+      
+      console.log('[INPAINT DEBUG] Creating mask canvas:', {
+        width: maskCanvasRef.current.width,
+        height: maskCanvasRef.current.height
+      })
+      
+      // Create a temporary canvas to create the proper mask format
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = maskCanvasRef.current.width
+      tempCanvas.height = maskCanvasRef.current.height
+      const tempCtx = tempCanvas.getContext('2d')
+      if (!tempCtx) throw new Error('Failed to create temp canvas context')
+      
+      // First, fill with white background (keep everything)
+      tempCtx.fillStyle = 'white'
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height)
+      
+      // Then draw the mask canvas on top (user's black drawings)
+      tempCtx.drawImage(maskCanvasRef.current, 0, 0)
+      console.log('[INPAINT DEBUG] Mask drawn to temp canvas with white background')
+      
+      // Get image data and process for OpenAI (white = keep, black = edit)
+      const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height)
+      const pixelData = imageData.data
+      console.log('[INPAINT DEBUG] Processing pixel data, length:', pixelData.length)
+      
+      let darkPixels = 0
+      let totalPixels = 0
+      let whitePixels = 0
+      let transparentPixels = 0
+      
+      // Sample pixels from different areas for debugging
+      const samplePixels: Array<{ r: number, g: number, b: number, a: number, index: number, isDrawn?: boolean }> = []
+      const sampleIndices = [
+        0, // Top-left corner (should be white)
+        Math.floor(pixelData.length / 8), // Top-middle
+        Math.floor(pixelData.length / 4), // Left-middle
+        Math.floor(pixelData.length / 2), // Center
+        Math.floor(pixelData.length * 3 / 4), // Right-middle
+        Math.floor(pixelData.length * 7 / 8) // Bottom-right
+      ]
+      
+      for (let i = 0; i < pixelData.length; i += 4) {
+        totalPixels++
+        const r = pixelData[i]
+        const g = pixelData[i + 1]
+        const b = pixelData[i + 2]
+        const a = pixelData[i + 3]
+        const avg = (r + g + b) / 3
+        
+        // Sample pixels at specific indices for debugging
+        const pixelIndex = i / 4
+        if (sampleIndices.includes(pixelIndex)) {
+          samplePixels.push({ r, g, b, a, index: pixelIndex })
+        }
+        
+        // Check if this is a drawn pixel - user draws black on white canvas
+        // White pixels (255,255,255) = keep (should be white in mask)
+        // Black pixels (avg < 100) = edit (should be black in mask)
+        // We start with white canvas, user draws black, so we look for very dark pixels
+        const isDrawn = avg < 50 // Very dark (black) - strict threshold
+        
+        if (isDrawn) {
+          darkPixels++
+          // Dark/drawn area - make it black (area to edit)
+          pixelData[i] = 0      // R
+          pixelData[i + 1] = 0  // G
+          pixelData[i + 2] = 0  // B
+          pixelData[i + 3] = 255 // A - fully opaque
+          
+          // Mark in sample if this was drawn
+          const existingSample = samplePixels.find(s => s.index === pixelIndex)
+          if (existingSample) {
+            existingSample.isDrawn = true
+          }
+        } else {
+          if (avg > 200 && a > 200) whitePixels++
+          if (a < 50) transparentPixels++
+          
+          // Light/transparent area - make it white (area to keep)
+          pixelData[i] = 255     // R
+          pixelData[i + 1] = 255 // G
+          pixelData[i + 2] = 255 // B
+          pixelData[i + 3] = 255 // A - fully opaque
+        }
+      }
+      
+      const maskPercentage = (darkPixels / totalPixels) * 100
+      console.log('[INPAINT DEBUG] Mask analysis:', {
+        darkPixels,
+        totalPixels,
+        whitePixels,
+        transparentPixels,
+        maskPercentage: `${maskPercentage.toFixed(2)}%`,
+        hasMaskContent: darkPixels > 0,
+        threshold: 'avg < 50',
+        samplePixels: samplePixels.map(p => ({
+          ...p,
+          avg: ((p.r + p.g + p.b) / 3).toFixed(1),
+          detected: p.isDrawn ? 'DRAWN' : 'KEEP'
+        }))
+      })
+      
+      if (darkPixels === 0) {
+        throw new Error('No mask drawn! Please draw on the image to mark areas to inpaint.')
+      }
+      
+      if (maskPercentage > 95) {
+        console.warn('[INPAINT DEBUG] WARNING: Mask covers 95%+ of image. This might be a detection issue.')
+        throw new Error('Mask appears to cover the entire image. Please clear the mask and draw only on the areas you want to change.')
+      }
+      
+      if (maskPercentage < 0.1) {
+        console.warn('[INPAINT DEBUG] Very small mask detected:', maskPercentage, '%. Proceeding anyway...')
+      }
+      
+      console.log('[INPAINT DEBUG] Mask processed successfully. Areas to edit:', maskPercentage.toFixed(2), '%')
+      
+      tempCtx.putImageData(imageData, 0, 0)
+      const maskDataUrl = tempCanvas.toDataURL('image/png')
+      console.log('[INPAINT DEBUG] Mask data URL created, length:', maskDataUrl.length)
+      console.log('[INPAINT DEBUG] Image URL being sent:', imageUrl)
+      console.log('[INPAINT DEBUG] Prompt being sent:', inpaintingPrompt)
+      console.log('[INPAINT DEBUG] Model being used:', selectedInpaintModel)
+
+      setInpaintingProgress('Sending to inpainting API...')
+
+      const requestBody = {
+        imageUrl: imageUrl,
+        maskDataUrl: maskDataUrl,
+        prompt: inpaintingPrompt,
+        model: selectedInpaintModel
+      }
+      console.log('[INPAINT DEBUG] Request body prepared:', {
+        imageUrl: requestBody.imageUrl,
+        maskDataUrlLength: requestBody.maskDataUrl.length,
+        prompt: requestBody.prompt,
+        model: requestBody.model
+      })
+
+      const response = await fetch('/api/inpaint-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      console.log('[INPAINT DEBUG] API response status:', response.status, response.statusText)
+      const data = await response.json()
+      console.log('[INPAINT DEBUG] API response data:', {
+        success: data.success,
+        hasUrl: !!data.url,
+        url: data.url,
+        error: data.error,
+        refunded: data.refunded
+      })
+
+      if (!response.ok) {
+        console.error('[INPAINT DEBUG] API returned error:', data)
+        if (data.refunded && data.newBalance !== undefined) {
+          console.log('[INPAINT DEBUG] Credits refunded, new balance:', data.newBalance)
+          setUserCredits(data.newBalance)
+        }
+        throw new Error(data.error || 'Inpainting failed')
+      }
+
+      if (data.success && data.url) {
+        console.log('[INPAINT DEBUG] Inpainting successful!')
+        console.log('[INPAINT DEBUG] Old imageUrl:', imageUrl)
+        console.log('[INPAINT DEBUG] New imageUrl:', data.url)
+        console.log('[INPAINT DEBUG] Setting new image URL and closing inpainting mode...')
+        
+        // Update image URL with the new inpainted image FIRST
+        // Add cache-busting parameter to force browser to reload
+        const cacheBustUrl = `${data.url}${data.url.includes('?') ? '&' : '?'}_t=${Date.now()}`
+        console.log('[INPAINT DEBUG] imageUrl state update called with:', cacheBustUrl)
+        console.log('[INPAINT DEBUG] Current imageUrl before update:', imageUrl)
+        
+        // Preserve original if this is the first edit
+        if (!originalImageUrl) {
+          setOriginalImageUrl(imageUrl)
+          setImageHistory([{ url: imageUrl || '', label: 'Original', timestamp: Date.now() - 1 }])
+        }
+        
+        // Add new version to history
+        const newVersion = { url: cacheBustUrl, label: `Edit ${imageHistory.length + 1}`, timestamp: Date.now() }
+        setImageHistory(prev => [...prev, newVersion])
+        
+        // Force update the image URL with cache-busting
+        setImageUrl(cacheBustUrl)
+        
+        // Use a callback to verify the state update
+        setTimeout(() => {
+          console.log('[INPAINT DEBUG] Verifying imageUrl update after 50ms...')
+          // This will log in the useEffect that monitors imageUrl changes
+        }, 50)
+        
+        // Wait a moment for state to update, then close inpainting mode
+        // This ensures the imageUrl state is set before showInpainting changes
+        setTimeout(() => {
+          console.log('[INPAINT DEBUG] Closing inpainting mode after state update...')
+          // Close inpainting mode
+          setShowInpainting(false)
+          console.log('[INPAINT DEBUG] showInpainting set to false')
+          
+          // Clear inpainting prompt
+          setInpaintingPrompt("")
+          console.log('[INPAINT DEBUG] inpaintingPrompt cleared')
+          
+          setInpaintingProgress('Inpainting completed!')
+          console.log('[INPAINT DEBUG] Inpainting progress set to completed')
+        }, 200)
+        
+        // Refresh credits
+        if (user?.id) {
+          setTimeout(() => fetchUserCredits(user.id), 500)
+        }
+        
+        console.log('[INPAINT DEBUG] State update initiated, will close inpainting mode shortly')
+      } else {
+        console.error('[INPAINT DEBUG] No image URL in response:', data)
+        throw new Error('No image URL returned from inpainting')
+      }
+
+    } catch (error: any) {
+      console.error('[INPAINT DEBUG] Inpainting error caught:', error)
+      console.error('[INPAINT DEBUG] Error message:', error.message)
+      console.error('[INPAINT DEBUG] Error stack:', error.stack)
+      console.error('[INPAINT DEBUG] Current imageUrl at error:', imageUrl)
+      setError(error.message || 'Failed to inpaint image')
+      if (user?.id) {
+        setTimeout(() => fetchUserCredits(user.id), 500)
+      }
+    } finally {
+      console.log('[INPAINT DEBUG] Finally block - resetting inpainting state')
+      setIsInpainting(false)
+      setInpaintingProgress('')
+      console.log('[INPAINT DEBUG] Final imageUrl state:', imageUrl)
+    }
   }
 
   // Get image model display info
@@ -505,20 +1254,22 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
               className="flex items-center gap-1 sm:gap-2 text-purple-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-purple-400/10"
             >
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">Memory Core</span>
-            </Link>
-            <Link
-              href="/ai-settings"
-              className="flex items-center gap-1 sm:gap-2 text-purple-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-purple-400/10"
-            >
-              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">AI Settings</span>
+              <span className="hidden sm:inline text-sm">Memory</span>
             </Link>
           </div>
 
           {/* User Actions */}
           {user ? (
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              {isAdmin && (
+                <button
+                  onClick={() => setShowPanels(!showPanels)}
+                  className="flex items-center gap-1 sm:gap-2 text-purple-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-purple-400/10"
+                >
+                  {showPanels ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
+                  <span className="hidden sm:inline text-sm">{showPanels ? 'Hide Panels' : 'Show Panels'}</span>
+                </button>
+              )}
               <Link
                 href="/profile"
                 className="flex items-center gap-1 sm:gap-2 text-purple-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-purple-400/10"
@@ -553,20 +1304,70 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 space-y-6">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              <span className="text-purple-400">🖼️</span>{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-purple-600">
-                IMAGE MODE
-              </span>
-            </h1>
-            <p className="text-gray-300 text-lg">
-              AI-powered image generation with prompt enhancement
-            </p>
-          </div>
+        {showPanels && isAdmin ? (
+          <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8">
+            {/* Left Panel */}
+            <div className="hidden lg:block lg:col-span-3 space-y-6">
+              <HudPanel title="Image Generation Core">
+                <p className="flex items-center gap-2">
+                  <AztecIcon name="sun-stone" className="text-purple-400 animate-icon-pulse" /> 
+                  Model Status: <span className="text-green-400">ACTIVE</span>
+                </p>
+                <p className="flex items-center gap-2">
+                  <AztecIcon name="sun-stone" className="text-purple-400 animate-icon-pulse" /> 
+                  Current Model: <span className="text-white">{selectedImageModel.toUpperCase()}</span>
+                </p>
+                <p>
+                  Enhancement Model: <span className="text-white">{selectedLLM.toUpperCase()}</span>
+                </p>
+                <p>
+                  Aspect Ratio: <span className="text-white">{imageRatio}</span>
+                </p>
+              </HudPanel>
+              
+              <HudPanel title="Generation Status">
+                {isGeneratingImage ? (
+                  <>
+                    <p className="flex items-center gap-2 text-purple-400">
+                      <AztecIcon name="serpent" className="text-purple-400 animate-icon-pulse" /> 
+                      Generating...
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {imageGenerationProgress || 'Processing request'}
+                    </p>
+                    <p className="text-xs text-purple-400 mt-1">
+                      Progress: {progressPercentage}%
+                    </p>
+                  </>
+                ) : imageUrl ? (
+                  <p className="flex items-center gap-2 text-green-400">
+                    <AztecIcon name="serpent" className="text-green-400 animate-icon-pulse" /> 
+                    Image Ready
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-gray-500">
+                    <AztecIcon name="serpent" className="text-gray-500" /> 
+                    Awaiting Generation
+                  </p>
+                )}
+              </HudPanel>
+            </div>
 
-          <div className="max-w-5xl mx-auto space-y-6">
+            {/* Center Panel - Main Content */}
+            <div className="flex flex-col space-y-6 col-span-1 lg:col-span-6">
+              <div className="text-center mb-8">
+                <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                  <span className="text-purple-400">🖼️</span>{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-purple-600">
+                    IMAGE MODE
+                  </span>
+                </h1>
+                <p className="text-gray-300 text-lg">
+                  AI-powered image generation with prompt enhancement • Upload and scan images with AI vision models
+                </p>
+              </div>
+
+              <div className="w-full space-y-6">
             {/* Model Selectors */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {/* LLM Model Selector */}
@@ -617,6 +1418,107 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
               </div>
             </div>
 
+            {/* Image Upload Section for AI Scanning */}
+            <div 
+              className={`aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20 transition-all duration-300 relative ${
+                isDragOver ? 'scale-105 border-2 border-dashed border-purple-400 bg-purple-900/40' : ''
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-white">📷 Scan Image with AI</h2>
+                  {selectedImage && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={clearSelectedImage}
+                      className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
+
+                {/* Drag Overlay */}
+                {isDragOver && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-purple-900/50 backdrop-blur-sm rounded-lg z-20">
+                    <div className="text-center text-purple-400">
+                      <Upload className="h-16 w-16 mx-auto mb-4 animate-bounce" />
+                      <p className="text-xl font-bold">Drop Image Here</p>
+                      <p className="text-sm">JPG, PNG, GIF, or other image formats</p>
+                    </div>
+                  </div>
+                )}
+
+                {!selectedImage ? (
+                  <div className="text-center py-8">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                    <Button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white mb-4"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Image
+                    </Button>
+                    <p className="text-purple-300 text-sm">or drag & drop an image here</p>
+                    <p className="text-purple-400 text-xs mt-2">Upload an image to analyze it with AI vision models</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-4">
+                      {imagePreview && (
+                        <img 
+                          src={imagePreview} 
+                          alt="Selected image" 
+                          className="w-32 h-32 object-cover rounded-lg border border-purple-500/50 shadow-lg"
+                        />
+                      )}
+                      <div className="flex-1">
+                        <p className="text-purple-300 text-sm font-medium">{selectedImage.name}</p>
+                        <p className="text-purple-400 text-xs mb-2">{(selectedImage.size / 1024 / 1024).toFixed(2)} MB</p>
+                        <p className="text-green-400 text-xs mb-4">✅ Image loaded! Ask a question about it below or click "Analyze Image" for a detailed description.</p>
+                        <Button
+                          onClick={handleAnalyzeImage}
+                          disabled={isAnalyzingImage}
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                        >
+                          {isAnalyzingImage ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <BrainCircuit className="h-4 w-4 mr-2" />
+                              Analyze Image with AI
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Image Analysis Result */}
+                {imageAnalysisResult && (
+                  <div className="mt-4 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
+                    <h3 className="text-green-400 text-sm font-semibold mb-2">AI Analysis Result:</h3>
+                    <p className="text-green-300 text-sm whitespace-pre-wrap">{imageAnalysisResult}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Prompt Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20">
               <div className="space-y-4">
@@ -646,18 +1548,42 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 </div>
 
                 <textarea
-                  placeholder="Describe the image you want to generate... (e.g., 'A futuristic cityscape at sunset', 'A portrait of a cyberpunk warrior')"
+                  placeholder={
+                    selectedImage 
+                      ? "Ask a question about the uploaded image... (e.g., 'What objects do you see?', 'Describe the colors and mood', 'What is the main subject?') Or describe an image you want to generate..."
+                      : "Describe the image you want to generate... (e.g., 'A futuristic cityscape at sunset', 'A portrait of a cyberpunk warrior')"
+                  }
                   className="w-full bg-black/30 text-lg text-white placeholder-purple-600 resize-none border border-purple-500/30 rounded-lg p-4 focus:ring-2 focus:ring-purple-400 min-h-[120px]"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                 />
 
-                {/* Enhance Prompt Button */}
-                <div className="flex items-center gap-2">
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedImage && (
+                    <Button
+                      onClick={handleAnalyzeImage}
+                      disabled={isAnalyzingImage || !user}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
+                    >
+                      {isAnalyzingImage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <BrainCircuit className="h-4 w-4 mr-2" />
+                          Analyze Image
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     onClick={enhancePromptWithLLM}
-                    disabled={!prompt.trim() || isEnhancingPrompt}
+                    disabled={!prompt.trim() || isEnhancingPrompt || !!selectedImage}
                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                    title={selectedImage ? "Clear the uploaded image first to enhance prompts" : "Enhance your prompt with AI"}
                   >
                     {isEnhancingPrompt ? (
                       <>
@@ -696,6 +1622,22 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                   </Select>
                   <p className="text-purple-400/70 text-xs mt-2">
                     Note: Some models may have limited ratio support
+                  </p>
+                </div>
+                
+                {/* Inpainting Model Selector */}
+                <div>
+                  <label className="text-purple-400 text-sm font-medium mb-2 block">Inpainting Model</label>
+                  <Select value={selectedInpaintModel} onValueChange={setSelectedInpaintModel}>
+                    <SelectTrigger className="bg-black/30 border-purple-500/50 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-purple-500/50">
+                      <SelectItem value="dall-e-2" className="text-purple-300 hover:bg-purple-500/20">DALL-E 2 (15 credits)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-purple-400/70 text-xs mt-2">
+                    Used for editing/inpainting generated images
                   </p>
                 </div>
               </div>
@@ -766,24 +1708,888 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                     </span>
                   )}
                 </div>
-                <img 
-                  src={imageUrl} 
-                  alt="Generated" 
-                  className="w-full rounded-lg border border-green-500/30 max-h-[800px] object-contain"
+                
+                {/* Image Versions Thumbnails */}
+                {imageHistory.length > 1 && !showInpainting && (
+                  <div className="mb-4 p-3 bg-black/30 rounded-lg border border-purple-500/20">
+                    <p className="text-sm text-purple-300 mb-2 font-medium">Versions (click to view):</p>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {originalImageUrl && (
+                        <button
+                          onClick={() => {
+                            setImageUrl(originalImageUrl)
+                            console.log('[INPAINT DEBUG] Switched to original image')
+                          }}
+                          className={`flex-shrink-0 group relative ${imageUrl === originalImageUrl ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-neutral-900' : 'opacity-70 hover:opacity-100'}`}
+                        >
+                          <img
+                            src={originalImageUrl}
+                            alt="Original"
+                            className="w-20 h-20 object-cover rounded border-2 border-purple-500/30 group-hover:border-purple-400 transition-colors"
+                          />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-1 px-1 rounded-b text-center">
+                            Original
+                          </div>
+                        </button>
+                      )}
+                      {imageHistory.filter(v => v.url !== originalImageUrl).map((version, idx) => (
+                        <button
+                          key={version.timestamp}
+                          onClick={() => {
+                            setImageUrl(version.url)
+                            console.log('[INPAINT DEBUG] Switched to version:', version.label)
+                          }}
+                          className={`flex-shrink-0 group relative ${imageUrl === version.url ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-neutral-900' : 'opacity-70 hover:opacity-100'}`}
+                        >
+                          <img
+                            src={version.url}
+                            alt={version.label}
+                            className="w-20 h-20 object-cover rounded border-2 border-purple-500/30 group-hover:border-purple-400 transition-colors"
+                          />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-1 px-1 rounded-b text-center">
+                            {version.label}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {!showInpainting ? (
+                  <>
+                    <img 
+                      key={`inpaint-${imageUrl}`} 
+                      src={imageUrl} 
+                      alt="Generated" 
+                      className="w-full rounded-lg border border-green-500/30 max-h-[800px] object-contain"
+                      onLoad={(e) => {
+                        const img = e.target as HTMLImageElement
+                        console.log('[INPAINT DEBUG] Image loaded:', img.src)
+                        console.log('[INPAINT DEBUG] Image naturalWidth:', img.naturalWidth, 'naturalHeight:', img.naturalHeight)
+                      }}
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement
+                        console.error('[INPAINT DEBUG] Image failed to load:', img.src)
+                      }}
+                      style={{ imageRendering: 'auto' }}
+                    />
+                    <div className="mt-4 flex gap-2 flex-wrap">
+                      <a 
+                        href={imageUrl} 
+                        download
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        Download Image
+                      </a>
+                      <Button
+                        onClick={() => setShowInpainting(true)}
+                        disabled={!user}
+                        className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
+                        variant="outline"
+                      >
+                        <Paintbrush className="h-4 w-4" />
+                        Inpaint Image
+                      </Button>
+                      <Button
+                        onClick={handleSaveImage}
+                        disabled={isSaving || saveStatus === 'saved' || !user}
+                        className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                        variant="outline"
+                      >
+                        {saveStatus === 'saving' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : saveStatus === 'saved' ? (
+                          <>
+                            <Check className="h-4 w-4" />
+                            Saved!
+                          </>
+                        ) : (
+                          <>
+                            <BookUser className="h-4 w-4" />
+                            Save to Library
+                          </>
+                        )}
+                      </Button>
+                      {saveError && (
+                        <div className="w-full mt-2 text-sm text-red-400">
+                          {saveError}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Inpainting Canvas */}
+                    <div className="relative border border-purple-500/50 rounded-lg overflow-hidden bg-gray-900 flex justify-center items-start">
+                      <div className="relative inline-block">
+                        {/* Background image canvas - displays the actual image */}
+                        <canvas
+                          ref={imageCanvasRef}
+                          className="block"
+                          style={{ 
+                            pointerEvents: 'none',
+                            display: 'block',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto'
+                          }}
+                        />
+                        {/* Overlay mask canvas for drawing */}
+                        <canvas
+                          ref={maskCanvasRef}
+                          className="absolute top-0 left-0 block cursor-crosshair"
+                          onMouseDown={handleCanvasMouseDown}
+                          onMouseMove={handleCanvasMouseMove}
+                          onMouseUp={handleCanvasMouseUp}
+                          onMouseLeave={handleCanvasMouseUp}
+                          style={{ 
+                            display: 'block',
+                            backgroundColor: 'transparent',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto',
+                            mixBlendMode: 'normal' // Don't blend - show actual colors
+                          }}
+                        />
+                        <div className="absolute top-2 left-2 bg-black/70 text-white px-3 py-1 rounded text-xs z-10 pointer-events-none">
+                          Draw on the image to mark areas to inpaint (black = area to change)
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Inpainting Controls */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="text-purple-400 text-sm font-medium">Brush Size:</label>
+                        <input
+                          type="range"
+                          min="10"
+                          max="100"
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-purple-300 text-sm w-12">{brushSize}px</span>
+                      </div>
+                      
+                      <Button
+                        onClick={clearMask}
+                        variant="outline"
+                        size="sm"
+                        className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                      >
+                        <Eraser className="h-4 w-4 mr-2" />
+                        Clear Mask
+                      </Button>
+                      
+                      <div>
+                        <label className="text-purple-400 text-sm font-medium mb-2 block">Inpainting Prompt</label>
+                        <textarea
+                          placeholder="Describe what you want in the masked area... (e.g., 'a red car', 'a beautiful sunset', 'remove the background')"
+                          className="w-full bg-black/30 text-white placeholder-purple-600 resize-none border border-purple-500/30 rounded-lg p-3 focus:ring-2 focus:ring-purple-400 min-h-[80px]"
+                          value={inpaintingPrompt}
+                          onChange={(e) => setInpaintingPrompt(e.target.value)}
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleInpaint}
+                          disabled={isInpainting || !inpaintingPrompt.trim() || !maskCanvasRef.current}
+                          className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                        >
+                          {isInpainting ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Inpainting...
+                            </>
+                          ) : (
+                            <>
+                              <Paintbrush className="h-4 w-4 mr-2" />
+                              Inpaint ({inpaintingProgress || '15 credits'})
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowInpainting(false)
+                            setInpaintingPrompt("")
+                            clearMask()
+                          }}
+                          variant="outline"
+                          className="border-gray-500/50 text-gray-400 hover:bg-gray-500/10"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      
+                      {inpaintingProgress && (
+                        <div className="text-purple-400 text-sm">
+                          {inpaintingProgress}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+              </div>
+            </div>
+
+            {/* Right Panel */}
+            <div className="hidden lg:block lg:col-span-3 space-y-6">
+              <HudPanel title="Image Analysis">
+                {selectedImage ? (
+                  <>
+                    <p className="flex items-center gap-2 text-purple-400">
+                      <AztecIcon name="jaguar" className="text-purple-400 animate-icon-pulse" /> 
+                      Image Loaded
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {selectedImage.name}
+                    </p>
+                    <p className="text-xs text-purple-300 mt-1">
+                      Ready for AI analysis
+                    </p>
+                  </>
+                ) : (
+                  <p className="flex items-center gap-2 text-gray-500">
+                    <AztecIcon name="jaguar" className="text-gray-500" /> 
+                    No image uploaded
+                  </p>
+                )}
+              </HudPanel>
+
+              <HudPanel title="User Stats">
+                <p className="flex items-center gap-2">
+                  <AztecIcon name="jaguar" className="text-green-400 animate-icon-pulse" /> 
+                  Credits: <span className="text-white">{userCredits}</span>
+                </p>
+                {imageUrl && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Image Generated: ✅
+                  </p>
+                )}
+                {prompt && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Prompt Length: {prompt.length} chars
+                  </p>
+                )}
+              </HudPanel>
+
+              <HudPanel title="Data Stream">
+                {isGeneratingImage ? (
+                  <p className="truncate text-purple-400">[LIVE] Generating Image...</p>
+                ) : imageUrl ? (
+                  <p className="truncate text-green-400">[DONE] Image Generated</p>
+                ) : (
+                  <p className="truncate text-gray-600">[IDLE] Awaiting Input...</p>
+                )}
+                {isEnhancingPrompt && (
+                  <p className="truncate text-purple-400 mt-1">[PROC] Enhancing Prompt...</p>
+                )}
+                {isAnalyzingImage && (
+                  <p className="truncate text-cyan-400 mt-1">[PROC] Analyzing Image...</p>
+                )}
+                {error && (
+                  <p className="truncate text-red-400 mt-1">[ERROR] {error.substring(0, 30)}...</p>
+                )}
+              </HudPanel>
+            </div>
+          </main>
+        ) : (
+          <main className="flex-1 space-y-6">
+            <div className="text-center mb-8">
+              <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                <span className="text-purple-400">🖼️</span>{" "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-purple-600">
+                  IMAGE MODE
+                </span>
+              </h1>
+              <p className="text-gray-300 text-lg">
+                AI-powered image generation with prompt enhancement • Upload and scan images with AI vision models
+              </p>
+            </div>
+
+            <div className="max-w-5xl mx-auto space-y-6">
+            {/* Model Selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* LLM Model Selector */}
+              <div className="bg-neutral-900/50 p-4 rounded-2xl border border-purple-500/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <BrainCircuit className="h-5 w-5 text-purple-400" />
+                  <span className="text-purple-400 text-sm font-semibold uppercase">Prompt Enhancement Model</span>
+                </div>
+                <Select value={selectedLLM} onValueChange={setSelectedLLM}>
+                  <SelectTrigger className="bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md">
+                    <SelectItem value="gpt-4o" className="text-purple-300 hover:bg-purple-500/20">GPT-4O</SelectItem>
+                    <SelectItem value="gpt-4o-mini" className="text-purple-300 hover:bg-purple-500/20">GPT-4O MINI</SelectItem>
+                    <SelectItem value="gpt-4-turbo" className="text-purple-300 hover:bg-purple-500/20">GPT-4 TURBO</SelectItem>
+                    <SelectItem value="gpt-4" className="text-purple-300 hover:bg-purple-500/20">GPT-4</SelectItem>
+                    <SelectItem value="gpt-3.5-turbo" className="text-purple-300 hover:bg-purple-500/20">GPT-3.5 TURBO</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-purple-400 text-xs mt-2">
+                  Enhances your image prompts with artistic details
+                </p>
+              </div>
+
+              {/* Image Model Selector */}
+              <div className="bg-neutral-900/50 p-4 rounded-2xl border border-purple-500/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <ImageIcon className="h-5 w-5 text-purple-400" />
+                  <span className="text-purple-400 text-sm font-semibold uppercase">Image Generation Model</span>
+                </div>
+                <Select value={selectedImageModel} onValueChange={setSelectedImageModel}>
+                  <SelectTrigger className="bg-transparent border-purple-500/50 text-purple-300 hover:border-purple-400">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black/90 border-purple-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                    {isModelEnabled('dalle_image') && <SelectItem value="dalle_image" className="text-purple-300 hover:bg-purple-500/20">DALL-E 3</SelectItem>}
+                    {isModelEnabled('gpt-image-1') && <SelectItem value="gpt-image-1" className="text-purple-300 hover:bg-purple-500/20">GPT IMAGE 1</SelectItem>}
+                    {isModelEnabled('gen4_image') && <SelectItem value="gen4_image" className="text-purple-300 hover:bg-purple-500/20">RUNWAY GEN4 IMAGE</SelectItem>}
+                    {isModelEnabled('gen4_image_turbo') && <SelectItem value="gen4_image_turbo" className="text-purple-300 hover:bg-purple-500/20">RUNWAY GEN4 IMAGE TURBO</SelectItem>}
+                    {isModelEnabled('gemini_2.5_flash') && <SelectItem value="gemini_2.5_flash" className="text-purple-300 hover:bg-purple-500/20">GEMINI 2.5 FLASH</SelectItem>}
+                    {isModelEnabled('runway_image') && <SelectItem value="runway_image" className="text-purple-300 hover:bg-purple-500/20">RUNWAY GEN-4 (LEGACY)</SelectItem>}
+                  </SelectContent>
+                </Select>
+                <p className="text-purple-400 text-xs mt-2">
+                  {getImageModelInfo(selectedImageModel).cost} • {getImageModelInfo(selectedImageModel).features}
+                </p>
+              </div>
+            </div>
+
+            {/* Image Upload Section for AI Scanning */}
+            <div 
+              className={`aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20 transition-all duration-300 relative ${
+                isDragOver ? 'scale-105 border-2 border-dashed border-purple-400 bg-purple-900/40' : ''
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-white">📷 Scan Image with AI</h2>
+                  {selectedImage && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={clearSelectedImage}
+                      className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
+
+                {/* Drag Overlay */}
+                {isDragOver && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-purple-900/50 backdrop-blur-sm rounded-lg z-20">
+                    <div className="text-center text-purple-400">
+                      <Upload className="h-16 w-16 mx-auto mb-4 animate-bounce" />
+                      <p className="text-xl font-bold">Drop Image Here</p>
+                      <p className="text-sm">JPG, PNG, GIF, or other image formats</p>
+                    </div>
+                  </div>
+                )}
+
+                {!selectedImage ? (
+                  <div className="text-center py-8">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                    <Button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white mb-4"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Image
+                    </Button>
+                    <p className="text-purple-300 text-sm">or drag & drop an image here</p>
+                    <p className="text-purple-400 text-xs mt-2">Upload an image to analyze it with AI vision models</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-4">
+                      {imagePreview && (
+                        <img 
+                          src={imagePreview} 
+                          alt="Selected image" 
+                          className="w-32 h-32 object-cover rounded-lg border border-purple-500/50 shadow-lg"
+                        />
+                      )}
+                      <div className="flex-1">
+                        <p className="text-purple-300 text-sm font-medium">{selectedImage.name}</p>
+                        <p className="text-purple-400 text-xs mb-2">{(selectedImage.size / 1024 / 1024).toFixed(2)} MB</p>
+                        <p className="text-green-400 text-xs mb-4">✅ Image loaded! Ask a question about it below or click "Analyze Image" for a detailed description.</p>
+                        <Button
+                          onClick={handleAnalyzeImage}
+                          disabled={isAnalyzingImage}
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                        >
+                          {isAnalyzingImage ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <BrainCircuit className="h-4 w-4 mr-2" />
+                              Analyze Image with AI
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Image Analysis Result */}
+                {imageAnalysisResult && (
+                  <div className="mt-4 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
+                    <h3 className="text-green-400 text-sm font-semibold mb-2">AI Analysis Result:</h3>
+                    <p className="text-green-300 text-sm whitespace-pre-wrap">{imageAnalysisResult}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Prompt Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-white">Image Prompt</h2>
+                  <div className="flex items-center gap-2">
+                    {userCredits <= 50 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCreditsDialog(true)}
+                        className={`${userCredits <= 10 ? 'text-red-400 hover:bg-red-400/10' : 'text-purple-400 hover:bg-purple-400/10'}`}
+                      >
+                        <CreditCard className="h-4 w-4 mr-2" />
+                        {userCredits} credits
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.location.reload()}
+                      className="text-purple-400 hover:bg-purple-400/10"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <textarea
+                  placeholder={
+                    selectedImage 
+                      ? "Ask a question about the uploaded image... (e.g., 'What objects do you see?', 'Describe the colors and mood', 'What is the main subject?') Or describe an image you want to generate..."
+                      : "Describe the image you want to generate... (e.g., 'A futuristic cityscape at sunset', 'A portrait of a cyberpunk warrior')"
+                  }
+                  className="w-full bg-black/30 text-lg text-white placeholder-purple-600 resize-none border border-purple-500/30 rounded-lg p-4 focus:ring-2 focus:ring-purple-400 min-h-[120px]"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
                 />
-                <div className="mt-4 flex gap-2">
-                  <a 
-                    href={imageUrl} 
-                    download
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedImage && (
+                    <Button
+                      onClick={handleAnalyzeImage}
+                      disabled={isAnalyzingImage || !user}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
+                    >
+                      {isAnalyzingImage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <BrainCircuit className="h-4 w-4 mr-2" />
+                          Analyze Image
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <Button
+                    onClick={enhancePromptWithLLM}
+                    disabled={!prompt.trim() || isEnhancingPrompt || !!selectedImage}
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                    title={selectedImage ? "Clear the uploaded image first to enhance prompts" : "Enhance your prompt with AI"}
                   >
-                    Download Image
-                  </a>
+                    {isEnhancingPrompt ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                        Enhancing...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="h-4 w-4 mr-2" />
+                        Enhance Prompt with AI
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Image Settings */}
+            <div className="bg-neutral-900/50 p-6 rounded-2xl border border-purple-500/30">
+              <h3 className="text-lg font-semibold text-white mb-4">Image Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Aspect Ratio */}
+                <div>
+                  <label className="text-purple-400 text-sm font-medium mb-2 block">Aspect Ratio</label>
+                  <Select value={imageRatio} onValueChange={setImageRatio}>
+                    <SelectTrigger className="bg-black/30 border-purple-500/50 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-purple-500/50">
+                      <SelectItem value="1024:1024">1:1 Square</SelectItem>
+                      <SelectItem value="1024:1792">9:16 Portrait</SelectItem>
+                      <SelectItem value="1792:1024">16:9 Landscape</SelectItem>
+                      <SelectItem value="1536:640">21:9 Ultra Wide</SelectItem>
+                      <SelectItem value="640:1536">9:21 Tall</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-purple-400/70 text-xs mt-2">
+                    Note: Some models may have limited ratio support
+                  </p>
+                </div>
+                
+                {/* Inpainting Model Selector */}
+                <div>
+                  <label className="text-purple-400 text-sm font-medium mb-2 block">Inpainting Model</label>
+                  <Select value={selectedInpaintModel} onValueChange={setSelectedInpaintModel}>
+                    <SelectTrigger className="bg-black/30 border-purple-500/50 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black/90 border-purple-500/50">
+                      <SelectItem value="dall-e-2" className="text-purple-300 hover:bg-purple-500/20">DALL-E 2 (15 credits)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-purple-400/70 text-xs mt-2">
+                    Used for editing/inpainting generated images
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-900/20 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {/* Image Generation Progress */}
+            {isGeneratingImage && (
+              <div className="space-y-3">
+                <div className="relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-purple-800 p-5 rounded-md border-2 border-purple-400/60">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  <div className="relative flex items-center justify-center gap-3">
+                    <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/40 border-t-white"></div>
+                    <span className="text-white/80 text-lg sm:text-xl font-bold tracking-[0.2em] uppercase">
+                      {imageGenerationProgress || 'GENERATING IMAGE...'}
+                    </span>
+                  </div>
+                </div>
+                {/* Progress Bar */}
+                <div className="w-full bg-black/40 rounded-full h-3 border border-purple-500/50 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-800 transition-all duration-500 ease-out"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+                {/* Percentage Display */}
+                <div className="text-center">
+                  <span className="text-purple-400 text-2xl font-bold">
+                    {progressPercentage}%
+                  </span>
                 </div>
               </div>
             )}
-          </div>
-        </main>
+
+            {/* Generate Button */}
+            <Button
+              onClick={handleGenerateImage}
+              disabled={isGeneratingImage || !prompt.trim()}
+              className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-purple-800 hover:from-purple-700 hover:via-pink-700 hover:to-purple-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+            >
+              {isGeneratingImage ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                  GENERATING IMAGE...
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="h-5 w-5 mr-3" />
+                  GENERATE IMAGE
+                </>
+              )}
+            </Button>
+
+            {/* Generated Image */}
+            {imageUrl && (
+              <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">Generated Image</h3>
+                  {imageRatio && (
+                    <span className="text-sm text-purple-400 font-mono bg-purple-500/10 px-3 py-1 rounded-lg border border-purple-500/30">
+                      Ratio: {imageRatio}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Image Versions Thumbnails */}
+                {imageHistory.length > 1 && !showInpainting && (
+                  <div className="mb-4 p-3 bg-black/30 rounded-lg border border-purple-500/20">
+                    <p className="text-sm text-purple-300 mb-2 font-medium">Versions (click to view):</p>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {originalImageUrl && (
+                        <button
+                          onClick={() => {
+                            setImageUrl(originalImageUrl)
+                            console.log('[INPAINT DEBUG] Switched to original image')
+                          }}
+                          className={`flex-shrink-0 group relative ${imageUrl === originalImageUrl ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-neutral-900' : 'opacity-70 hover:opacity-100'}`}
+                        >
+                          <img
+                            src={originalImageUrl}
+                            alt="Original"
+                            className="w-20 h-20 object-cover rounded border-2 border-purple-500/30 group-hover:border-purple-400 transition-colors"
+                          />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-1 px-1 rounded-b text-center">
+                            Original
+                          </div>
+                        </button>
+                      )}
+                      {imageHistory.filter(v => v.url !== originalImageUrl).map((version, idx) => (
+                        <button
+                          key={version.timestamp}
+                          onClick={() => {
+                            setImageUrl(version.url)
+                            console.log('[INPAINT DEBUG] Switched to version:', version.label)
+                          }}
+                          className={`flex-shrink-0 group relative ${imageUrl === version.url ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-neutral-900' : 'opacity-70 hover:opacity-100'}`}
+                        >
+                          <img
+                            src={version.url}
+                            alt={version.label}
+                            className="w-20 h-20 object-cover rounded border-2 border-purple-500/30 group-hover:border-purple-400 transition-colors"
+                          />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-1 px-1 rounded-b text-center">
+                            {version.label}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {!showInpainting ? (
+                  <>
+                    <img 
+                      key={`inpaint-${imageUrl}`} 
+                      src={imageUrl} 
+                      alt="Generated" 
+                      className="w-full rounded-lg border border-green-500/30 max-h-[800px] object-contain"
+                      onLoad={(e) => {
+                        const img = e.target as HTMLImageElement
+                        console.log('[INPAINT DEBUG] Image loaded:', img.src)
+                        console.log('[INPAINT DEBUG] Image naturalWidth:', img.naturalWidth, 'naturalHeight:', img.naturalHeight)
+                      }}
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement
+                        console.error('[INPAINT DEBUG] Image failed to load:', img.src)
+                      }}
+                      style={{ imageRendering: 'auto' }}
+                    />
+                    <div className="mt-4 flex gap-2 flex-wrap">
+                      <a 
+                        href={imageUrl} 
+                        download
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        Download Image
+                      </a>
+                      <Button
+                        onClick={() => setShowInpainting(true)}
+                        disabled={!user}
+                        className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
+                        variant="outline"
+                      >
+                        <Paintbrush className="h-4 w-4" />
+                        Inpaint Image
+                      </Button>
+                      <Button
+                        onClick={handleSaveImage}
+                        disabled={isSaving || saveStatus === 'saved' || !user}
+                        className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                        variant="outline"
+                      >
+                        {saveStatus === 'saving' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : saveStatus === 'saved' ? (
+                          <>
+                            <Check className="h-4 w-4" />
+                            Saved!
+                          </>
+                        ) : (
+                          <>
+                            <BookUser className="h-4 w-4" />
+                            Save to Library
+                          </>
+                        )}
+                      </Button>
+                      {saveError && (
+                        <div className="w-full mt-2 text-sm text-red-400">
+                          {saveError}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Inpainting Canvas */}
+                    <div className="relative border border-purple-500/50 rounded-lg overflow-hidden bg-gray-900 flex justify-center items-start">
+                      <div className="relative inline-block">
+                        {/* Background image canvas - displays the actual image */}
+                        <canvas
+                          ref={imageCanvasRef}
+                          className="block"
+                          style={{ 
+                            pointerEvents: 'none',
+                            display: 'block',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto'
+                          }}
+                        />
+                        {/* Overlay mask canvas for drawing */}
+                        <canvas
+                          ref={maskCanvasRef}
+                          className="absolute top-0 left-0 block cursor-crosshair"
+                          onMouseDown={handleCanvasMouseDown}
+                          onMouseMove={handleCanvasMouseMove}
+                          onMouseUp={handleCanvasMouseUp}
+                          onMouseLeave={handleCanvasMouseUp}
+                          style={{ 
+                            display: 'block',
+                            backgroundColor: 'transparent',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto',
+                            mixBlendMode: 'normal' // Don't blend - show actual colors
+                          }}
+                        />
+                        <div className="absolute top-2 left-2 bg-black/70 text-white px-3 py-1 rounded text-xs z-10 pointer-events-none">
+                          Draw on the image to mark areas to inpaint (black = area to change)
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Inpainting Controls */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="text-purple-400 text-sm font-medium">Brush Size:</label>
+                        <input
+                          type="range"
+                          min="10"
+                          max="100"
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-purple-300 text-sm w-12">{brushSize}px</span>
+                      </div>
+                      
+                      <Button
+                        onClick={clearMask}
+                        variant="outline"
+                        size="sm"
+                        className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                      >
+                        <Eraser className="h-4 w-4 mr-2" />
+                        Clear Mask
+                      </Button>
+                      
+                      <div>
+                        <label className="text-purple-400 text-sm font-medium mb-2 block">Inpainting Prompt</label>
+                        <textarea
+                          placeholder="Describe what you want in the masked area... (e.g., 'a red car', 'a beautiful sunset', 'remove the background')"
+                          className="w-full bg-black/30 text-white placeholder-purple-600 resize-none border border-purple-500/30 rounded-lg p-3 focus:ring-2 focus:ring-purple-400 min-h-[80px]"
+                          value={inpaintingPrompt}
+                          onChange={(e) => setInpaintingPrompt(e.target.value)}
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleInpaint}
+                          disabled={isInpainting || !inpaintingPrompt.trim() || !maskCanvasRef.current}
+                          className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                        >
+                          {isInpainting ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Inpainting...
+                            </>
+                          ) : (
+                            <>
+                              <Paintbrush className="h-4 w-4 mr-2" />
+                              Inpaint ({inpaintingProgress || '15 credits'})
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowInpainting(false)
+                            setInpaintingPrompt("")
+                            clearMask()
+                          }}
+                          variant="outline"
+                          className="border-gray-500/50 text-gray-400 hover:bg-gray-500/10"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      
+                      {inpaintingProgress && (
+                        <div className="text-purple-400 text-sm">
+                          {inpaintingProgress}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+          </main>
+        )}
 
         {/* Credits Purchase Dialog */}
         <CreditsPurchaseDialog 

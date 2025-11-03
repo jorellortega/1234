@@ -11,8 +11,8 @@ export async function middleware(request: NextRequest) {
     console.log('🚨 Headers:', Object.fromEntries(request.headers.entries()))
   }
 
-  // Admin route protection - SUPER SECURE
-  if (request.nextUrl.pathname.startsWith('/admin')) {
+  // Helper function to check admin role
+  const checkAdminAccess = async (request: NextRequest, redirectPath: string) => {
     try {
       // Get the session token from cookies (try multiple cookie names)
       const token = request.cookies.get('sb-access-token')?.value || 
@@ -22,8 +22,7 @@ export async function middleware(request: NextRequest) {
 
       if (!token) {
         console.log('🚫 ADMIN ACCESS DENIED: No token found')
-        console.log('Available cookies:', Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value.substring(0, 20) + '...'])))
-        return NextResponse.redirect(new URL('/login?redirect=/admin/api-keys', request.url))
+        return NextResponse.redirect(new URL(`/login?redirect=${redirectPath}`, request.url))
       }
 
       // Create Supabase client
@@ -37,7 +36,7 @@ export async function middleware(request: NextRequest) {
       
       if (userError || !user) {
         console.log('🚫 ADMIN ACCESS DENIED: Invalid token')
-        return NextResponse.redirect(new URL('/login?redirect=/admin/api-keys', request.url))
+        return NextResponse.redirect(new URL(`/login?redirect=${redirectPath}`, request.url))
       }
 
       // Create service role client to check user role
@@ -63,12 +62,25 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/?error=admin-access-denied', request.url))
       }
 
-      console.log('✅ ADMIN ACCESS GRANTED:', { userId: user.id, email: user.email })
+      console.log('✅ ADMIN ACCESS GRANTED:', { userId: user.id, email: user.email, path: redirectPath })
+      return null // Access granted
       
     } catch (error) {
       console.error('🚫 ADMIN ACCESS ERROR:', error)
-      return NextResponse.redirect(new URL('/login?redirect=/admin/api-keys', request.url))
+      return NextResponse.redirect(new URL(`/login?redirect=${redirectPath}`, request.url))
     }
+  }
+
+  // Admin route protection - SUPER SECURE
+  if (request.nextUrl.pathname.startsWith('/admin')) {
+    const result = await checkAdminAccess(request, '/admin/api-keys')
+    if (result) return result
+  }
+
+  // AI Manager route protection - ADMIN ONLY
+  if (request.nextUrl.pathname.startsWith('/ai-manager')) {
+    const result = await checkAdminAccess(request, '/ai-manager')
+    if (result) return result
   }
   
   return NextResponse.next()
@@ -76,9 +88,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/api/:path*'
-    // Temporarily disable admin middleware for testing
-    // '/admin/:path*'
+    '/api/:path*',
+    '/admin/:path*',
+    '/ai-manager/:path*'
   ],
 }
 
