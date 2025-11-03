@@ -168,7 +168,17 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
     
     try {
       if (imageMatch) {
-        window.open(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`, '_blank');
+        // Download image via API proxy using blob
+        const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Infinito Image.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       } else if (videoMatch) {
         const response = await fetch(videoMatch[1]);
         const blob = await response.blob();
@@ -181,12 +191,13 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else if (audioMatch) {
-        const response = await fetch(audioMatch[1]);
+        // Use API proxy to ensure proper filename
+        const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioMatch[1])}`);
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Infinito Audio.mp3`;
+        a.download = `Infinito-Audio.mp3`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -347,8 +358,6 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
               <th className="text-left p-2 sm:p-3">Prompt</th>
               <th className="text-left p-2 sm:p-3 hidden md:table-cell">Tags</th>
               <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Notes</th>
-              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Temp</th>
-              <th className="text-left p-2 sm:p-3 hidden lg:table-cell">Top-K</th>
               <th className="text-left p-2 sm:p-3">Actions</th>
             </tr>
           </thead>
@@ -489,8 +498,6 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
                 <td className="p-2 sm:p-3 max-w-[220px] hidden lg:table-cell">
                   {r.notes ? <span className="px-2 py-0.5 rounded-lg bg-neutral-800 text-xs">📝 notes</span> : ""}
                 </td>
-                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.temperature ?? ""}</td>
-                <td className="p-2 sm:p-3 hidden lg:table-cell">{r.top_k ?? ""}</td>
                 <td className="p-2 sm:p-3">
                   <button
                     onClick={(e) => {
@@ -506,7 +513,7 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td className="p-4" colSpan={9}>No results.</td></tr>
+              <tr><td className="p-4" colSpan={7}>No results.</td></tr>
             )}
           </tbody>
         </table>
@@ -626,18 +633,10 @@ export default function LibraryControls({ initial, contentType = 'all' }: { init
               })()}
 
               {/* Metadata */}
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 text-xs sm:text-sm">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                 <div>
                   <div className="text-cyan-400 text-xs">Date</div>
                   <div className="text-white text-xs sm:text-sm">{new Date(previewItem.created_at).toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="text-cyan-400 text-xs">Temperature</div>
-                  <div className="text-white">{previewItem.temperature || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-cyan-400 text-xs">Top-K</div>
-                  <div className="text-white">{previewItem.top_k || 'N/A'}</div>
                 </div>
               </div>
 

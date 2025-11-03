@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import LibraryControls from "./LibraryControls";
 import Link from "next/link";
-import { Settings, Home, BookUser, BrainCircuit, User, LogOut, Video, Image as ImageIcon, Music, FileText } from "lucide-react";
+import { Home, BookUser, BrainCircuit, User, LogOut, Video, Image as ImageIcon, Music, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Row = {
@@ -132,14 +132,7 @@ export default function LibraryPage() {
               className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
             >
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">Memory Core</span>
-            </Link>
-            <Link
-              href="/ai-settings"
-              className="flex items-center gap-1 text-cyan-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-cyan-400/10"
-            >
-              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline text-sm">AI Settings</span>
+              <span className="hidden sm:inline text-sm">Memory</span>
             </Link>
           </div>
 

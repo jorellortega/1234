@@ -284,7 +284,7 @@ export default function MemoryCorePage() {
           <div className="flex items-center gap-2 sm:gap-4">
             <Link href="/" className="flex items-center gap-1 sm:gap-2 text-cyan-400 hover:text-white transition-colors text-sm">
               <Home className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden sm:inline">Return to Core</span>
+              <span className="hidden sm:inline">Home</span>
             </Link>
           </div>
         </header>
