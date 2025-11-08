@@ -3,9 +3,11 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "INFINITO - Advanced AI Platform | Unlimited AI Generations & Memory Core",
-  description: "INFINITO is the ultimate AI platform offering unlimited AI generations, persistent memory core, document processing, image generation, video creation, audio AI, and multi-modal AI capabilities. Experience the future of artificial intelligence with GPT models, OpenAI, RunwayML, and more.",
+  metadataBase: new URL('https://infinito.ai'),
+  title: "Infinito AI",
+  description: "Infinito AI creates audio, images, video, and text, one unified workflow.",
   keywords: [
+    'Infinito AI',
     'AI',
     'artificial intelligence',
     'AI platform',
@@ -42,9 +44,9 @@ export const metadata: Metadata = {
     'DALL-E',
     'ElevenLabs',
   ],
-  authors: [{ name: 'INFINITO Team' }],
-  creator: 'INFINITO',
-  publisher: 'INFINITO',
+  authors: [{ name: 'Infinito AI Team' }],
+  creator: 'Infinito AI',
+  publisher: 'Infinito AI',
   generator: 'Next.js',
   robots: {
     index: true,
@@ -61,22 +63,22 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://infinito.ai',
-    title: 'INFINITO - Advanced AI Platform with Memory Core',
-    description: 'Unlimited AI generations with persistent memory core. Generate text, images, videos, and audio. Process documents with AI. The future of artificial intelligence is here.',
-    siteName: 'INFINITO',
+    title: 'Infinito AI',
+    description: 'Infinito AI creates audio, images, video, and text, one unified workflow.',
+    siteName: 'Infinito AI',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'INFINITO - Advanced AI Platform',
+        alt: 'Infinito AI - Advanced AI Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'INFINITO - Advanced AI Platform',
-    description: 'Unlimited AI generations with persistent memory core. Generate text, images, videos, and audio with AI.',
+    title: 'Infinito AI',
+    description: 'Infinito AI creates audio, images, video, and text, one unified workflow.',
     images: ['/og-image.png'],
     creator: '@infinito_ai',
   },
@@ -86,8 +88,8 @@ export const metadata: Metadata = {
   category: 'Technology',
   classification: 'AI Platform',
   other: {
-    'application-name': 'INFINITO',
-    'apple-mobile-web-app-title': 'INFINITO',
+    'application-name': 'Infinito AI',
+    'apple-mobile-web-app-title': 'Infinito AI',
     'msapplication-TileColor': '#0ea5e9',
     'theme-color': '#0ea5e9',
   },
@@ -101,11 +103,11 @@ export default function RootLayout({
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "INFINITO",
+    "name": "Infinito AI",
     "applicationCategory": "AI Platform",
     "operatingSystem": "Web",
     "url": "https://infinito.ai",
-    "description": "Advanced AI platform offering unlimited AI generations, persistent memory core, document processing, image generation, video creation, audio AI, and multi-modal AI capabilities with GPT models, OpenAI, RunwayML, and more.",
+    "description": "Infinito AI creates audio, images, video, and text, one unified workflow.",
     "offers": {
       "@type": "Offer",
       "price": "0",
@@ -131,14 +133,14 @@ export default function RootLayout({
     },
     "author": {
       "@type": "Organization",
-      "name": "INFINITO Team"
+      "name": "Infinito AI Team"
     },
     "publisher": {
       "@type": "Organization",
-      "name": "INFINITO",
+      "name": "Infinito AI",
       "url": "https://infinito.ai"
     },
-    "keywords": "AI, artificial intelligence, GPT-4, OpenAI, RunwayML, image generation, video generation, AI memory, document processing, text to speech",
+    "keywords": "Infinito AI, AI, artificial intelligence, GPT-4, OpenAI, RunwayML, image generation, video generation, AI memory, document processing, text to speech",
     "softwareVersion": "1.0",
     "datePublished": "2024-01-01",
     "dateModified": "2025-01-27"

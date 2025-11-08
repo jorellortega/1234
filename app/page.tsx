@@ -531,6 +531,7 @@ Is there anything else I can help you with?`)
   const [error, setError] = useState<string | null>(null)
   const [glowEnabled, setGlowEnabled] = useState(false)
   const [responseStyle, setResponseStyle] = useState<"concise" | "detailed">("concise")
+  const [showResponseLabel, setShowResponseLabel] = useState(false)
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
 
   // Audio state
@@ -605,6 +606,13 @@ Is there anything else I can help you with?`)
   const [imageGenerationProgress, setImageGenerationProgress] = useState<string>('')
 
   const JOR_BINARY = "010010100100111101010010"
+
+useEffect(() => {
+  if (!showResponseLabel) return
+
+  const timer = setTimeout(() => setShowResponseLabel(false), 2000)
+  return () => clearTimeout(timer)
+}, [showResponseLabel])
 
   useEffect(() => {
     let cancelled = false
@@ -3386,6 +3394,51 @@ Please provide a ${responseStyle} answer.`
                     </Button>
                   </div>
                   
+                  {/* Response Style Toggle */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    {showResponseLabel && (
+                      <span className="text-xs font-semibold uppercase tracking-wide text-blue-300 sm:text-[0.7rem] transition-opacity duration-300">
+                        Response
+                      </span>
+                    )}
+                    <div
+                      className={`flex bg-blue-500/10 border border-blue-500/30 rounded-full p-1 w-full sm:w-auto transition-all duration-300 ${
+                        showResponseLabel ? "opacity-100 backdrop-blur-sm shadow-[0_0_12px_rgba(59,130,246,0.35)]" : "opacity-40 hover:opacity-70"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResponseStyle("concise")
+                          setShowResponseLabel(true)
+                        }}
+                        aria-label="Concise response mode"
+                        className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                          responseStyle === "concise"
+                            ? "bg-green-500/30 text-green-100 border border-green-400/40 shadow-inner"
+                            : "text-blue-200 hover:text-white"
+                        }`}
+                      >
+                        {showResponseLabel ? "Concise" : "C"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResponseStyle("detailed")
+                          setShowResponseLabel(true)
+                        }}
+                        aria-label="Detailed response mode"
+                        className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                          responseStyle === "detailed"
+                            ? "bg-blue-500/40 text-white border border-blue-300/50 shadow-inner"
+                            : "text-blue-200 hover:text-white"
+                        }`}
+                      >
+                        {showResponseLabel ? "Detailed" : "D"}
+                      </button>
+                    </div>
+                  </div>
+                  
                   {/* Thread Button - Mobile: Full width, Desktop: Middle */}
                   {(conversationHistory.length > 0 || lastGenerationId) && (
                     <Button
@@ -3707,46 +3760,26 @@ Please provide a ${responseStyle} answer.`
                 {/* All Settings (Conditional) */}
                 {showAdvancedSettings && (
                   <div className="space-y-4 p-4 bg-black/10 rounded-lg border border-cyan-500/20">
-                    {/* Stream, Glow, Response Controls - Mobile: Stack vertically */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-sm text-cyan-400">
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2">
-                          <input 
-                            type="checkbox" 
-                            checked={stream} 
-                            onChange={(e) => setStream(e.target.checked)}
-                            className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
-                          />
-                          <span>Stream tokens</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input 
-                            type="checkbox" 
-                            checked={glowEnabled} 
-                            onChange={(e) => setGlowEnabled(e.target.checked)}
-                            className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
-                          />
-                          <span>Glow effect</span>
-                        </label>
-                      </div>
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                        <span>Response:</span>
-                        <select
-                          value={responseStyle}
-                          onChange={(e) => setResponseStyle(e.target.value as "concise" | "detailed")}
-                          className="rounded border-cyan-500 text-cyan-500 bg-black/20 px-3 py-2 text-sm focus:ring-cyan-500 w-full sm:w-auto"
-                        >
-                          <option value="concise">Concise</option>
-                          <option value="detailed">Detailed</option>
-                        </select>
-                        <span className={`text-xs px-3 py-1 rounded ${
-                          responseStyle === "concise" 
-                            ? "bg-green-500/20 text-green-400 border border-green-500/30" 
-                            : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                        }`}>
-                          {responseStyle === "concise" ? "🎯 Direct" : "📚 Detailed"}
-                        </span>
-                      </div>
+                    {/* Stream & Glow Controls - Mobile: Stack vertically */}
+                    <div className="flex flex-wrap gap-4 text-sm text-cyan-400">
+                      <label className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          checked={stream} 
+                          onChange={(e) => setStream(e.target.checked)}
+                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                        />
+                        <span>Stream tokens</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input 
+                          type="checkbox" 
+                          checked={glowEnabled} 
+                          onChange={(e) => setGlowEnabled(e.target.checked)}
+                          className="rounded border-cyan-500 text-cyan-500 focus:ring-cyan-500 w-4 h-4"
+                        />
+                        <span>Glow effect</span>
+                      </label>
                     </div>
                     
                     {/* Temperature, Top-K, Max Controls - Mobile: Stack vertically */}

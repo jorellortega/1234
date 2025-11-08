@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useRef, useEffect } from "react"
+import { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save, Edit2, X } from "lucide-react"
@@ -164,34 +164,69 @@ export function ProgressiveResponse({
   const [volume, setVolume] = useState(1)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  // Auto-scroll to response when it first appears
+  const normalizeText = useCallback((text: string) => {
+    if (!text) return ""
+
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '$1') // bold
+      .replace(/__([^_]+)__/g, '$1')   // underline style
+      .replace(/\*(.*?)\*/g, '$1')     // italics / bullets
+      .replace(/`{1,2}(.*?)`{1,2}/g, '$1') // inline code/backticks
+      .replace(/---/g, '\n\n')         // horizontal rule style -> blank line
+      .replace(/\[(.*?)\]/g, '$1')     // bracket placeholders
+      .replace(/\]/g, '')              // stray closing brackets
+      .replace(/[ \t]{2,}/g, ' ')      // collapse repeated spaces/tabs but keep newlines
+      .replace(/\n{3,}/g, '\n\n')      // limit consecutive blank lines
+      .trim()
+  }, [])
+
+  const extractParagraphs = useCallback((text: string) => {
+    if (!text) return []
+
+    const normalized = text.replace(/\r\n/g, '\n')
+    let paragraphs = normalized.split('\n\n').map(p => p.trim()).filter(Boolean)
+
+    if (paragraphs.length <= 1) {
+      paragraphs = normalized.split('\n').map(p => p.trim()).filter(Boolean)
+    }
+
+    if (paragraphs.length <= 1) {
+      const sentences = normalized.split(/[.!?]+/).map(s => s.trim()).filter(Boolean)
+      paragraphs = sentences.map(sentence => sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?')
+        ? sentence
+        : `${sentence}.`)
+    }
+
+    return paragraphs
+      .map(paragraph => normalizeText(paragraph))
+      .filter(paragraph => paragraph.length > 0)
+  }, [normalizeText])
+
+  const previousContentRef = useRef<string>("")
+
+  // Auto-scroll once when a brand new response appears
   useEffect(() => {
-    if (content && responseRef.current) {
-      setTimeout(() => {
-        responseRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
+    if (!content) {
+      previousContentRef.current = ""
+      return
+    }
+
+    const wasEmpty = previousContentRef.current.length === 0
+    previousContentRef.current = content
+
+    if (wasEmpty && responseRef.current) {
+      requestAnimationFrame(() => {
+        responseRef.current?.scrollIntoView({
+          behavior: 'smooth',
           block: 'start',
           inline: 'nearest'
         })
-        
-        // Additional scroll adjustment to ensure content is visible
-        setTimeout(() => {
-          const rect = responseRef.current?.getBoundingClientRect()
-          if (rect && rect.bottom > window.innerHeight) {
-            window.scrollBy({
-              top: rect.bottom - window.innerHeight + 50,
-              behavior: 'smooth'
-            })
-          }
-        }, 300)
-      }, 200)
+      })
     }
   }, [content])
 
   // Split content into concise and detailed parts
   const { concisePart, detailedPart } = useMemo(() => {
-    console.log('🔍 [SPLIT] Splitting content. Length:', content?.length, 'Style:', responseStyle)
-    
     // NEVER truncate image/video/audio responses - they need the full URL
     // Remove IMAGE_DISPLAY, VIDEO_DISPLAY, and AUDIO_DISPLAY tags from displayed text but keep for extraction
     let displayContent = content;
@@ -209,7 +244,6 @@ export function ProgressiveResponse({
     }
     
     if (content.includes('[IMAGE_DISPLAY:') || content.includes('[VIDEO_DISPLAY:') || content.includes('[AUDIO_DISPLAY:') || content.includes('[AiO Image Generated]') || content.includes('Image URL:')) {
-      console.log('🔍 [SPLIT] Media content, not splitting')
       return { concisePart: displayContent, detailedPart: null }
     }
     
@@ -218,21 +252,16 @@ export function ProgressiveResponse({
       // Split by sentence endings (. ! ?) but keep the punctuation
       const sentenceRegex = /([^.!?]*[.!?]+)/g
       const sentences = content.match(sentenceRegex) || []
-      
-      console.log('🔍 [SPLIT] Concise mode. Total sentences:', sentences.length)
-      
+
       if (sentences.length <= 2) {
         // If response is short (1-2 sentences), show everything
-        console.log('🔍 [SPLIT] Short content, not splitting')
         return { concisePart: content, detailedPart: null }
       } else {
         // Show first 1-2 complete sentences
         const sentencesToShow = Math.min(2, sentences.length)
         const conciseText = sentences.slice(0, sentencesToShow).join(' ').trim()
         const detailedText = sentences.slice(sentencesToShow).join(' ').trim()
-        
-        console.log('🔍 [SPLIT] Split into concise:', conciseText.length, 'detailed:', detailedText.length)
-        
+
         return { 
           concisePart: conciseText, 
           detailedPart: detailedText || null 
@@ -241,9 +270,13 @@ export function ProgressiveResponse({
     }
     
     // For detailed mode, show everything
-    console.log('🔍 [SPLIT] Detailed mode, not splitting')
     return { concisePart: content, detailedPart: null }
   }, [content, responseStyle])
+
+  const normalizedConcise = useMemo(
+    () => normalizeText(concisePart || ""),
+    [concisePart, normalizeText]
+  )
 
   const handleCopy = async () => {
     try {
@@ -310,9 +343,13 @@ export function ProgressiveResponse({
   }
 
   const handleStartEdit = () => {
-    // Get full content - use the actual content prop (it includes everything)
-    // Don't try to reconstruct from concise/detailed parts
-    setEditedContent(content)
+    // Prepare readable text for editing using the same formatting as display
+    const formattedParagraphs = extractParagraphs(detailedContent || detailedPart || content)
+    const editableText = formattedParagraphs.length > 0
+      ? formattedParagraphs.join('\n\n')
+      : normalizeText(content)
+
+    setEditedContent(editableText)
     // Remember if content was expanded before editing
     setWasExpandedBeforeEdit(isExpanded)
     setIsEditing(true)
@@ -474,16 +511,6 @@ export function ProgressiveResponse({
   const isStatusMessage = concisePart && /^(✅|❌|🎬|🖼️|🎵|Image loaded|Ready to|Ready!|Video|Audio|Generating|Processing)/i.test(concisePart.trim())
   const isTextResponse = !hasMediaContent && !isStatusMessage && concisePart && concisePart.trim().length > 0
   const shouldShowProgressive = responseStyle === "concise" && (hasDetailedContent || onShowMore) && isTextResponse
-
-  console.log('🎨 [DISPLAY] Render decision:', {
-    responseStyle,
-    hasDetailedContent,
-    isExpanded,
-    shouldShowProgressive,
-    concisePartLength: concisePart?.length || 0,
-    detailedPartLength: detailedPart?.length || 0,
-    detailedContentLength: detailedContent?.length || 0
-  })
 
   // Audio control functions
   useEffect(() => {
@@ -885,9 +912,9 @@ export function ProgressiveResponse({
       ) : (
         <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
           {/* Concise part - only show if progressive mode, otherwise handled below */}
-          {shouldShowProgressive && (
+          {shouldShowProgressive && normalizedConcise && (
             <div className="mb-3">
-              {concisePart}
+              {normalizedConcise}
             </div>
           )}
         
@@ -1187,26 +1214,14 @@ export function ProgressiveResponse({
             <div className="pt-2 border-t border-cyan-500/20">
               {/* Format the detailed content with proper paragraphs */}
               {(() => {
-                const content = detailedContent || detailedPart
-                if (!content) return null
-                
-                // First try to split by double line breaks (paragraphs)
-                let paragraphs = content.split('\n\n').filter(p => p.trim().length > 0)
-                
-                // If no paragraphs found, try single line breaks
-                if (paragraphs.length <= 1) {
-                  paragraphs = content.split('\n').filter(p => p.trim().length > 0)
-                }
-                
-                // If still no breaks, create paragraphs from sentences
-                if (paragraphs.length <= 1) {
-                  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0)
-                  paragraphs = sentences.map(s => s.trim() + '.')
-                }
-                
+                const contentToRender = detailedContent || detailedPart
+                if (!contentToRender) return null
+
+                const paragraphs = extractParagraphs(contentToRender)
+
                 return paragraphs.map((paragraph, index) => (
                   <div key={index} className="mb-4 p-3 bg-black/10 rounded border-l-2 border-cyan-500/30">
-                    {paragraph.trim()}
+                    {paragraph}
                   </div>
                 ))
               })()}
@@ -1270,27 +1285,11 @@ export function ProgressiveResponse({
         {!shouldShowProgressive && !hasMediaContent && (
           <div className="pt-2 border-t border-cyan-500/20">
             {/* Format the full content with proper paragraphs */}
-            {(() => {
-              // First try to split by double line breaks (paragraphs)
-              let paragraphs = content.split('\n\n').filter(p => p.trim().length > 0)
-              
-              // If no paragraphs found, try single line breaks
-              if (paragraphs.length <= 1) {
-                paragraphs = content.split('\n').filter(p => p.trim().length > 0)
-              }
-              
-              // If still no breaks, create paragraphs from sentences
-              if (paragraphs.length <= 1) {
-                const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0)
-                paragraphs = sentences.map(s => s.trim() + '.')
-              }
-              
-              return paragraphs.map((paragraph, index) => (
-                <div key={index} className="mb-4 p-3 bg-black/10 rounded border-l-2 border-cyan-500/30">
-                  {paragraph.trim()}
-                </div>
-              ))
-            })()}
+            {extractParagraphs(content).map((paragraph, index) => (
+              <div key={index} className="mb-4 p-3 bg-black/10 rounded border-l-2 border-cyan-500/30">
+                {paragraph}
+              </div>
+            ))}
           </div>
         )}
         
