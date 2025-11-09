@@ -4568,7 +4568,7 @@ IMPORTANT RESTRICTIONS:
         </main>
 
         <footer className="text-center text-cyan-800 text-xs mt-4">
-          <p>Developed by JOR • Powered by Covion Studio © 2025 • V.1.0</p>
+          <p>Developed by JOR • Powered by Covion Studio © 2025 • V.1.1</p>
         </footer>
 
         {/* Document Review Window - Inline below console */}
