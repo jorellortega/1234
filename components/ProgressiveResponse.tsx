@@ -29,6 +29,7 @@ interface ProgressiveResponseProps {
   // Edit props
   onContentChange?: (newContent: string) => void | Promise<void>
   generationId?: string | null // ID of the generation to update in database
+  isAuthenticated?: boolean
 }
 
 export function ProgressiveResponse({ 
@@ -49,7 +50,8 @@ export function ProgressiveResponse({
   onImageToVideoModelChange,
   isModelEnabled = () => true,
   onContentChange,
-  generationId
+  generationId,
+  isAuthenticated = true
 }: ProgressiveResponseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -573,7 +575,7 @@ export function ProgressiveResponse({
   }
 
   const handleGenerateAudio = () => {
-    if (!onGenerateAudio) return
+    if (!onGenerateAudio || !isAuthenticated) return
     
     // Use expanded content if available, otherwise use original content
     const textToGenerate = isExpanded && detailedContent 
@@ -667,7 +669,8 @@ export function ProgressiveResponse({
                   onClick={handleGenerateAudio}
                   variant="ghost" 
                   size="sm"
-                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
+                  className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3 disabled:opacity-40"
+                  disabled={!isAuthenticated}
                 >
                   <Volume2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
                   <span className="text-xs hidden sm:inline">Audio</span>

@@ -3,6 +3,7 @@
 import { useState, useEffect, type ChangeEvent, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FileUp, Mic, BookUser, BrainCircuit, Copy, Check, Upload, FileText, X, Settings, LogOut, User, Eye, EyeOff, CreditCard, Download, ArrowLeft, Library, RefreshCw, Play, Music, ImageIcon, Video } from "lucide-react"
 import { HudPanel } from "@/components/hud-panel"
@@ -13,6 +14,37 @@ import { ProgressiveResponse } from "@/components/ProgressiveResponse"
 import { MemoryFormData } from "@/lib/types"
 import { supabase } from "@/lib/supabase-client"
 import { CreditsPurchaseDialog } from "@/components/CreditsPurchaseDialog"
+import type { AIMessage } from "@/lib/ai-types"
+import { PUBLIC_AI_SETTING_KEYS } from "@/lib/ai-settings"
+
+const PUBLIC_DEFAULT_WELCOME =
+  "Hi there! I'm Infinito's public AI concierge. Ask me anything about the platform and I'll do my best to help."
+
+type PublicQuickReply = {
+  id: string
+  label: string
+  prompt: string
+}
+
+type PublicAction = {
+  id: string
+  label: string
+  description?: string
+  type?: "signup" | "link" | "prompt"
+  payload?: Record<string, any>
+}
+
+type PublicConfig = {
+  welcomeMessage: string
+  model: string
+  quickReplies: PublicQuickReply[]
+  actions: PublicAction[]
+}
+
+const createTempId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 export default function AIPromptPage() {
   const [prompt, setPrompt] = useState("")
@@ -94,6 +126,11 @@ export default function AIPromptPage() {
       } else {
         setUserCredits(0)
         setIsAdmin(false)
+        setConversationHistory([])
+        setOutput("")
+        setPublicConfig(null)
+        setPublicConversation([])
+        setPublicAssistantReady(true)
       }
       setAuthLoading(false)
     })
@@ -584,9 +621,241 @@ Is there anything else I can help you with?`)
     thread_position: number
   }>>([])
   const [loadingThread, setLoadingThread] = useState(false)
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null)
+  const [publicConversation, setPublicConversation] = useState<AIMessage[]>([])
+  const [publicAssistantReady, setPublicAssistantReady] = useState(true)
+  const [publicSettingsLoading, setPublicSettingsLoading] = useState(false)
   const consoleRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
+  const ensurePublicSettings = async (): Promise<PublicConfig | null> => {
+    if (publicConfig) return publicConfig
+    if (publicSettingsLoading) return publicConfig
+
+    setPublicSettingsLoading(true)
+    try {
+      console.log("[public-ai] Loading public concierge settings…")
+      const response = await fetch("/api/public-ai/settings?public=true", { cache: "no-store" })
+      if (!response.ok) {
+        console.warn("[public-ai] Failed to load settings", response.status)
+        throw new Error(`Failed to load public AI settings (${response.status})`)
+      }
+
+      const data = await response.json()
+      const rawSettings = (data?.settings ?? {}) as Record<string, string>
+
+      const welcomeMessage =
+        rawSettings[PUBLIC_AI_SETTING_KEYS.WELCOME_MESSAGE]?.trim() || PUBLIC_DEFAULT_WELCOME
+      const model = rawSettings[PUBLIC_AI_SETTING_KEYS.DEFAULT_MODEL]?.trim() || "gpt-4o-mini"
+
+      let quickReplies: PublicQuickReply[] = []
+      try {
+        const parsed = JSON.parse(rawSettings[PUBLIC_AI_SETTING_KEYS.QUICK_REPLIES] ?? "[]")
+        if (Array.isArray(parsed)) {
+          quickReplies = parsed
+            .filter(
+              (item) =>
+                item &&
+                typeof item.id === "string" &&
+                typeof item.label === "string" &&
+                typeof item.prompt === "string"
+            )
+            .map((item) => ({
+              id: item.id,
+              label: item.label,
+              prompt: item.prompt
+            }))
+        }
+      } catch (error) {
+        console.warn("Failed to parse public AI quick replies:", error)
+      }
+
+      let actions: PublicAction[] = []
+      try {
+        const parsed = JSON.parse(rawSettings[PUBLIC_AI_SETTING_KEYS.ACTIONS] ?? "[]")
+        if (Array.isArray(parsed)) {
+          actions = parsed
+            .filter((item) => item && typeof item.id === "string" && typeof item.label === "string")
+            .map((item) => ({
+              id: item.id,
+              label: item.label,
+              description: item.description,
+              type: item.type,
+              payload: item.payload
+            }))
+        }
+      } catch (error) {
+        console.warn("Failed to parse public AI actions:", error)
+      }
+      if (actions.length === 0) {
+        actions = DEFAULT_ACTIONS
+      }
+
+      const config: PublicConfig = {
+        welcomeMessage,
+        model,
+        quickReplies,
+        actions
+      }
+
+      console.log("[public-ai] Settings loaded", {
+        welcomeLength: welcomeMessage.length,
+        quickReplyCount: quickReplies.length,
+        actionCount: actions.length,
+        hasGuardrail: Boolean(rawSettings[PUBLIC_AI_SETTING_KEYS.GUARDRAIL_PROMPT])
+      })
+
+      setPublicConfig(config)
+      setPublicAssistantReady(true)
+
+      if (publicConversation.length === 0) {
+        setPublicConversation([])
+        if (conversationHistory.length === 0) {
+          setConversationHistory([
+            {
+              id: createTempId(),
+              role: "assistant",
+              content: welcomeMessage,
+              timestamp: new Date()
+            }
+          ])
+        }
+      }
+
+      return config
+    } catch (error) {
+      console.error("Failed to load public AI settings:", error)
+      setPublicAssistantReady(false)
+      setPublicConfig(null)
+      return null
+    } finally {
+      console.log("[public-ai] Finished loading settings")
+      setPublicSettingsLoading(false)
+    }
+  }
+
+  const handlePublicAction = (action: PublicAction) => {
+    if (!action) return
+
+    if (action.type === "link" && action.payload && typeof action.payload.href === "string") {
+      window.location.href = action.payload.href
+      return
+    }
+
+    if (action.type === "prompt" && action.payload && typeof action.payload.prompt === "string") {
+      setSignupFlow("idle")
+      setPrompt(action.payload.prompt)
+      setLastPrompt(action.payload.prompt)
+      return
+    }
+
+    handleSignupYes()
+  }
+
+  const handleGuestTransmit = async () => {
+    const trimmedPrompt = prompt.trim()
+    if (!trimmedPrompt) return
+
+    const config = await ensurePublicSettings()
+    if (!config) {
+      setError("Our concierge is currently offline. Please try again in a moment.")
+      console.warn("[public-ai] No concierge config available; skipping request.")
+      return
+    }
+
+    const userMessage: AIMessage = { role: "user", content: trimmedPrompt }
+    const baseHistory = publicConversation.length
+      ? publicConversation
+      : [{ role: "assistant", content: config.welcomeMessage }]
+    const nextHistory = [...baseHistory, userMessage]
+
+    console.log("[public-ai] Sending guest request", {
+      prompt: trimmedPrompt,
+      historyCount: nextHistory.length,
+      hasWelcome: Boolean(config.welcomeMessage),
+      model: config.model
+    })
+
+    setPublicConversation(nextHistory)
+    setOutput("")
+    setConversationHistory((prev) => [
+      ...prev,
+      {
+        id: createTempId(),
+        role: "user",
+        content: trimmedPrompt,
+        timestamp: new Date()
+      }
+    ])
+    setPrompt("")
+    setLoading(true)
+    setError(null)
+    setLastPrompt(trimmedPrompt)
+    setAudioUrl(null)
+    setAudioError(null)
+
+    try {
+      const response = await fetch("/api/public-ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmedPrompt,
+          conversationHistory: nextHistory
+        })
+      })
+
+      console.log("[public-ai] Chat response status", response.status)
+
+      if (!response.ok) {
+        throw new Error(`Public AI chat failed (${response.status})`)
+      }
+
+      const data = await response.json()
+      console.log("[public-ai] Chat response payload", data)
+      const reply =
+        typeof data?.message === "string" && data.message.trim()
+          ? data.message.trim()
+          : "I'm still getting set up. Could you try again in a moment?"
+
+      const assistantMessage: AIMessage = { role: "assistant", content: reply }
+      const updatedHistory = [...nextHistory, assistantMessage]
+      setPublicConversation(updatedHistory)
+      setConversationHistory((prev) => [
+        ...prev,
+        {
+          id: createTempId(),
+          role: "assistant",
+          content: reply,
+          timestamp: new Date()
+        }
+      ])
+      setOutput(reply)
+      setPublicAssistantReady(true)
+      setSignupFlow("idle")
+    } catch (error) {
+      console.error("Public concierge error:", error)
+      setPublicAssistantReady(false)
+      setError("Our concierge is currently offline. Please try again shortly.")
+      setOutput("Our concierge is currently offline. Please try again shortly.")
+    } finally {
+      console.log("[public-ai] Request finished")
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (authLoading) return
+
+    if (!user) {
+      void ensurePublicSettings()
+    } else {
+      setPublicConfig(null)
+      setPublicConversation([])
+      setPublicAssistantReady(true)
+      setPublicSettingsLoading(false)
+    }
+  }, [authLoading, user])
+
   // Video generation state
   const [videoImage, setVideoImage] = useState<File | null>(null)
   const [videoImagePreview, setVideoImagePreview] = useState<string | null>(null)
@@ -606,13 +875,6 @@ Is there anything else I can help you with?`)
   const [imageGenerationProgress, setImageGenerationProgress] = useState<string>('')
 
   const JOR_BINARY = "010010100100111101010010"
-
-useEffect(() => {
-  if (!showResponseLabel) return
-
-  const timer = setTimeout(() => setShowResponseLabel(false), 2000)
-  return () => clearTimeout(timer)
-}, [showResponseLabel])
 
   useEffect(() => {
     let cancelled = false
@@ -725,6 +987,10 @@ useEffect(() => {
   }, [])
 
   const handleVoiceInput = () => {
+    if (!user) {
+      setError("Sign in to use voice input.")
+      return
+    }
     if (isListening) {
       recognition?.stop()
       setIsListening(false)
@@ -1771,10 +2037,7 @@ useEffect(() => {
     
     // Check if user is authenticated
     if (!user) {
-      setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI - I can help you sign up, yes/no?`)
-      setSignupFlow('asking')
-      setError(null)
-      setResponseStyle('concise')
+      await handleGuestTransmit()
       return
     }
     
@@ -1782,10 +2045,7 @@ useEffect(() => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        setOutput(`Hello! I'd love to help you, but first you'll need to sign in to use INFINITO AI - I can help you sign up, yes/no?`)
-        setSignupFlow('asking')
-        setError(null)
-        setResponseStyle('concise')
+        await handleGuestTransmit()
         return
       }
       
@@ -3315,6 +3575,23 @@ Please provide a ${responseStyle} answer.`
                   </Button>
                 </div>
 
+                {!user && publicConfig?.actions?.length ? (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {publicConfig.actions.map((action) => (
+                      <Button
+                        key={action.id}
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handlePublicAction(action)}
+                        title={action.description}
+                        className="bg-cyan-600/20 text-cyan-200 hover:bg-cyan-500/30 border border-cyan-500/40"
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+
                 <textarea
                   placeholder={
                     signupFlow === 'collecting' && signupStep === 'email'
@@ -3366,7 +3643,14 @@ Please provide a ${responseStyle} answer.`
                       variant="ghost" 
                       size="icon" 
                       className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white h-10 w-10"
-                      onClick={() => setShowDocumentUpload(true)}
+                      onClick={() => {
+                        if (!user) {
+                          setError("Sign in to import documents.")
+                          return
+                        }
+                        setShowDocumentUpload(true)
+                      }}
+                      disabled={!user}
                       title="Import File"
                     >
                       <FileUp className="h-5 w-5" />
@@ -3384,7 +3668,14 @@ Please provide a ${responseStyle} answer.`
                       variant="ghost" 
                       size="icon" 
                       className={`h-10 ${userCredits <= 10 ? 'text-red-400 hover:bg-red-400/10 hover:text-red-300' : 'text-cyan-400 hover:bg-cyan-400/10 hover:text-white'} ${userCredits <= 10 ? 'w-auto px-3 gap-2' : 'w-10'}`}
-                      onClick={() => setShowCreditsDialog(true)}
+                      onClick={() => {
+                        if (!user) {
+                          setError("Sign in to manage credits.")
+                          return
+                        }
+                        setShowCreditsDialog(true)
+                      }}
+                      disabled={!user}
                       title={userCredits <= 10 ? "Low credits - Purchase Credits" : "Purchase Credits"}
                     >
                       <CreditCard className="h-5 w-5" />
@@ -3854,6 +4145,7 @@ Please provide a ${responseStyle} answer.`
                 onImageToVideoModelChange={(value) => handleModelChange(value, 'imageToVideo')}
                 isModelEnabled={isModelEnabled}
                 generationId={lastGenerationId}
+                isAuthenticated={!!user}
                 onContentChange={async (newContent: string) => {
                   // CRITICAL: Update local output state immediately with the edited content
                   // This replaces the old combined content with the new edited version
@@ -4114,6 +4406,26 @@ IMPORTANT RESTRICTIONS:
                 }}
                 className={`w-full max-w-3xl mt-4 ${glowEnabled ? 'glow' : ''}`}
               />
+
+              {!user && publicConfig?.quickReplies?.length ? (
+                <div className="w-full max-w-3xl mx-auto mt-4 flex flex-wrap gap-2 justify-start">
+                  {publicConfig.quickReplies.map((reply) => (
+                    <Button
+                      key={reply.id}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSignupFlow('idle')
+                        setPrompt(reply.prompt)
+                        setLastPrompt(reply.prompt)
+                      }}
+                      className="border-cyan-500/40 bg-slate-900/60 text-cyan-200 hover:bg-cyan-500/10"
+                    >
+                      {reply.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
               
               {/* YES/NO buttons for signup flow */}
               {signupFlow === 'asking' && (
