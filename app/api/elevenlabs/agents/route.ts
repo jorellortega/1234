@@ -29,8 +29,10 @@ export async function GET(req: NextRequest) {
       { auth: { persistSession: false } }
     );
 
-    // Get ElevenLabs API key
+    // Get ElevenLabs API key - prioritize user's API key
     let apiKeyData = null;
+    let usingUserKey = false;
+    
     const { data: userApiKey } = await supabase
       .from('api_keys')
       .select('encrypted_key')
@@ -41,6 +43,8 @@ export async function GET(req: NextRequest) {
 
     if (userApiKey) {
       apiKeyData = userApiKey;
+      usingUserKey = true;
+      console.log(`Using user's ElevenLabs API key for user ${user.id}`);
     } else {
       const { data: systemApiKey } = await supabase
         .from('api_keys')
@@ -52,6 +56,7 @@ export async function GET(req: NextRequest) {
 
       if (systemApiKey) {
         apiKeyData = systemApiKey;
+        console.log('Using system ElevenLabs API key');
       }
     }
 
@@ -64,32 +69,115 @@ export async function GET(req: NextRequest) {
     const elevenLabsApiKey = apiKeyData.encrypted_key;
 
     // Get agents from ElevenLabs API
-    const response = await fetch('https://api.elevenlabs.io/v1/agents', {
-      headers: {
-        'xi-api-key': elevenLabsApiKey,
+    // Try different possible endpoints
+    const endpoints = [
+      'https://api.elevenlabs.io/v1/agents',
+      'https://api.elevenlabs.io/v1/convai/agents',
+      'https://api.elevenlabs.io/v1/convai',
+    ];
+    
+    let response: Response | null = null;
+    let lastError: any = null;
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying endpoint: ${endpoint}`);
+        response = await fetch(endpoint, {
+          headers: {
+            'xi-api-key': elevenLabsApiKey,
+          }
+        });
+        
+        if (response.ok) {
+          console.log(`Success with endpoint: ${endpoint}`);
+          break;
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.log(`Endpoint ${endpoint} returned ${response.status}:`, errorData);
+          lastError = errorData;
+          response = null;
+        }
+      } catch (err) {
+        console.log(`Error with endpoint ${endpoint}:`, err);
+        lastError = err;
+        response = null;
       }
-    });
+    }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+    if (!response || !response.ok) {
+      const errorData = lastError || {};
       // If endpoint doesn't exist yet, return empty array
-      if (response.status === 404) {
+      if (response?.status === 404 || response?.status === 501) {
+        console.log('Agents API endpoint not found (404/501)');
         return NextResponse.json({
           success: true,
           agents: [],
-          message: "Agents API not yet available. Please check ElevenLabs documentation for updates."
+          message: "Agents API endpoint may not be available yet. Please check ElevenLabs documentation for updates."
         });
       }
       return NextResponse.json({ 
-        error: `ElevenLabs API error: ${errorData.detail?.message || response.statusText}` 
-      }, { status: response.status });
+        error: `ElevenLabs API error: ${errorData.detail?.message || errorData.message || response?.statusText || 'Unknown error'}` 
+      }, { status: response?.status || 500 });
     }
 
     const agentsData = await response.json();
     
+    // Log the response structure for debugging
+    console.log('=== ElevenLabs Agents API Response ===');
+    console.log('Status:', response.status);
+    console.log('Response (raw):', JSON.stringify(agentsData, null, 2));
+    console.log('Response type:', typeof agentsData);
+    console.log('Is array?', Array.isArray(agentsData));
+    if (!Array.isArray(agentsData) && typeof agentsData === 'object' && agentsData !== null) {
+      console.log('Response keys:', Object.keys(agentsData));
+      console.log('Response values:', Object.values(agentsData).map(v => typeof v));
+    }
+    console.log('Using user API key:', usingUserKey);
+    console.log('User ID:', user.id);
+    console.log('=====================================');
+    
+    // Handle different response structures
+    // The API might return: { agents: [...] } or directly an array [...]
+    let agents = [];
+    if (Array.isArray(agentsData)) {
+      agents = agentsData;
+      console.log('Response is direct array');
+    } else if (agentsData && typeof agentsData === 'object') {
+      // Try common property names
+      if (Array.isArray(agentsData.agents)) {
+        agents = agentsData.agents;
+        console.log('Found agents in .agents property');
+      } else if (Array.isArray(agentsData.data)) {
+        agents = agentsData.data;
+        console.log('Found agents in .data property');
+      } else if (Array.isArray(agentsData.results)) {
+        agents = agentsData.results;
+        console.log('Found agents in .results property');
+      } else if (Array.isArray(agentsData.items)) {
+        agents = agentsData.items;
+        console.log('Found agents in .items property');
+      } else {
+        console.log('No agents array found in response object');
+        // If response has agent_id or id, it might be a single agent
+        if (agentsData.agent_id || agentsData.id) {
+          agents = [agentsData];
+          console.log('Treating response as single agent');
+        }
+      }
+    }
+    
+    console.log(`Found ${agents.length} agents for user ${user.id} (using ${usingUserKey ? 'user' : 'system'} API key)`);
+    
+    // Log agent IDs for debugging
+    if (agents.length > 0) {
+      console.log('Agent IDs:', agents.map(a => a.agent_id || a.id || 'unknown'));
+    }
+    
     return NextResponse.json({
       success: true,
-      agents: agentsData.agents || agentsData || []
+      agents: agents,
+      usingUserKey: usingUserKey,
+      totalCount: agents.length
     });
 
   } catch (error) {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Home, BookUser, BrainCircuit, User, LogOut, CreditCard, RefreshCw, Wand2, Volume2, Play, Pause, Download, MessageSquare, Copy, Check, Sparkles, Eye, EyeOff } from "lucide-react"
+import { Home, BookUser, BrainCircuit, User, LogOut, CreditCard, RefreshCw, Wand2, Volume2, Play, Pause, Download, MessageSquare, Copy, Check, Sparkles, Eye, EyeOff, ChevronDown, ChevronUp, Save } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { CreditsPurchaseDialog } from "@/components/CreditsPurchaseDialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -75,6 +75,8 @@ export default function AudioModePage() {
   const [isEditingGeneratedText, setIsEditingGeneratedText] = useState(false)
   const [editedGeneratedText, setEditedGeneratedText] = useState("")
   const [copied, setCopied] = useState(false)
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false)
+  const [savedToLibrary, setSavedToLibrary] = useState(false)
   
   // User state
   const [user, setUser] = useState<any>(null)
@@ -122,6 +124,29 @@ export default function AudioModePage() {
   const [isChangingVoice, setIsChangingVoice] = useState(false)
   const [changedVoiceUrl, setChangedVoiceUrl] = useState<string | null>(null)
   
+  // Dubbing state
+  const [dubbingFile, setDubbingFile] = useState<File | null>(null)
+  const [dubbingSourceLanguage, setDubbingSourceLanguage] = useState<string>("en")
+  const [dubbingTargetLanguage, setDubbingTargetLanguage] = useState<string>("es")
+  const [dubbingUseWatermark, setDubbingUseWatermark] = useState<boolean>(false)
+  const [isDubbing, setIsDubbing] = useState(false)
+  const [dubbingProgress, setDubbingProgress] = useState<string>('')
+  const [dubbingUrl, setDubbingUrl] = useState<string | null>(null)
+  
+  // Voice isolator state
+  const [voiceIsolatorFile, setVoiceIsolatorFile] = useState<File | null>(null)
+  const [isIsolatingVoice, setIsIsolatingVoice] = useState(false)
+  const [voiceIsolationProgress, setVoiceIsolationProgress] = useState<string>('')
+  const [isolatedVoiceUrl, setIsolatedVoiceUrl] = useState<string | null>(null)
+  
+  // Forced alignment state
+  const [forcedAlignmentFile, setForcedAlignmentFile] = useState<File | null>(null)
+  const [forcedAlignmentText, setForcedAlignmentText] = useState<string>("")
+  const [forcedAlignmentLanguage, setForcedAlignmentLanguage] = useState<string>("en")
+  const [isAligning, setIsAligning] = useState(false)
+  const [alignmentProgress, setAlignmentProgress] = useState<string>('')
+  const [alignedTranscript, setAlignedTranscript] = useState<any>(null)
+  
   // Music generation state
   const [musicPrompt, setMusicPrompt] = useState("")
   const [enhancedMusicPrompt, setEnhancedMusicPrompt] = useState("")
@@ -132,6 +157,14 @@ export default function AudioModePage() {
   const [musicLanguage, setMusicLanguage] = useState<string>("en")
   const [isGeneratingMusic, setIsGeneratingMusic] = useState(false)
   const [musicGenerationProgress, setMusicGenerationProgress] = useState<string>('')
+  
+  // Sound effects generation state
+  const [soundEffectPrompt, setSoundEffectPrompt] = useState("")
+  const [soundEffectDuration, setSoundEffectDuration] = useState<number | null>(null) // null = auto
+  const [soundEffectLooping, setSoundEffectLooping] = useState<boolean>(false)
+  const [soundEffectPromptInfluence, setSoundEffectPromptInfluence] = useState<'high' | 'low'>('high')
+  const [isGeneratingSoundEffect, setIsGeneratingSoundEffect] = useState(false)
+  const [soundEffectGenerationProgress, setSoundEffectGenerationProgress] = useState<string>('')
   
   // Agent conversation state
   const [availableAgents, setAvailableAgents] = useState<any[]>([])
@@ -147,6 +180,7 @@ export default function AudioModePage() {
   const [showAgentSettings, setShowAgentSettings] = useState(false)
   
   // Agent configuration settings
+  const [agentName, setAgentName] = useState("")
   const [agentSystemPrompt, setAgentSystemPrompt] = useState("")
   const [agentVoiceId, setAgentVoiceId] = useState("")
   const [agentLanguage, setAgentLanguage] = useState("en")
@@ -159,7 +193,11 @@ export default function AudioModePage() {
     timeout: 30
   })
   const [agentPersonalization, setAgentPersonalization] = useState<Record<string, string>>({})
+  const [agentPersonalizationRaw, setAgentPersonalizationRaw] = useState<string>("{}")
   const [isSavingAgentSettings, setIsSavingAgentSettings] = useState(false)
+  
+  // Card expansion state (multiple cards can be expanded at once)
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   
   // Check authentication
   useEffect(() => {
@@ -348,7 +386,10 @@ export default function AudioModePage() {
     try {
       setIsLoadingAgents(true)
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) return
+      if (!session?.access_token) {
+        console.log('No session token, skipping agent fetch')
+        return
+      }
 
       const response = await fetch('/api/elevenlabs/agents', {
         headers: {
@@ -356,21 +397,34 @@ export default function AudioModePage() {
         }
       })
 
+      const data = await response.json()
+      
       if (response.ok) {
-        const data = await response.json()
-        setAvailableAgents(data.agents || [])
+        // Handle different response structures
+        const agents = data.agents || data || []
+        console.log('Fetched agents:', agents)
+        setAvailableAgents(Array.isArray(agents) ? agents : [])
         
         // Auto-select first agent if available
-        if (data.agents && data.agents.length > 0 && !selectedAgentId) {
-          const firstAgent = data.agents[0]
+        const agentsArray = Array.isArray(agents) ? agents : []
+        if (agentsArray.length > 0 && !selectedAgentId) {
+          const firstAgent = agentsArray[0]
           const agentId = firstAgent.agent_id || firstAgent.id
           setSelectedAgentId(agentId)
           setSelectedAgent(firstAgent)
           loadAgentSettings(firstAgent)
         }
+      } else {
+        console.error('Error fetching agents:', data.error || data.message || 'Unknown error')
+        setAvailableAgents([])
+        // Show error to user if there's a specific error message
+        if (data.error && !data.error.includes('not yet available')) {
+          setError(data.error)
+        }
       }
     } catch (error) {
       console.error('Error fetching agents:', error)
+      setAvailableAgents([])
     } finally {
       setIsLoadingAgents(false)
     }
@@ -485,6 +539,7 @@ export default function AudioModePage() {
         // If agent responds with audio, play it
         if (data.audio) {
           setAudioUrl(data.audio)
+          setSavedToLibrary(false) // Reset save status for new agent audio
           setTimeout(() => {
             if (audioRef.current) {
               audioRef.current.load()
@@ -509,6 +564,11 @@ export default function AudioModePage() {
     }
   }
 
+  // Sync raw JSON string when personalization object changes
+  useEffect(() => {
+    setAgentPersonalizationRaw(JSON.stringify(agentPersonalization, null, 2))
+  }, [agentPersonalization])
+
   // Load agent settings when agent is selected
   useEffect(() => {
     if (selectedAgentId && availableAgents.length > 0) {
@@ -525,6 +585,7 @@ export default function AudioModePage() {
     if (!agent) return
 
     // Set basic settings from agent object
+    if (agent.name) setAgentName(agent.name)
     if (agent.system_prompt) setAgentSystemPrompt(agent.system_prompt)
     if (agent.voice_id) setAgentVoiceId(agent.voice_id)
     if (agent.language) setAgentLanguage(agent.language)
@@ -574,11 +635,25 @@ export default function AudioModePage() {
     }
   }
 
-  // Save agent settings
+  // Save agent settings (create or update)
   const saveAgentSettings = async () => {
-    if (!selectedAgentId) {
-      setError('No agent selected')
-      return
+    const isCreating = selectedAgentId === 'new' || !selectedAgentId
+    
+    if (isCreating) {
+      // Validate required fields for creation
+      if (!agentName.trim()) {
+        setError('Agent name is required')
+        return
+      }
+      if (!agentSystemPrompt.trim()) {
+        setError('System prompt is required')
+        return
+      }
+    } else {
+      if (!selectedAgentId) {
+        setError('No agent selected')
+        return
+      }
     }
 
     try {
@@ -590,37 +665,79 @@ export default function AudioModePage() {
         throw new Error('No active session')
       }
 
-      const settings = {
-        agent_id: selectedAgentId,
-        system_prompt: agentSystemPrompt,
-        voice_id: agentVoiceId || null,
-        language: agentLanguage,
-        model_id: agentModel || null,
-        tools: agentTools,
-        knowledge_base: agentKnowledgeBase,
-        conversation_flow: conversationFlow,
-        personalization: agentPersonalization
+      if (isCreating) {
+        // Create new agent
+        const createData = {
+          name: agentName.trim(),
+          system_prompt: agentSystemPrompt,
+          voice_id: agentVoiceId || null,
+          language: agentLanguage,
+          model_id: agentModel || null,
+          tools: agentTools,
+          knowledge_base: agentKnowledgeBase,
+          conversation_flow: conversationFlow,
+          personalization: agentPersonalization
+        }
+
+        const response = await fetch('/api/elevenlabs/agents/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify(createData)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to create agent')
+        }
+
+        const data = await response.json()
+        const newAgentId = data.agent_id || data.agent?.agent_id || data.agent?.id
+
+        // Show success message
+        alert('Agent created successfully!')
+        
+        // Refresh agents and select the new one
+        await fetchAvailableAgents()
+        if (newAgentId) {
+          setSelectedAgentId(newAgentId)
+        }
+      } else {
+        // Update existing agent
+        const settings = {
+          agent_id: selectedAgentId,
+          system_prompt: agentSystemPrompt,
+          voice_id: agentVoiceId || null,
+          language: agentLanguage,
+          model_id: agentModel || null,
+          tools: agentTools,
+          knowledge_base: agentKnowledgeBase,
+          conversation_flow: conversationFlow,
+          personalization: agentPersonalization
+        }
+
+        const response = await fetch(`/api/elevenlabs/agents/${selectedAgentId}/settings`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify(settings)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to save settings')
+        }
+
+        // Show success message
+        alert('Agent settings saved successfully!')
+        
+        // Refresh agents to get updated data
+        await fetchAvailableAgents()
       }
-
-      const response = await fetch(`/api/elevenlabs/agents/${selectedAgentId}/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify(settings)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to save settings')
-      }
-
-      // Show success message
-      alert('Agent settings saved successfully!')
-      
-      // Refresh agents to get updated data
-      await fetchAvailableAgents()
     } catch (error: any) {
       console.error('Save settings error:', error)
       setError(error.message || 'Failed to save agent settings')
@@ -810,6 +927,7 @@ export default function AudioModePage() {
       // Set the audio URL to play it
       if (data.audioUrl || data.audio) {
         setAudioUrl(data.audioUrl || data.audio)
+        setSavedToLibrary(false) // Reset save status for new voice-changed audio
       }
       
     } catch (error: any) {
@@ -824,6 +942,254 @@ export default function AudioModePage() {
   const handleVoiceChangerFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setVoiceChangerFile(e.target.files[0])
+    }
+  }
+
+  // Handle dubbing file selection
+  const handleDubbingFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setDubbingFile(e.target.files[0])
+    }
+  }
+
+  // Handle voice isolator file selection
+  const handleVoiceIsolatorFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setVoiceIsolatorFile(e.target.files[0])
+    }
+  }
+
+  // Handle forced alignment file selection
+  const handleForcedAlignmentFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setForcedAlignmentFile(e.target.files[0])
+    }
+  }
+
+  // Handle forced alignment
+  const handleForcedAlignment = async () => {
+    if (!forcedAlignmentFile) {
+      setError('Please select an audio file')
+      return
+    }
+
+    if (!forcedAlignmentText.trim()) {
+      setError('Please enter the transcript text')
+      return
+    }
+
+    // Check text length (max 675k characters)
+    if (forcedAlignmentText.length > 675000) {
+      setError('Transcript text is too long. Maximum is 675,000 characters.')
+      return
+    }
+
+    // Check file size (max 3GB)
+    const maxSize = 3 * 1024 * 1024 * 1024; // 3GB
+    if (forcedAlignmentFile.size > maxSize) {
+      setError('File is too large. Maximum size is 3GB.')
+      return
+    }
+
+    try {
+      setIsAligning(true)
+      setError(null)
+      setAlignedTranscript(null)
+      setAlignmentProgress('Preparing forced alignment...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      setAlignmentProgress('Aligning audio with transcript...')
+
+      const formData = new FormData()
+      formData.append('audio', forcedAlignmentFile)
+      formData.append('text', forcedAlignmentText)
+      formData.append('language', forcedAlignmentLanguage)
+
+      const response = await fetch('/api/elevenlabs/forced-alignment', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Forced alignment failed')
+      }
+
+      const data = await response.json()
+
+      if (data.success && data.transcript) {
+        setAlignedTranscript(data.transcript)
+        setAlignmentProgress('Forced alignment completed successfully!')
+      } else {
+        throw new Error('No aligned transcript returned')
+      }
+    } catch (error: any) {
+      console.error('Forced alignment error:', error)
+      setError(error.message || 'Failed to align audio with transcript')
+      setAlignmentProgress('')
+    } finally {
+      setIsAligning(false)
+    }
+  }
+
+  // Handle voice isolation
+  const handleVoiceIsolation = async () => {
+    if (!voiceIsolatorFile) {
+      setError('Please select an audio or video file to isolate voice from')
+      return
+    }
+
+    // Check file size (max 500MB)
+    const maxSize = 500 * 1024 * 1024; // 500MB
+    if (voiceIsolatorFile.size > maxSize) {
+      setError('File is too large. Maximum size is 500MB.')
+      return
+    }
+
+    try {
+      setIsIsolatingVoice(true)
+      setError(null)
+      setIsolatedVoiceUrl(null)
+      setVoiceIsolationProgress('Preparing voice isolation...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      setVoiceIsolationProgress('Isolating speech from background noise...')
+
+      const formData = new FormData()
+      formData.append('file', voiceIsolatorFile)
+
+      const response = await fetch('/api/elevenlabs/voice-isolator', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Voice isolation failed')
+      }
+
+      const data = await response.json()
+
+      if (data.success && (data.url || data.isolatedUrl || data.audioUrl)) {
+        const url = data.url || data.isolatedUrl || data.audioUrl
+        setIsolatedVoiceUrl(url)
+        setVoiceIsolationProgress('Voice isolation completed successfully!')
+        setSavedToLibrary(false) // Reset save status for new isolated audio
+        
+        // If it's audio, set it to play
+        if (voiceIsolatorFile.type.startsWith('audio/')) {
+          setAudioUrl(url)
+          setTimeout(() => {
+            if (audioRef.current) {
+              audioRef.current.load()
+            }
+          }, 100)
+        }
+      } else {
+        throw new Error('No isolated audio URL returned')
+      }
+    } catch (error: any) {
+      console.error('Voice isolation error:', error)
+      setError(error.message || 'Failed to isolate voice')
+      setVoiceIsolationProgress('')
+    } finally {
+      setIsIsolatingVoice(false)
+    }
+  }
+
+  // Handle dubbing
+  const handleDubbing = async () => {
+    if (!dubbingFile) {
+      setError('Please select an audio or video file to dub')
+      return
+    }
+
+    if (dubbingSourceLanguage === dubbingTargetLanguage) {
+      setError('Source and target languages must be different')
+      return
+    }
+
+    // Check file size (max 1GB for API, 500MB for UI)
+    const maxSize = 500 * 1024 * 1024; // 500MB for UI
+    if (dubbingFile.size > maxSize) {
+      setError('File is too large. Maximum size is 500MB for UI (1GB via API).')
+      return
+    }
+
+    try {
+      setIsDubbing(true)
+      setError(null)
+      setDubbingUrl(null)
+      setDubbingProgress('Preparing dubbing...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      setDubbingProgress('Uploading file and processing...')
+
+      const formData = new FormData()
+      formData.append('file', dubbingFile)
+      formData.append('source_language', dubbingSourceLanguage)
+      formData.append('target_language', dubbingTargetLanguage)
+      if (dubbingUseWatermark && dubbingFile.type.startsWith('video/')) {
+        formData.append('use_watermark', 'true')
+      }
+
+      const response = await fetch('/api/elevenlabs/dubbing', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Dubbing failed')
+      }
+
+      const data = await response.json()
+
+      if (data.success && (data.url || data.dubbedUrl || data.audioUrl)) {
+        const url = data.url || data.dubbedUrl || data.audioUrl
+        setDubbingUrl(url)
+        setDubbingProgress('Dubbing completed successfully!')
+        setSavedToLibrary(false) // Reset save status for new dubbed content
+        
+        // If it's audio, set it to play
+        if (dubbingFile.type.startsWith('audio/')) {
+          setAudioUrl(url)
+          setTimeout(() => {
+            if (audioRef.current) {
+              audioRef.current.load()
+            }
+          }, 100)
+        }
+      } else {
+        throw new Error('No dubbed file URL returned')
+      }
+    } catch (error: any) {
+      console.error('Dubbing error:', error)
+      setError(error.message || 'Failed to dub file')
+      setDubbingProgress('')
+    } finally {
+      setIsDubbing(false)
     }
   }
 
@@ -943,6 +1309,7 @@ Return ONLY the enhanced prompt without any explanation or extra text. Make it d
         const url = data.audioUrl || data.audio
         setAudioUrl(url)
         setMusicGenerationProgress('Music generated successfully!')
+        setSavedToLibrary(false) // Reset save status for new music
         
         // Auto-play if user wants
         setTimeout(() => {
@@ -959,6 +1326,84 @@ Return ONLY the enhanced prompt without any explanation or extra text. Make it d
       setMusicGenerationProgress('')
     } finally {
       setIsGeneratingMusic(false)
+    }
+  }
+
+  // Generate sound effects
+  const handleGenerateSoundEffect = async () => {
+    if (!soundEffectPrompt.trim()) {
+      setError('Please enter a sound effect description')
+      return
+    }
+
+    if (soundEffectDuration !== null && (soundEffectDuration < 0.1 || soundEffectDuration > 30)) {
+      setError('Duration must be between 0.1 and 30 seconds')
+      return
+    }
+
+    try {
+      setIsGeneratingSoundEffect(true)
+      setError(null)
+      setAudioUrl(null)
+      setSoundEffectGenerationProgress('Preparing sound effect generation...')
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      setSoundEffectGenerationProgress('Generating high-quality sound effect...')
+
+      const requestBody: any = {
+        prompt: soundEffectPrompt,
+        prompt_influence: soundEffectPromptInfluence,
+      }
+
+      if (soundEffectDuration !== null) {
+        requestBody.duration = soundEffectDuration
+      }
+
+      if (soundEffectLooping) {
+        requestBody.looping = true
+      }
+
+      const response = await fetch('/api/elevenlabs/sound-effects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Sound effect generation failed')
+      }
+
+      const data = await response.json()
+
+      if (data.success && (data.audioUrl || data.audio)) {
+        const url = data.audioUrl || data.audio
+        setAudioUrl(url)
+        setSoundEffectGenerationProgress('Sound effect generated successfully!')
+        setSavedToLibrary(false) // Reset save status for new sound effect
+        
+        // Auto-play if user wants
+        setTimeout(() => {
+          if (audioRef.current) {
+            audioRef.current.load()
+          }
+        }, 100)
+      } else {
+        throw new Error('No audio URL returned')
+      }
+    } catch (error: any) {
+      console.error('Sound effect generation error:', error)
+      setError(error.message || 'Failed to generate sound effect')
+      setSoundEffectGenerationProgress('')
+    } finally {
+      setIsGeneratingSoundEffect(false)
     }
   }
 
@@ -1319,6 +1764,7 @@ Return ONLY the enhanced text without any explanation or extra text.`,
         setAudioUrl(url)
         setAudioGenerationProgress('Audio generated successfully!')
         setProgressPercentage(100)
+        setSavedToLibrary(false) // Reset save status for new audio
         
         // Auto-play if user wants
         setTimeout(() => {
@@ -1336,6 +1782,55 @@ Return ONLY the enhanced text without any explanation or extra text.`,
       setProgressPercentage(0)
     } finally {
       setIsGeneratingAudio(false)
+    }
+  }
+
+  const handleSaveToLibrary = async () => {
+    if (!audioUrl || !text.trim() || !user) {
+      setError('Cannot save: Missing audio URL, text, or user session')
+      return
+    }
+
+    try {
+      setIsSavingToLibrary(true)
+      setError(null)
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      const response = await fetch('/api/generations/save-media', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          mediaUrl: audioUrl,
+          mediaType: 'audio',
+          prompt: text,
+          model: selectedAudioModel
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to save to library')
+      }
+
+      const data = await response.json()
+      setSavedToLibrary(true)
+      
+      // Show success message briefly
+      setTimeout(() => {
+        // Keep saved state visible
+      }, 2000)
+    } catch (error: any) {
+      console.error('Save to library error:', error)
+      setError(error.message || 'Failed to save audio to library')
+    } finally {
+      setIsSavingToLibrary(false)
     }
   }
 
@@ -1613,12 +2108,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {/* Music Generation Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20">
               <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Volume2 className="h-5 w-5 text-purple-400" />
-                  <h2 className="text-xl font-semibold text-white">🎵 Eleven Music Generator</h2>
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('music-generator')) {
+                        newSet.delete('music-generator')
+                      } else {
+                        newSet.add('music-generator')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-purple-400" />
+                    <h2 className="text-xl font-semibold text-white">🎵 Eleven Music Generator</h2>
+                  </div>
+                  {expandedCards.has('music-generator') ? (
+                    <ChevronUp className="h-5 w-5 text-purple-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-purple-400" />
+                  )}
                 </div>
 
-                <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20 mb-4">
+                {expandedCards.has('music-generator') && (
+                  <>
+                    <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20 mb-4">
                   <p className="text-xs text-purple-300">
                     🎼 Create studio-grade music with natural language prompts. Supports vocals, instrumental, 
                     multiple languages, and duration from 10 seconds to 5 minutes. 
@@ -1805,7 +2322,1029 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       Duration: 10 seconds to 5 minutes. Commercial use cleared for film, TV, podcasts, ads, gaming!
                     </p>
                   </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Sound Effects Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-orange-500/30 shadow-orange-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('sound-effects')) {
+                        newSet.delete('sound-effects')
+                      } else {
+                        newSet.add('sound-effects')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-orange-400" />
+                    <h2 className="text-xl font-semibold text-white">🎬 Sound Effects</h2>
+                  </div>
+                  {expandedCards.has('sound-effects') ? (
+                    <ChevronUp className="h-5 w-5 text-orange-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-orange-400" />
+                  )}
                 </div>
+
+                {expandedCards.has('sound-effects') && (
+                  <>
+                    <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20 mb-4">
+                      <p className="text-xs text-orange-300">
+                        🔊 Create high-quality sound effects from text descriptions. Perfect for cinematic sound design, 
+                        game audio, Foley, and ambient sounds. Supports precise timing, style control, and seamless looping.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-orange-400 text-sm font-semibold">Sound Effect Description</label>
+                        <Textarea
+                          value={soundEffectPrompt}
+                          onChange={(e) => setSoundEffectPrompt(e.target.value)}
+                          placeholder="Describe the sound effect (e.g., 'Glass shattering on concrete', 'Thunder rumbling in the distance', '90s hip-hop drum loop, 90 BPM', 'Footsteps on gravel, then a metallic door opens')"
+                          className="w-full bg-black/30 border-orange-500/50 text-white placeholder-gray-500 min-h-[120px]"
+                        />
+                        <p className="text-xs text-gray-400">
+                          💡 <strong>Tip:</strong> Use clear, concise descriptions. For complex sequences, describe the sequence of events. 
+                          Supports audio terminology like "impact", "whoosh", "ambience", "braam", "glitch", "drone".
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Duration */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-orange-400 text-sm font-semibold">Duration (seconds)</label>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={soundEffectDuration !== null}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSoundEffectDuration(5)
+                                  } else {
+                                    setSoundEffectDuration(null)
+                                  }
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                              <span className="ml-2 text-xs text-orange-300">Set Duration</span>
+                            </label>
+                          </div>
+                          {soundEffectDuration !== null ? (
+                            <>
+                              <input
+                                type="range"
+                                min="0.1"
+                                max="30"
+                                step="0.1"
+                                value={soundEffectDuration}
+                                onChange={(e) => setSoundEffectDuration(parseFloat(e.target.value))}
+                                className="w-full"
+                              />
+                              <div className="flex justify-between text-xs text-orange-400/70">
+                                <span>0.1s</span>
+                                <span className="text-orange-300 font-semibold">{soundEffectDuration.toFixed(1)}s</span>
+                                <span>30s</span>
+                              </div>
+                              <p className="text-xs text-gray-400">Cost: 40 credits per second when duration is specified</p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-orange-300/70">Auto-determined based on prompt (default)</p>
+                          )}
+                        </div>
+
+                        {/* Prompt Influence */}
+                        <div className="space-y-2">
+                          <label className="text-orange-400 text-sm font-semibold">Prompt Influence</label>
+                          <Select value={soundEffectPromptInfluence} onValueChange={(value: 'high' | 'low') => setSoundEffectPromptInfluence(value)}>
+                            <SelectTrigger className="bg-transparent border-orange-500/50 text-orange-300">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-orange-500/50">
+                              <SelectItem value="high" className="text-orange-300 hover:bg-orange-500/20">High - More literal interpretation</SelectItem>
+                              <SelectItem value="low" className="text-orange-300 hover:bg-orange-500/20">Low - More creative with variations</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-gray-400">
+                            {soundEffectPromptInfluence === 'high' 
+                              ? 'Strictly follows your prompt description'
+                              : 'More creative interpretation with added variations'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Looping Option */}
+                      <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-orange-500/20">
+                        <div>
+                          <label className="text-orange-400 text-sm font-semibold">Enable Looping</label>
+                          <p className="text-xs text-gray-400">Seamless looping for sounds longer than 30 seconds</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={soundEffectLooping}
+                            onChange={(e) => setSoundEffectLooping(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleGenerateSoundEffect}
+                        disabled={isGeneratingSoundEffect || !soundEffectPrompt.trim()}
+                        className="w-full bg-gradient-to-r from-orange-600 via-red-600 to-orange-800 hover:from-orange-700 hover:via-red-700 hover:to-orange-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isGeneratingSoundEffect ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            GENERATING SOUND EFFECT...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            GENERATE SOUND EFFECT
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Sound Effect Generation Progress */}
+                      {isGeneratingSoundEffect && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-orange-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-orange-600 via-red-600 to-orange-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-orange-400 text-sm text-center">
+                            {soundEffectGenerationProgress || 'Creating high-quality sound effect...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
+                        <p className="text-xs text-orange-300">
+                          💡 <strong>Tips:</strong> Maximum duration is 30 seconds per generation. For longer sequences, 
+                          generate multiple effects and combine them. Use looping for seamless repeating sounds. 
+                          Supports simple effects, complex sequences, and musical elements.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Changer Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-green-500/30 shadow-green-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('voice-changer')) {
+                        newSet.delete('voice-changer')
+                      } else {
+                        newSet.add('voice-changer')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-green-400" />
+                    <h2 className="text-xl font-semibold text-white">🎭 Voice Changer</h2>
+                  </div>
+                  {expandedCards.has('voice-changer') ? (
+                    <ChevronUp className="h-5 w-5 text-green-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-green-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('voice-changer') && (
+                  <>
+                    <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20 mb-4">
+                      <p className="text-xs text-green-300">
+                        🎭 Transform any source audio into a different voice while preserving emotion, delivery, and nuances. 
+                        Captures whispers, laughs, cries, accents, and subtle emotional cues. Best for segments under 5 minutes.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Source Audio Upload */}
+                      <div className="space-y-2">
+                        <label className="text-green-400 text-sm font-semibold">Source Audio</label>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleVoiceChangerFileSelect}
+                          className="w-full bg-black/30 border border-green-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-600 file:text-white hover:file:bg-green-700"
+                        />
+                        {voiceChangerFile && (
+                          <div className="p-2 bg-green-500/10 rounded border border-green-500/20">
+                            <p className="text-xs text-green-300">
+                              ✓ Selected: {voiceChangerFile.name} ({(voiceChangerFile.size / 1024 / 1024).toFixed(2)} MB)
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio file (.mp3, .wav, etc.). Recommended: under 5 minutes for optimal processing. Max 50MB. 
+                          Record in a quiet environment and maintain appropriate microphone levels.
+                        </p>
+                      </div>
+
+                      {/* Target Voice Selection */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-green-400 text-sm font-semibold">Target Voice</label>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              fetchAvailableVoices()
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                            disabled={isLoadingVoices}
+                            title="Refresh voices list"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                        {isLoadingVoices ? (
+                          <div className="flex items-center gap-2 text-green-400">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-400/40 border-t-green-400"></div>
+                            Loading voices...
+                          </div>
+                        ) : (
+                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                            <SelectTrigger className="bg-transparent border-green-500/50 text-green-300 hover:border-green-400">
+                              <SelectValue placeholder="Select target voice" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-green-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              {availableVoices.length > 0 ? (
+                                availableVoices.map((voice) => (
+                                  <SelectItem 
+                                    key={voice.id || voice.voice_id} 
+                                    value={voice.id || voice.voice_id}
+                                    className="text-green-300 hover:bg-green-500/20"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {voice.name || voice.voice_id}
+                                      {voice.category && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">
+                                          {voice.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {voice.description && (
+                                      <span className="text-xs text-gray-400 ml-2 block">- {voice.description}</span>
+                                    )}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="no-voices" disabled className="text-gray-500">
+                                  No voices available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          The voice to convert your audio to. Can use default, cloned, or designed voices. 
+                          Custom/cloned voices are supported.
+                        </p>
+                      </div>
+
+                      {/* Model Selection */}
+                      <div className="space-y-2">
+                        <label className="text-green-400 text-sm font-semibold">Model</label>
+                        <Select value={voiceChangerModel} onValueChange={setVoiceChangerModel}>
+                          <SelectTrigger className="bg-transparent border-green-500/50 text-green-300 hover:border-green-400">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-black/90 border-green-500/50">
+                            <SelectItem value="eleven_multilingual_sts_v2" className="text-green-300 hover:bg-green-500/20">
+                              Multilingual STS v2 (29 languages, recommended)
+                            </SelectItem>
+                            <SelectItem value="eleven_english_sts_v2" className="text-green-300 hover:bg-green-500/20">
+                              English STS v2 (English only)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">
+                          Multilingual v2 supports 29 languages. English v2 only supports English. 
+                          Multilingual often outperforms English even for English material.
+                        </p>
+                      </div>
+
+                      {/* Voice Settings Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Stability */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-green-400 text-sm font-semibold">Stability</label>
+                            <span className="text-green-300 text-sm">{voiceChangerStability.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={voiceChangerStability}
+                            onChange={(e) => setVoiceChangerStability(parseFloat(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-400">100% recommended for maximum voice consistency</p>
+                        </div>
+
+                        {/* Style */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-green-400 text-sm font-semibold">Style</label>
+                            <span className="text-green-300 text-sm">{voiceChangerStyle.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={voiceChangerStyle}
+                            onChange={(e) => setVoiceChangerStyle(parseFloat(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-400">Set to 0% when input audio is already expressive</p>
+                        </div>
+                      </div>
+
+                      {/* Remove Background Noise */}
+                      <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-green-500/20">
+                        <div>
+                          <label className="text-green-400 text-sm font-semibold">Remove Background Noise</label>
+                          <p className="text-xs text-gray-400">Minimize environmental sounds in the output</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={voiceChangerRemoveNoise}
+                            onChange={(e) => setVoiceChangerRemoveNoise(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleVoiceChange}
+                        disabled={isChangingVoice || !voiceChangerFile || !selectedVoiceId}
+                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isChangingVoice ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            CHANGING VOICE...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="h-5 w-5 mr-3" />
+                            CHANGE VOICE
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Voice Change Progress */}
+                      {isChangingVoice && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-green-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-green-600 to-emerald-600 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-green-400 text-sm text-center">
+                            Transforming voice while preserving emotion and delivery...
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                        <p className="text-xs text-green-300">
+                          💡 <strong>Tips:</strong> Keep segments under 5 minutes for optimal processing. 
+                          For longer audio, split into smaller chunks. Billing: 1000 characters per minute of processed audio. 
+                          The source audio's accent and language will be preserved in the output.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Dubbing Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-indigo-500/30 shadow-indigo-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('dubbing')) {
+                        newSet.delete('dubbing')
+                      } else {
+                        newSet.add('dubbing')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-indigo-400" />
+                    <h2 className="text-xl font-semibold text-white">🌍 Dubbing</h2>
+                  </div>
+                  {expandedCards.has('dubbing') ? (
+                    <ChevronUp className="h-5 w-5 text-indigo-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-indigo-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('dubbing') && (
+                  <>
+                    <div className="p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20 mb-4">
+                      <p className="text-xs text-indigo-300">
+                        🌍 Translate audio and video across 32 languages while preserving emotion, timing, tone, and unique characteristics. 
+                        Automatically detects multiple speakers and preserves original voices. Creator plan or higher required.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-indigo-400 text-sm font-semibold">Audio or Video File</label>
+                        <input
+                          type="file"
+                          accept="audio/*,video/*"
+                          onChange={handleDubbingFileSelect}
+                          className="w-full bg-black/30 border border-indigo-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700"
+                        />
+                        {dubbingFile && (
+                          <div className="p-2 bg-indigo-500/10 rounded border border-indigo-500/20">
+                            <p className="text-xs text-indigo-300">
+                              ✓ Selected: {dubbingFile.name} ({(dubbingFile.size / 1024 / 1024).toFixed(2)} MB)
+                              {dubbingFile.type.startsWith('video/') && ' - Video'}
+                              {dubbingFile.type.startsWith('audio/') && ' - Audio'}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio or video file. UI supports up to 500MB and 45 minutes. 
+                          API supports up to 1GB and 2.5 hours. Supports YouTube, X, TikTok, Vimeo URLs, or file uploads.
+                        </p>
+                      </div>
+
+                      {/* Language Selection */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Source Language */}
+                        <div className="space-y-2">
+                          <label className="text-indigo-400 text-sm font-semibold">Source Language</label>
+                          <Select value={dubbingSourceLanguage} onValueChange={setDubbingSourceLanguage}>
+                            <SelectTrigger className="bg-transparent border-indigo-500/50 text-indigo-300 hover:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-indigo-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              <SelectItem value="en" className="text-indigo-300 hover:bg-indigo-500/20">English</SelectItem>
+                              <SelectItem value="hi" className="text-indigo-300 hover:bg-indigo-500/20">Hindi</SelectItem>
+                              <SelectItem value="pt" className="text-indigo-300 hover:bg-indigo-500/20">Portuguese</SelectItem>
+                              <SelectItem value="zh" className="text-indigo-300 hover:bg-indigo-500/20">Chinese</SelectItem>
+                              <SelectItem value="es" className="text-indigo-300 hover:bg-indigo-500/20">Spanish</SelectItem>
+                              <SelectItem value="fr" className="text-indigo-300 hover:bg-indigo-500/20">French</SelectItem>
+                              <SelectItem value="de" className="text-indigo-300 hover:bg-indigo-500/20">German</SelectItem>
+                              <SelectItem value="ja" className="text-indigo-300 hover:bg-indigo-500/20">Japanese</SelectItem>
+                              <SelectItem value="ar" className="text-indigo-300 hover:bg-indigo-500/20">Arabic</SelectItem>
+                              <SelectItem value="ru" className="text-indigo-300 hover:bg-indigo-500/20">Russian</SelectItem>
+                              <SelectItem value="ko" className="text-indigo-300 hover:bg-indigo-500/20">Korean</SelectItem>
+                              <SelectItem value="id" className="text-indigo-300 hover:bg-indigo-500/20">Indonesian</SelectItem>
+                              <SelectItem value="it" className="text-indigo-300 hover:bg-indigo-500/20">Italian</SelectItem>
+                              <SelectItem value="nl" className="text-indigo-300 hover:bg-indigo-500/20">Dutch</SelectItem>
+                              <SelectItem value="tr" className="text-indigo-300 hover:bg-indigo-500/20">Turkish</SelectItem>
+                              <SelectItem value="pl" className="text-indigo-300 hover:bg-indigo-500/20">Polish</SelectItem>
+                              <SelectItem value="sv" className="text-indigo-300 hover:bg-indigo-500/20">Swedish</SelectItem>
+                              <SelectItem value="fil" className="text-indigo-300 hover:bg-indigo-500/20">Filipino</SelectItem>
+                              <SelectItem value="ms" className="text-indigo-300 hover:bg-indigo-500/20">Malay</SelectItem>
+                              <SelectItem value="ro" className="text-indigo-300 hover:bg-indigo-500/20">Romanian</SelectItem>
+                              <SelectItem value="uk" className="text-indigo-300 hover:bg-indigo-500/20">Ukrainian</SelectItem>
+                              <SelectItem value="el" className="text-indigo-300 hover:bg-indigo-500/20">Greek</SelectItem>
+                              <SelectItem value="cs" className="text-indigo-300 hover:bg-indigo-500/20">Czech</SelectItem>
+                              <SelectItem value="da" className="text-indigo-300 hover:bg-indigo-500/20">Danish</SelectItem>
+                              <SelectItem value="fi" className="text-indigo-300 hover:bg-indigo-500/20">Finnish</SelectItem>
+                              <SelectItem value="bg" className="text-indigo-300 hover:bg-indigo-500/20">Bulgarian</SelectItem>
+                              <SelectItem value="hr" className="text-indigo-300 hover:bg-indigo-500/20">Croatian</SelectItem>
+                              <SelectItem value="sk" className="text-indigo-300 hover:bg-indigo-500/20">Slovak</SelectItem>
+                              <SelectItem value="ta" className="text-indigo-300 hover:bg-indigo-500/20">Tamil</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Target Language */}
+                        <div className="space-y-2">
+                          <label className="text-indigo-400 text-sm font-semibold">Target Language</label>
+                          <Select value={dubbingTargetLanguage} onValueChange={setDubbingTargetLanguage}>
+                            <SelectTrigger className="bg-transparent border-indigo-500/50 text-indigo-300 hover:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-indigo-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              <SelectItem value="en" className="text-indigo-300 hover:bg-indigo-500/20">English</SelectItem>
+                              <SelectItem value="hi" className="text-indigo-300 hover:bg-indigo-500/20">Hindi</SelectItem>
+                              <SelectItem value="pt" className="text-indigo-300 hover:bg-indigo-500/20">Portuguese</SelectItem>
+                              <SelectItem value="zh" className="text-indigo-300 hover:bg-indigo-500/20">Chinese</SelectItem>
+                              <SelectItem value="es" className="text-indigo-300 hover:bg-indigo-500/20">Spanish</SelectItem>
+                              <SelectItem value="fr" className="text-indigo-300 hover:bg-indigo-500/20">French</SelectItem>
+                              <SelectItem value="de" className="text-indigo-300 hover:bg-indigo-500/20">German</SelectItem>
+                              <SelectItem value="ja" className="text-indigo-300 hover:bg-indigo-500/20">Japanese</SelectItem>
+                              <SelectItem value="ar" className="text-indigo-300 hover:bg-indigo-500/20">Arabic</SelectItem>
+                              <SelectItem value="ru" className="text-indigo-300 hover:bg-indigo-500/20">Russian</SelectItem>
+                              <SelectItem value="ko" className="text-indigo-300 hover:bg-indigo-500/20">Korean</SelectItem>
+                              <SelectItem value="id" className="text-indigo-300 hover:bg-indigo-500/20">Indonesian</SelectItem>
+                              <SelectItem value="it" className="text-indigo-300 hover:bg-indigo-500/20">Italian</SelectItem>
+                              <SelectItem value="nl" className="text-indigo-300 hover:bg-indigo-500/20">Dutch</SelectItem>
+                              <SelectItem value="tr" className="text-indigo-300 hover:bg-indigo-500/20">Turkish</SelectItem>
+                              <SelectItem value="pl" className="text-indigo-300 hover:bg-indigo-500/20">Polish</SelectItem>
+                              <SelectItem value="sv" className="text-indigo-300 hover:bg-indigo-500/20">Swedish</SelectItem>
+                              <SelectItem value="fil" className="text-indigo-300 hover:bg-indigo-500/20">Filipino</SelectItem>
+                              <SelectItem value="ms" className="text-indigo-300 hover:bg-indigo-500/20">Malay</SelectItem>
+                              <SelectItem value="ro" className="text-indigo-300 hover:bg-indigo-500/20">Romanian</SelectItem>
+                              <SelectItem value="uk" className="text-indigo-300 hover:bg-indigo-500/20">Ukrainian</SelectItem>
+                              <SelectItem value="el" className="text-indigo-300 hover:bg-indigo-500/20">Greek</SelectItem>
+                              <SelectItem value="cs" className="text-indigo-300 hover:bg-indigo-500/20">Czech</SelectItem>
+                              <SelectItem value="da" className="text-indigo-300 hover:bg-indigo-500/20">Danish</SelectItem>
+                              <SelectItem value="fi" className="text-indigo-300 hover:bg-indigo-500/20">Finnish</SelectItem>
+                              <SelectItem value="bg" className="text-indigo-300 hover:bg-indigo-500/20">Bulgarian</SelectItem>
+                              <SelectItem value="hr" className="text-indigo-300 hover:bg-indigo-500/20">Croatian</SelectItem>
+                              <SelectItem value="sk" className="text-indigo-300 hover:bg-indigo-500/20">Slovak</SelectItem>
+                              <SelectItem value="ta" className="text-indigo-300 hover:bg-indigo-500/20">Tamil</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Watermark Option (Video Only) */}
+                      {dubbingFile && dubbingFile.type.startsWith('video/') && (
+                        <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-indigo-500/20">
+                          <div>
+                            <label className="text-indigo-400 text-sm font-semibold">Use Watermark (Video Only)</label>
+                            <p className="text-xs text-gray-400">Reduce credit usage with watermarked output</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={dubbingUseWatermark}
+                              onChange={(e) => setDubbingUseWatermark(e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleDubbing}
+                        disabled={isDubbing || !dubbingFile || dubbingSourceLanguage === dubbingTargetLanguage}
+                        className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isDubbing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            DUBBING...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            START DUBBING
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Dubbing Progress */}
+                      {isDubbing && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-indigo-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-indigo-400 text-sm text-center">
+                            {dubbingProgress || 'Translating and preserving emotion, timing, and tone...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Dubbed File Result */}
+                      {dubbingUrl && (
+                        <div className="p-4 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                          <p className="text-xs text-indigo-300 mb-2">
+                            ✓ Dubbing completed successfully!
+                          </p>
+                          {dubbingFile?.type.startsWith('video/') ? (
+                            <video 
+                              src={dubbingUrl} 
+                              controls 
+                              className="w-full rounded-lg max-h-[400px]"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <div className="space-y-2">
+                              <audio src={dubbingUrl} controls className="w-full" />
+                              <p className="text-xs text-indigo-300">
+                                Audio is also available in the audio player below.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                        <p className="text-xs text-indigo-300">
+                          💡 <strong>Features:</strong> Automatically detects multiple speakers (up to 9 recommended), 
+                          preserves original voices and emotional tone, keeps background audio, supports 32 languages. 
+                          For fine-tuning, use Dubbing Studio for interactive editing. Creator plan or higher required.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Isolator Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-teal-500/30 shadow-teal-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('voice-isolator')) {
+                        newSet.delete('voice-isolator')
+                      } else {
+                        newSet.add('voice-isolator')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-teal-400" />
+                    <h2 className="text-xl font-semibold text-white">🎤 Voice Isolator</h2>
+                  </div>
+                  {expandedCards.has('voice-isolator') ? (
+                    <ChevronUp className="h-5 w-5 text-teal-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-teal-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('voice-isolator') && (
+                  <>
+                    <div className="p-3 bg-teal-500/10 rounded-lg border border-teal-500/20 mb-4">
+                      <p className="text-xs text-teal-300">
+                        🎤 Transform audio recordings with background noise into clean, studio-quality speech. 
+                        Isolates speech from background noise, music, and ambient sounds. Perfect for noisy environments.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-teal-400 text-sm font-semibold">Audio or Video File</label>
+                        <input
+                          type="file"
+                          accept="audio/*,video/*"
+                          onChange={handleVoiceIsolatorFileSelect}
+                          className="w-full bg-black/30 border border-teal-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-teal-600 file:text-white hover:file:bg-teal-700"
+                        />
+                        {voiceIsolatorFile && (
+                          <div className="p-2 bg-teal-500/10 rounded border border-teal-500/20">
+                            <p className="text-xs text-teal-300">
+                              ✓ Selected: {voiceIsolatorFile.name} ({(voiceIsolatorFile.size / 1024 / 1024).toFixed(2)} MB)
+                              {voiceIsolatorFile.type.startsWith('video/') && ' - Video'}
+                              {voiceIsolatorFile.type.startsWith('audio/') && ' - Audio'}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio or video file. Supports files up to 500MB and 1 hour in length. 
+                          Audio formats: AAC, AIFF, OGG, MP3, OPUS, WAV, FLAC, M4A. 
+                          Video formats: MP4, AVI, MKV, MOV, WMV, FLV, WEBM, MPEG, 3GPP.
+                        </p>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleVoiceIsolation}
+                        disabled={isIsolatingVoice || !voiceIsolatorFile}
+                        className="w-full bg-gradient-to-r from-teal-600 via-cyan-600 to-teal-800 hover:from-teal-700 hover:via-cyan-700 hover:to-teal-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isIsolatingVoice ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            ISOLATING VOICE...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            ISOLATE VOICE
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Voice Isolation Progress */}
+                      {isIsolatingVoice && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-teal-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-teal-600 via-cyan-600 to-teal-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-teal-400 text-sm text-center">
+                            {voiceIsolationProgress || 'Isolating speech from background noise...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Isolated Voice Result */}
+                      {isolatedVoiceUrl && (
+                        <div className="p-4 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                          <p className="text-xs text-teal-300 mb-2">
+                            ✓ Voice isolation completed successfully!
+                          </p>
+                          {voiceIsolatorFile?.type.startsWith('video/') ? (
+                            <video 
+                              src={isolatedVoiceUrl} 
+                              controls 
+                              className="w-full rounded-lg max-h-[400px]"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <div className="space-y-2">
+                              <audio src={isolatedVoiceUrl} controls className="w-full" />
+                              <p className="text-xs text-teal-300">
+                                Isolated audio is also available in the audio player below.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                        <p className="text-xs text-teal-300">
+                          💡 <strong>Cost:</strong> 1000 characters for every minute of audio. 
+                          <strong> File limits:</strong> Up to 500MB and 1 hour in length. 
+                          <strong> Note:</strong> Not specifically optimized for isolating vocals from music, but may work depending on the content.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Forced Alignment Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-pink-500/30 shadow-pink-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('forced-alignment')) {
+                        newSet.delete('forced-alignment')
+                      } else {
+                        newSet.add('forced-alignment')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-pink-400" />
+                    <h2 className="text-xl font-semibold text-white">⏱️ Forced Alignment</h2>
+                  </div>
+                  {expandedCards.has('forced-alignment') ? (
+                    <ChevronUp className="h-5 w-5 text-pink-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-pink-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('forced-alignment') && (
+                  <>
+                    <div className="p-3 bg-pink-500/10 rounded-lg border border-pink-500/20 mb-4">
+                      <p className="text-xs text-pink-300">
+                        ⏱️ Turn spoken audio and text into a time-aligned transcript with exact timestamps for each word or phrase. 
+                        Perfect for matching subtitles to video or generating timings for audiobooks.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Audio File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-pink-400 text-sm font-semibold">Audio File</label>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleForcedAlignmentFileSelect}
+                          className="w-full bg-black/30 border border-pink-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-pink-600 file:text-white hover:file:bg-pink-700"
+                        />
+                        {forcedAlignmentFile && (
+                          <div className="p-2 bg-pink-500/10 rounded border border-pink-500/20">
+                            <p className="text-xs text-pink-300">
+                              ✓ Selected: {forcedAlignmentFile.name} ({(forcedAlignmentFile.size / 1024 / 1024).toFixed(2)} MB)
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio file. Maximum file size: 3GB. Maximum duration: 10 hours.
+                        </p>
+                      </div>
+
+                      {/* Transcript Text Input */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-pink-400 text-sm font-semibold">Transcript Text</label>
+                          <span className="text-xs text-pink-300/70">
+                            {forcedAlignmentText.length.toLocaleString()} / 675,000 characters
+                          </span>
+                        </div>
+                        <Textarea
+                          value={forcedAlignmentText}
+                          onChange={(e) => setForcedAlignmentText(e.target.value)}
+                          placeholder="Enter the transcript text that matches your audio file. Use plain text format (no JSON or special formatting). Example: 'Hello, how are you?'"
+                          className="w-full bg-black/30 border-pink-500/50 text-white placeholder-gray-500 min-h-[150px]"
+                          maxLength={675000}
+                        />
+                        <p className="text-xs text-gray-400">
+                          💡 Enter plain text transcript (no JSON formatting). Maximum: 675,000 characters. 
+                          The text should match the spoken content in the audio file.
+                        </p>
+                      </div>
+
+                      {/* Language Selection */}
+                      <div className="space-y-2">
+                        <label className="text-pink-400 text-sm font-semibold">Language</label>
+                        <Select value={forcedAlignmentLanguage} onValueChange={setForcedAlignmentLanguage}>
+                          <SelectTrigger className="bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                            <SelectItem value="en" className="text-pink-300 hover:bg-pink-500/20">English (USA, UK, Australia, Canada)</SelectItem>
+                            <SelectItem value="ja" className="text-pink-300 hover:bg-pink-500/20">Japanese</SelectItem>
+                            <SelectItem value="zh" className="text-pink-300 hover:bg-pink-500/20">Chinese</SelectItem>
+                            <SelectItem value="de" className="text-pink-300 hover:bg-pink-500/20">German</SelectItem>
+                            <SelectItem value="hi" className="text-pink-300 hover:bg-pink-500/20">Hindi</SelectItem>
+                            <SelectItem value="fr" className="text-pink-300 hover:bg-pink-500/20">French (France, Canada)</SelectItem>
+                            <SelectItem value="ko" className="text-pink-300 hover:bg-pink-500/20">Korean</SelectItem>
+                            <SelectItem value="pt" className="text-pink-300 hover:bg-pink-500/20">Portuguese (Brazil, Portugal)</SelectItem>
+                            <SelectItem value="it" className="text-pink-300 hover:bg-pink-500/20">Italian</SelectItem>
+                            <SelectItem value="es" className="text-pink-300 hover:bg-pink-500/20">Spanish (Spain, Mexico)</SelectItem>
+                            <SelectItem value="id" className="text-pink-300 hover:bg-pink-500/20">Indonesian</SelectItem>
+                            <SelectItem value="nl" className="text-pink-300 hover:bg-pink-500/20">Dutch</SelectItem>
+                            <SelectItem value="tr" className="text-pink-300 hover:bg-pink-500/20">Turkish</SelectItem>
+                            <SelectItem value="fil" className="text-pink-300 hover:bg-pink-500/20">Filipino</SelectItem>
+                            <SelectItem value="pl" className="text-pink-300 hover:bg-pink-500/20">Polish</SelectItem>
+                            <SelectItem value="sv" className="text-pink-300 hover:bg-pink-500/20">Swedish</SelectItem>
+                            <SelectItem value="bg" className="text-pink-300 hover:bg-pink-500/20">Bulgarian</SelectItem>
+                            <SelectItem value="ro" className="text-pink-300 hover:bg-pink-500/20">Romanian</SelectItem>
+                            <SelectItem value="ar" className="text-pink-300 hover:bg-pink-500/20">Arabic (Saudi Arabia, UAE)</SelectItem>
+                            <SelectItem value="cs" className="text-pink-300 hover:bg-pink-500/20">Czech</SelectItem>
+                            <SelectItem value="el" className="text-pink-300 hover:bg-pink-500/20">Greek</SelectItem>
+                            <SelectItem value="fi" className="text-pink-300 hover:bg-pink-500/20">Finnish</SelectItem>
+                            <SelectItem value="hr" className="text-pink-300 hover:bg-pink-500/20">Croatian</SelectItem>
+                            <SelectItem value="ms" className="text-pink-300 hover:bg-pink-500/20">Malay</SelectItem>
+                            <SelectItem value="sk" className="text-pink-300 hover:bg-pink-500/20">Slovak</SelectItem>
+                            <SelectItem value="da" className="text-pink-300 hover:bg-pink-500/20">Danish</SelectItem>
+                            <SelectItem value="ta" className="text-pink-300 hover:bg-pink-500/20">Tamil</SelectItem>
+                            <SelectItem value="uk" className="text-pink-300 hover:bg-pink-500/20">Ukrainian</SelectItem>
+                            <SelectItem value="ru" className="text-pink-300 hover:bg-pink-500/20">Russian</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">
+                          Select the language of the audio and transcript. Supports 29 languages.
+                        </p>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleForcedAlignment}
+                        disabled={isAligning || !forcedAlignmentFile || !forcedAlignmentText.trim()}
+                        className="w-full bg-gradient-to-r from-pink-600 via-rose-600 to-pink-800 hover:from-pink-700 hover:via-rose-700 hover:to-pink-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isAligning ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            ALIGNING...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            ALIGN AUDIO & TRANSCRIPT
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Alignment Progress */}
+                      {isAligning && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-pink-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-pink-600 via-rose-600 to-pink-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-pink-400 text-sm text-center">
+                            {alignmentProgress || 'Aligning audio with transcript...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Aligned Transcript Result */}
+                      {alignedTranscript && (
+                        <div className="p-4 bg-pink-500/10 rounded-lg border border-pink-500/20">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs text-pink-300 font-semibold">
+                              ✓ Time-aligned transcript generated!
+                            </p>
+                            <Button
+                              onClick={() => {
+                                const jsonStr = JSON.stringify(alignedTranscript, null, 2)
+                                navigator.clipboard.writeText(jsonStr)
+                                setCopied(true)
+                                setTimeout(() => setCopied(false), 2000)
+                              }}
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-xs text-pink-400 hover:text-pink-300"
+                            >
+                              {copied ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy JSON
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          <div className="bg-black/30 rounded-lg p-3 max-h-[400px] overflow-y-auto">
+                            <pre className="text-xs text-pink-200 font-mono whitespace-pre-wrap break-words">
+                              {JSON.stringify(alignedTranscript, null, 2)}
+                            </pre>
+                          </div>
+                          <p className="text-xs text-pink-300/70 mt-2">
+                            The transcript includes timestamps for each word or phrase aligned with the audio.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-pink-500/10 rounded-lg border border-pink-500/20">
+                        <p className="text-xs text-pink-300">
+                          💡 <strong>Use cases:</strong> Matching subtitles to video recordings, generating timings for audiobook recordings. 
+                          <strong> Cost:</strong> Same as Speech to Text API. 
+                          <strong> Note:</strong> Does not support diarization. Use plain text format (no JSON).
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1813,12 +3352,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {selectedAudioModel === 'elevenlabs' && (
               <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-blue-500/30 shadow-blue-500/20">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <BrainCircuit className="h-5 w-5 text-blue-400" />
-                    <h2 className="text-xl font-semibold text-white">🤖 ElevenLabs Agents Platform</h2>
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('agents-platform')) {
+                          newSet.delete('agents-platform')
+                        } else {
+                          newSet.add('agents-platform')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <BrainCircuit className="h-5 w-5 text-blue-400" />
+                      <h2 className="text-xl font-semibold text-white">🤖 ElevenLabs Agents Platform</h2>
+                    </div>
+                    {expandedCards.has('agents-platform') ? (
+                      <ChevronUp className="h-5 w-5 text-blue-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-blue-400" />
+                    )}
                   </div>
 
-                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 mb-4">
+                  {expandedCards.has('agents-platform') && (
+                    <>
+                      <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 mb-4">
                     <p className="text-xs text-blue-300">
                       🎯 Build, deploy, and scale voice agents with natural dialogue. Multimodal agents that handle 
                       complex workflows through conversation. Create agents in the ElevenLabs dashboard first.
@@ -1827,7 +3388,19 @@ Return ONLY the enhanced text without any explanation or extra text.`,
 
                   {/* Agent Selection */}
                   <div className="space-y-2">
-                    <label className="text-blue-400 text-sm font-semibold">Select Agent</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-blue-400 text-sm font-semibold">Select Agent</label>
+                      <Button
+                        onClick={fetchAvailableAgents}
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                        disabled={isLoadingAgents}
+                        title="Refresh agents list"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isLoadingAgents ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
                     {isLoadingAgents ? (
                       <div className="flex items-center gap-2 text-blue-400">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-400/40 border-t-blue-400"></div>
@@ -1839,6 +3412,15 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                           <SelectValue placeholder="Select an agent" />
                         </SelectTrigger>
                         <SelectContent className="bg-black/90 border-blue-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                          <SelectItem 
+                            value="new"
+                            className="text-green-400 hover:bg-green-500/20 font-semibold"
+                          >
+                            ➕ Create New Agent
+                          </SelectItem>
+                          {availableAgents.length > 0 && (
+                            <div className="border-t border-blue-500/30 my-1" />
+                          )}
                           {availableAgents.length > 0 ? (
                             availableAgents.map((agent) => (
                               <SelectItem 
@@ -1854,7 +3436,7 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                             ))
                           ) : (
                             <SelectItem value="no-agents" disabled className="text-gray-500">
-                              No agents available. Create agents in ElevenLabs dashboard.
+                              No existing agents
                             </SelectItem>
                           )}
                         </SelectContent>
@@ -1888,7 +3470,11 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     <div className="mt-4 p-4 bg-black/40 rounded-lg border border-blue-500/30 space-y-4">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-blue-400">Agent Configuration</h3>
-                        {!selectedAgentId || selectedAgentId === 'no-agents' ? (
+                        {selectedAgentId === 'new' ? (
+                          <span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">
+                            Creating New Agent
+                          </span>
+                        ) : !selectedAgentId || selectedAgentId === 'no-agents' ? (
                           <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded">
                             No agent selected - settings for reference only
                           </span>
@@ -1899,12 +3485,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                         )}
                       </div>
                       
-                      {(!selectedAgentId || selectedAgentId === 'no-agents') && (
+                      {selectedAgentId === 'new' && (
+                        <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20 mb-4">
+                          <p className="text-xs text-green-300">
+                            ✨ <strong>Creating New Agent:</strong> Fill in the details below and click "Create Agent" to save.
+                          </p>
+                        </div>
+                      )}
+                      
+                      {(!selectedAgentId || selectedAgentId === 'no-agents') && selectedAgentId !== 'new' && (
                         <div className="p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20 mb-4">
                           <p className="text-xs text-yellow-300">
-                            ⚠️ <strong>Note:</strong> You're viewing default settings. To save changes, select an agent first. 
-                            If no agents are available, create them in the ElevenLabs dashboard.
+                            ⚠️ <strong>Note:</strong> Select "Create New Agent" or an existing agent to save changes.
                           </p>
+                        </div>
+                      )}
+                      
+                      {/* Agent Name - Required for new agents */}
+                      {(selectedAgentId === 'new' || selectedAgentId === '') && (
+                        <div className="space-y-2">
+                          <label className="text-blue-300 text-sm font-semibold">Agent Name <span className="text-red-400">*</span></label>
+                          <input
+                            type="text"
+                            value={agentName}
+                            onChange={(e) => setAgentName(e.target.value)}
+                            placeholder="Enter a name for your agent"
+                            className="w-full px-3 py-2 bg-black/30 border-blue-500/50 rounded text-white placeholder-gray-500"
+                          />
+                          <p className="text-xs text-gray-400">A unique name to identify this agent.</p>
                         </div>
                       )}
                       
@@ -2051,12 +3659,14 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       <div className="space-y-2">
                         <label className="text-blue-300 text-sm font-semibold">Personalization Variables (JSON)</label>
                         <Textarea
-                          value={JSON.stringify(agentPersonalization, null, 2)}
+                          value={agentPersonalizationRaw}
                           onChange={(e) => {
+                            const newValue = e.target.value
+                            setAgentPersonalizationRaw(newValue)
                             try {
-                              setAgentPersonalization(JSON.parse(e.target.value))
+                              setAgentPersonalization(JSON.parse(newValue))
                             } catch {
-                              // Invalid JSON, ignore
+                              // Invalid JSON, allow typing but don't update parsed state
                             }
                           }}
                           placeholder='{"variable1": "value1", "variable2": "value2"}'
@@ -2068,18 +3678,18 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       {/* Save Button */}
                       <Button
                         onClick={saveAgentSettings}
-                        disabled={isSavingAgentSettings || !selectedAgentId || selectedAgentId === 'no-agents'}
+                        disabled={isSavingAgentSettings || (!selectedAgentId || selectedAgentId === 'no-agents')}
                         className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSavingAgentSettings ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                            Saving Settings...
+                            {selectedAgentId === 'new' ? 'Creating Agent...' : 'Saving Settings...'}
                           </>
                         ) : (
                           <>
                             <Wand2 className="h-4 w-4 mr-2" />
-                            {selectedAgentId && selectedAgentId !== 'no-agents' ? 'Save Agent Settings' : 'Select an Agent to Save'}
+                            {selectedAgentId === 'new' ? 'Create Agent' : selectedAgentId && selectedAgentId !== 'no-agents' ? 'Save Agent Settings' : 'Select an Agent to Save'}
                           </>
                         )}
                       </Button>
@@ -2209,6 +3819,8 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       </div>
                     </div>
                   )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -2217,12 +3829,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {selectedAudioModel === 'elevenlabs' && (
               <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
                 <div className="space-y-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Volume2 className="h-5 w-5 text-cyan-400" />
-                    <h2 className="text-xl font-semibold text-white">ElevenLabs Voice Settings</h2>
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('voice-settings')) {
+                          newSet.delete('voice-settings')
+                        } else {
+                          newSet.add('voice-settings')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="h-5 w-5 text-cyan-400" />
+                      <h2 className="text-xl font-semibold text-white">ElevenLabs Voice Settings</h2>
+                    </div>
+                    {expandedCards.has('voice-settings') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
                   </div>
 
-                  {/* Voice Selection */}
+                  {expandedCards.has('voice-settings') && (
+                    <>
+                      {/* Voice Selection */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-cyan-400 text-sm font-semibold">Voice</label>
@@ -2728,6 +4362,8 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       💡 <strong>Tip:</strong> Adjust these settings to fine-tune your voice output. Stability controls consistency, Similarity Boost affects voice matching, Style adds expressiveness, and Speaker Boost enhances overall quality.
                     </p>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -2735,11 +4371,31 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {/* Text Generation Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
               <div className="space-y-4">
-                <div className="flex items-center justify-between mb-4">
+                <div 
+                  className="flex items-center justify-between mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('generate-text')) {
+                        newSet.delete('generate-text')
+                      } else {
+                        newSet.add('generate-text')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
                   <h2 className="text-xl font-semibold text-white">Generate Text</h2>
+                  {expandedCards.has('generate-text') ? (
+                    <ChevronUp className="h-5 w-5 text-cyan-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-cyan-400" />
+                  )}
                 </div>
 
-                <textarea
+                {expandedCards.has('generate-text') && (
+                  <>
+                    <textarea
                   placeholder="Enter a prompt to generate text... (e.g., 'Write a story about a futuristic city', 'Create a narration about space exploration')"
                   className="w-full bg-black/30 text-lg text-white placeholder-cyan-600 resize-none border border-cyan-500/30 rounded-lg p-4 focus:ring-2 focus:ring-cyan-400 min-h-[100px]"
                   value={prompt}
@@ -2901,20 +4557,43 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     </div>
                   </div>
                 )}
+                  </>
+                )}
               </div>
             </div>
 
             {/* Text to Audio Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
               <div className="space-y-4">
-                <div className="flex items-center justify-between mb-4">
+                <div 
+                  className="flex items-center justify-between mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('text-to-audio')) {
+                        newSet.delete('text-to-audio')
+                      } else {
+                        newSet.add('text-to-audio')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
                   <h2 className="text-xl font-semibold text-white">Text to Convert to Audio</h2>
                   <div className="flex items-center gap-2">
+                    {expandedCards.has('text-to-audio') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
                     {userCredits <= 50 && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setShowCreditsDialog(true)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowCreditsDialog(true)
+                        }}
                         className={`${userCredits <= 10 ? 'text-red-400 hover:bg-red-400/10' : 'text-cyan-400 hover:bg-cyan-400/10'}`}
                       >
                         <CreditCard className="h-4 w-4 mr-2" />
@@ -2924,7 +4603,10 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => window.location.reload()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.location.reload()
+                      }}
                       className="text-cyan-400 hover:bg-cyan-400/10"
                     >
                       <RefreshCw className="h-4 w-4" />
@@ -2932,7 +4614,9 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                   </div>
                 </div>
 
-                <textarea
+                {expandedCards.has('text-to-audio') && (
+                  <>
+                    <textarea
                   placeholder="Enter the text you want to convert to speech... (e.g., 'Hello, welcome to INFINITO AI. How can I help you today?')"
                   className="w-full bg-black/30 text-lg text-white placeholder-cyan-600 resize-none border border-cyan-500/30 rounded-lg p-4 focus:ring-2 focus:ring-cyan-400 min-h-[120px]"
                   value={text}
@@ -2981,8 +4665,116 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     )}
                   </Button>
                 </div>
+                  </>
+                )}
               </div>
             </div>
+
+            {/* Custom Voice Selector - Only shown when ElevenLabs is selected */}
+            {selectedAudioModel === 'elevenlabs' && (
+              <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
+                <div className="space-y-4">
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('custom-voice')) {
+                          newSet.delete('custom-voice')
+                        } else {
+                          newSet.add('custom-voice')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="h-5 w-5 text-cyan-400" />
+                      <h2 className="text-xl font-semibold text-white">Select Custom Voice</h2>
+                    </div>
+                    {expandedCards.has('custom-voice') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
+                  </div>
+
+                  {expandedCards.has('custom-voice') && (
+                    <>
+                      <div className="p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20 mb-4">
+                        <p className="text-xs text-cyan-300">
+                          🎤 Choose a custom voice for your text-to-speech conversion. Select from your available ElevenLabs voices.
+                        </p>
+                      </div>
+
+                      {/* Voice Selection */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-cyan-400 text-sm font-semibold">Custom Voice</label>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              fetchAvailableVoices()
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                            disabled={isLoadingVoices}
+                            title="Refresh voices list"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                        {isLoadingVoices ? (
+                          <div className="flex items-center gap-2 text-cyan-400">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-cyan-400/40 border-t-cyan-400"></div>
+                            Loading voices...
+                          </div>
+                        ) : (
+                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                            <SelectTrigger className="bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400">
+                              <SelectValue placeholder="Select a custom voice" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              {availableVoices.length > 0 ? (
+                                availableVoices.map((voice) => (
+                                  <SelectItem 
+                                    key={voice.id || voice.voice_id} 
+                                    value={voice.id || voice.voice_id}
+                                    className="text-cyan-300 hover:bg-cyan-500/20"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {voice.name || voice.voice_id}
+                                      {voice.category && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                                          {voice.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {voice.description && (
+                                      <span className="text-xs text-gray-400 ml-2 block">- {voice.description}</span>
+                                    )}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="no-voices" disabled className="text-gray-500">
+                                  No custom voices available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {selectedVoiceId && availableVoices.length > 0 && (
+                          <p className="text-xs text-cyan-400/70 mt-2">
+                            Selected voice will be used for text-to-speech conversion
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -3084,14 +4876,42 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       </div>
                     </div>
                     
-                    <a 
-                      href={audioUrl} 
-                      download
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      Download Audio
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleSaveToLibrary}
+                        disabled={isSavingToLibrary || savedToLibrary}
+                        className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                          savedToLibrary
+                            ? 'bg-green-600 text-white cursor-default'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {isSavingToLibrary ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white"></div>
+                            Saving...
+                          </>
+                        ) : savedToLibrary ? (
+                          <>
+                            <Check className="h-4 w-4" />
+                            Saved to Library
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4" />
+                            Save to Library
+                          </>
+                        )}
+                      </Button>
+                      <a 
+                        href={audioUrl} 
+                        download
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download Audio
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3260,12 +5080,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {/* Music Generation Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-purple-500/30 shadow-purple-500/20">
               <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Volume2 className="h-5 w-5 text-purple-400" />
-                  <h2 className="text-xl font-semibold text-white">🎵 Eleven Music Generator</h2>
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('music-generator')) {
+                        newSet.delete('music-generator')
+                      } else {
+                        newSet.add('music-generator')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-purple-400" />
+                    <h2 className="text-xl font-semibold text-white">🎵 Eleven Music Generator</h2>
+                  </div>
+                  {expandedCards.has('music-generator') ? (
+                    <ChevronUp className="h-5 w-5 text-purple-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-purple-400" />
+                  )}
                 </div>
 
-                <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20 mb-4">
+                {expandedCards.has('music-generator') && (
+                  <>
+                    <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20 mb-4">
                   <p className="text-xs text-purple-300">
                     🎼 Create studio-grade music with natural language prompts. Supports vocals, instrumental, 
                     multiple languages, and duration from 10 seconds to 5 minutes. 
@@ -3452,7 +5294,1029 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       Duration: 10 seconds to 5 minutes. Commercial use cleared for film, TV, podcasts, ads, gaming!
                     </p>
                   </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Sound Effects Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-orange-500/30 shadow-orange-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('sound-effects')) {
+                        newSet.delete('sound-effects')
+                      } else {
+                        newSet.add('sound-effects')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-orange-400" />
+                    <h2 className="text-xl font-semibold text-white">🎬 Sound Effects</h2>
+                  </div>
+                  {expandedCards.has('sound-effects') ? (
+                    <ChevronUp className="h-5 w-5 text-orange-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-orange-400" />
+                  )}
                 </div>
+
+                {expandedCards.has('sound-effects') && (
+                  <>
+                    <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20 mb-4">
+                      <p className="text-xs text-orange-300">
+                        🔊 Create high-quality sound effects from text descriptions. Perfect for cinematic sound design, 
+                        game audio, Foley, and ambient sounds. Supports precise timing, style control, and seamless looping.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-orange-400 text-sm font-semibold">Sound Effect Description</label>
+                        <Textarea
+                          value={soundEffectPrompt}
+                          onChange={(e) => setSoundEffectPrompt(e.target.value)}
+                          placeholder="Describe the sound effect (e.g., 'Glass shattering on concrete', 'Thunder rumbling in the distance', '90s hip-hop drum loop, 90 BPM', 'Footsteps on gravel, then a metallic door opens')"
+                          className="w-full bg-black/30 border-orange-500/50 text-white placeholder-gray-500 min-h-[120px]"
+                        />
+                        <p className="text-xs text-gray-400">
+                          💡 <strong>Tip:</strong> Use clear, concise descriptions. For complex sequences, describe the sequence of events. 
+                          Supports audio terminology like "impact", "whoosh", "ambience", "braam", "glitch", "drone".
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Duration */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-orange-400 text-sm font-semibold">Duration (seconds)</label>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={soundEffectDuration !== null}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSoundEffectDuration(5)
+                                  } else {
+                                    setSoundEffectDuration(null)
+                                  }
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                              <span className="ml-2 text-xs text-orange-300">Set Duration</span>
+                            </label>
+                          </div>
+                          {soundEffectDuration !== null ? (
+                            <>
+                              <input
+                                type="range"
+                                min="0.1"
+                                max="30"
+                                step="0.1"
+                                value={soundEffectDuration}
+                                onChange={(e) => setSoundEffectDuration(parseFloat(e.target.value))}
+                                className="w-full"
+                              />
+                              <div className="flex justify-between text-xs text-orange-400/70">
+                                <span>0.1s</span>
+                                <span className="text-orange-300 font-semibold">{soundEffectDuration.toFixed(1)}s</span>
+                                <span>30s</span>
+                              </div>
+                              <p className="text-xs text-gray-400">Cost: 40 credits per second when duration is specified</p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-orange-300/70">Auto-determined based on prompt (default)</p>
+                          )}
+                        </div>
+
+                        {/* Prompt Influence */}
+                        <div className="space-y-2">
+                          <label className="text-orange-400 text-sm font-semibold">Prompt Influence</label>
+                          <Select value={soundEffectPromptInfluence} onValueChange={(value: 'high' | 'low') => setSoundEffectPromptInfluence(value)}>
+                            <SelectTrigger className="bg-transparent border-orange-500/50 text-orange-300">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-orange-500/50">
+                              <SelectItem value="high" className="text-orange-300 hover:bg-orange-500/20">High - More literal interpretation</SelectItem>
+                              <SelectItem value="low" className="text-orange-300 hover:bg-orange-500/20">Low - More creative with variations</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-gray-400">
+                            {soundEffectPromptInfluence === 'high' 
+                              ? 'Strictly follows your prompt description'
+                              : 'More creative interpretation with added variations'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Looping Option */}
+                      <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-orange-500/20">
+                        <div>
+                          <label className="text-orange-400 text-sm font-semibold">Enable Looping</label>
+                          <p className="text-xs text-gray-400">Seamless looping for sounds longer than 30 seconds</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={soundEffectLooping}
+                            onChange={(e) => setSoundEffectLooping(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleGenerateSoundEffect}
+                        disabled={isGeneratingSoundEffect || !soundEffectPrompt.trim()}
+                        className="w-full bg-gradient-to-r from-orange-600 via-red-600 to-orange-800 hover:from-orange-700 hover:via-red-700 hover:to-orange-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isGeneratingSoundEffect ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            GENERATING SOUND EFFECT...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            GENERATE SOUND EFFECT
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Sound Effect Generation Progress */}
+                      {isGeneratingSoundEffect && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-orange-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-orange-600 via-red-600 to-orange-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-orange-400 text-sm text-center">
+                            {soundEffectGenerationProgress || 'Creating high-quality sound effect...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
+                        <p className="text-xs text-orange-300">
+                          💡 <strong>Tips:</strong> Maximum duration is 30 seconds per generation. For longer sequences, 
+                          generate multiple effects and combine them. Use looping for seamless repeating sounds. 
+                          Supports simple effects, complex sequences, and musical elements.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Changer Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-green-500/30 shadow-green-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('voice-changer')) {
+                        newSet.delete('voice-changer')
+                      } else {
+                        newSet.add('voice-changer')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-green-400" />
+                    <h2 className="text-xl font-semibold text-white">🎭 Voice Changer</h2>
+                  </div>
+                  {expandedCards.has('voice-changer') ? (
+                    <ChevronUp className="h-5 w-5 text-green-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-green-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('voice-changer') && (
+                  <>
+                    <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20 mb-4">
+                      <p className="text-xs text-green-300">
+                        🎭 Transform any source audio into a different voice while preserving emotion, delivery, and nuances. 
+                        Captures whispers, laughs, cries, accents, and subtle emotional cues. Best for segments under 5 minutes.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Source Audio Upload */}
+                      <div className="space-y-2">
+                        <label className="text-green-400 text-sm font-semibold">Source Audio</label>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleVoiceChangerFileSelect}
+                          className="w-full bg-black/30 border border-green-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-600 file:text-white hover:file:bg-green-700"
+                        />
+                        {voiceChangerFile && (
+                          <div className="p-2 bg-green-500/10 rounded border border-green-500/20">
+                            <p className="text-xs text-green-300">
+                              ✓ Selected: {voiceChangerFile.name} ({(voiceChangerFile.size / 1024 / 1024).toFixed(2)} MB)
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio file (.mp3, .wav, etc.). Recommended: under 5 minutes for optimal processing. Max 50MB. 
+                          Record in a quiet environment and maintain appropriate microphone levels.
+                        </p>
+                      </div>
+
+                      {/* Target Voice Selection */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-green-400 text-sm font-semibold">Target Voice</label>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              fetchAvailableVoices()
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                            disabled={isLoadingVoices}
+                            title="Refresh voices list"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                        {isLoadingVoices ? (
+                          <div className="flex items-center gap-2 text-green-400">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-400/40 border-t-green-400"></div>
+                            Loading voices...
+                          </div>
+                        ) : (
+                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                            <SelectTrigger className="bg-transparent border-green-500/50 text-green-300 hover:border-green-400">
+                              <SelectValue placeholder="Select target voice" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-green-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              {availableVoices.length > 0 ? (
+                                availableVoices.map((voice) => (
+                                  <SelectItem 
+                                    key={voice.id || voice.voice_id} 
+                                    value={voice.id || voice.voice_id}
+                                    className="text-green-300 hover:bg-green-500/20"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {voice.name || voice.voice_id}
+                                      {voice.category && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">
+                                          {voice.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {voice.description && (
+                                      <span className="text-xs text-gray-400 ml-2 block">- {voice.description}</span>
+                                    )}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="no-voices" disabled className="text-gray-500">
+                                  No voices available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          The voice to convert your audio to. Can use default, cloned, or designed voices. 
+                          Custom/cloned voices are supported.
+                        </p>
+                      </div>
+
+                      {/* Model Selection */}
+                      <div className="space-y-2">
+                        <label className="text-green-400 text-sm font-semibold">Model</label>
+                        <Select value={voiceChangerModel} onValueChange={setVoiceChangerModel}>
+                          <SelectTrigger className="bg-transparent border-green-500/50 text-green-300 hover:border-green-400">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-black/90 border-green-500/50">
+                            <SelectItem value="eleven_multilingual_sts_v2" className="text-green-300 hover:bg-green-500/20">
+                              Multilingual STS v2 (29 languages, recommended)
+                            </SelectItem>
+                            <SelectItem value="eleven_english_sts_v2" className="text-green-300 hover:bg-green-500/20">
+                              English STS v2 (English only)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">
+                          Multilingual v2 supports 29 languages. English v2 only supports English. 
+                          Multilingual often outperforms English even for English material.
+                        </p>
+                      </div>
+
+                      {/* Voice Settings Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Stability */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-green-400 text-sm font-semibold">Stability</label>
+                            <span className="text-green-300 text-sm">{voiceChangerStability.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={voiceChangerStability}
+                            onChange={(e) => setVoiceChangerStability(parseFloat(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-400">100% recommended for maximum voice consistency</p>
+                        </div>
+
+                        {/* Style */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-green-400 text-sm font-semibold">Style</label>
+                            <span className="text-green-300 text-sm">{voiceChangerStyle.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={voiceChangerStyle}
+                            onChange={(e) => setVoiceChangerStyle(parseFloat(e.target.value))}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-400">Set to 0% when input audio is already expressive</p>
+                        </div>
+                      </div>
+
+                      {/* Remove Background Noise */}
+                      <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-green-500/20">
+                        <div>
+                          <label className="text-green-400 text-sm font-semibold">Remove Background Noise</label>
+                          <p className="text-xs text-gray-400">Minimize environmental sounds in the output</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={voiceChangerRemoveNoise}
+                            onChange={(e) => setVoiceChangerRemoveNoise(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        </label>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleVoiceChange}
+                        disabled={isChangingVoice || !voiceChangerFile || !selectedVoiceId}
+                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isChangingVoice ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            CHANGING VOICE...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="h-5 w-5 mr-3" />
+                            CHANGE VOICE
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Voice Change Progress */}
+                      {isChangingVoice && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-green-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-green-600 to-emerald-600 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-green-400 text-sm text-center">
+                            Transforming voice while preserving emotion and delivery...
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                        <p className="text-xs text-green-300">
+                          💡 <strong>Tips:</strong> Keep segments under 5 minutes for optimal processing. 
+                          For longer audio, split into smaller chunks. Billing: 1000 characters per minute of processed audio. 
+                          The source audio's accent and language will be preserved in the output.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Dubbing Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-indigo-500/30 shadow-indigo-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('dubbing')) {
+                        newSet.delete('dubbing')
+                      } else {
+                        newSet.add('dubbing')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-indigo-400" />
+                    <h2 className="text-xl font-semibold text-white">🌍 Dubbing</h2>
+                  </div>
+                  {expandedCards.has('dubbing') ? (
+                    <ChevronUp className="h-5 w-5 text-indigo-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-indigo-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('dubbing') && (
+                  <>
+                    <div className="p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20 mb-4">
+                      <p className="text-xs text-indigo-300">
+                        🌍 Translate audio and video across 32 languages while preserving emotion, timing, tone, and unique characteristics. 
+                        Automatically detects multiple speakers and preserves original voices. Creator plan or higher required.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-indigo-400 text-sm font-semibold">Audio or Video File</label>
+                        <input
+                          type="file"
+                          accept="audio/*,video/*"
+                          onChange={handleDubbingFileSelect}
+                          className="w-full bg-black/30 border border-indigo-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700"
+                        />
+                        {dubbingFile && (
+                          <div className="p-2 bg-indigo-500/10 rounded border border-indigo-500/20">
+                            <p className="text-xs text-indigo-300">
+                              ✓ Selected: {dubbingFile.name} ({(dubbingFile.size / 1024 / 1024).toFixed(2)} MB)
+                              {dubbingFile.type.startsWith('video/') && ' - Video'}
+                              {dubbingFile.type.startsWith('audio/') && ' - Audio'}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio or video file. UI supports up to 500MB and 45 minutes. 
+                          API supports up to 1GB and 2.5 hours. Supports YouTube, X, TikTok, Vimeo URLs, or file uploads.
+                        </p>
+                      </div>
+
+                      {/* Language Selection */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Source Language */}
+                        <div className="space-y-2">
+                          <label className="text-indigo-400 text-sm font-semibold">Source Language</label>
+                          <Select value={dubbingSourceLanguage} onValueChange={setDubbingSourceLanguage}>
+                            <SelectTrigger className="bg-transparent border-indigo-500/50 text-indigo-300 hover:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-indigo-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              <SelectItem value="en" className="text-indigo-300 hover:bg-indigo-500/20">English</SelectItem>
+                              <SelectItem value="hi" className="text-indigo-300 hover:bg-indigo-500/20">Hindi</SelectItem>
+                              <SelectItem value="pt" className="text-indigo-300 hover:bg-indigo-500/20">Portuguese</SelectItem>
+                              <SelectItem value="zh" className="text-indigo-300 hover:bg-indigo-500/20">Chinese</SelectItem>
+                              <SelectItem value="es" className="text-indigo-300 hover:bg-indigo-500/20">Spanish</SelectItem>
+                              <SelectItem value="fr" className="text-indigo-300 hover:bg-indigo-500/20">French</SelectItem>
+                              <SelectItem value="de" className="text-indigo-300 hover:bg-indigo-500/20">German</SelectItem>
+                              <SelectItem value="ja" className="text-indigo-300 hover:bg-indigo-500/20">Japanese</SelectItem>
+                              <SelectItem value="ar" className="text-indigo-300 hover:bg-indigo-500/20">Arabic</SelectItem>
+                              <SelectItem value="ru" className="text-indigo-300 hover:bg-indigo-500/20">Russian</SelectItem>
+                              <SelectItem value="ko" className="text-indigo-300 hover:bg-indigo-500/20">Korean</SelectItem>
+                              <SelectItem value="id" className="text-indigo-300 hover:bg-indigo-500/20">Indonesian</SelectItem>
+                              <SelectItem value="it" className="text-indigo-300 hover:bg-indigo-500/20">Italian</SelectItem>
+                              <SelectItem value="nl" className="text-indigo-300 hover:bg-indigo-500/20">Dutch</SelectItem>
+                              <SelectItem value="tr" className="text-indigo-300 hover:bg-indigo-500/20">Turkish</SelectItem>
+                              <SelectItem value="pl" className="text-indigo-300 hover:bg-indigo-500/20">Polish</SelectItem>
+                              <SelectItem value="sv" className="text-indigo-300 hover:bg-indigo-500/20">Swedish</SelectItem>
+                              <SelectItem value="fil" className="text-indigo-300 hover:bg-indigo-500/20">Filipino</SelectItem>
+                              <SelectItem value="ms" className="text-indigo-300 hover:bg-indigo-500/20">Malay</SelectItem>
+                              <SelectItem value="ro" className="text-indigo-300 hover:bg-indigo-500/20">Romanian</SelectItem>
+                              <SelectItem value="uk" className="text-indigo-300 hover:bg-indigo-500/20">Ukrainian</SelectItem>
+                              <SelectItem value="el" className="text-indigo-300 hover:bg-indigo-500/20">Greek</SelectItem>
+                              <SelectItem value="cs" className="text-indigo-300 hover:bg-indigo-500/20">Czech</SelectItem>
+                              <SelectItem value="da" className="text-indigo-300 hover:bg-indigo-500/20">Danish</SelectItem>
+                              <SelectItem value="fi" className="text-indigo-300 hover:bg-indigo-500/20">Finnish</SelectItem>
+                              <SelectItem value="bg" className="text-indigo-300 hover:bg-indigo-500/20">Bulgarian</SelectItem>
+                              <SelectItem value="hr" className="text-indigo-300 hover:bg-indigo-500/20">Croatian</SelectItem>
+                              <SelectItem value="sk" className="text-indigo-300 hover:bg-indigo-500/20">Slovak</SelectItem>
+                              <SelectItem value="ta" className="text-indigo-300 hover:bg-indigo-500/20">Tamil</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Target Language */}
+                        <div className="space-y-2">
+                          <label className="text-indigo-400 text-sm font-semibold">Target Language</label>
+                          <Select value={dubbingTargetLanguage} onValueChange={setDubbingTargetLanguage}>
+                            <SelectTrigger className="bg-transparent border-indigo-500/50 text-indigo-300 hover:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-indigo-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              <SelectItem value="en" className="text-indigo-300 hover:bg-indigo-500/20">English</SelectItem>
+                              <SelectItem value="hi" className="text-indigo-300 hover:bg-indigo-500/20">Hindi</SelectItem>
+                              <SelectItem value="pt" className="text-indigo-300 hover:bg-indigo-500/20">Portuguese</SelectItem>
+                              <SelectItem value="zh" className="text-indigo-300 hover:bg-indigo-500/20">Chinese</SelectItem>
+                              <SelectItem value="es" className="text-indigo-300 hover:bg-indigo-500/20">Spanish</SelectItem>
+                              <SelectItem value="fr" className="text-indigo-300 hover:bg-indigo-500/20">French</SelectItem>
+                              <SelectItem value="de" className="text-indigo-300 hover:bg-indigo-500/20">German</SelectItem>
+                              <SelectItem value="ja" className="text-indigo-300 hover:bg-indigo-500/20">Japanese</SelectItem>
+                              <SelectItem value="ar" className="text-indigo-300 hover:bg-indigo-500/20">Arabic</SelectItem>
+                              <SelectItem value="ru" className="text-indigo-300 hover:bg-indigo-500/20">Russian</SelectItem>
+                              <SelectItem value="ko" className="text-indigo-300 hover:bg-indigo-500/20">Korean</SelectItem>
+                              <SelectItem value="id" className="text-indigo-300 hover:bg-indigo-500/20">Indonesian</SelectItem>
+                              <SelectItem value="it" className="text-indigo-300 hover:bg-indigo-500/20">Italian</SelectItem>
+                              <SelectItem value="nl" className="text-indigo-300 hover:bg-indigo-500/20">Dutch</SelectItem>
+                              <SelectItem value="tr" className="text-indigo-300 hover:bg-indigo-500/20">Turkish</SelectItem>
+                              <SelectItem value="pl" className="text-indigo-300 hover:bg-indigo-500/20">Polish</SelectItem>
+                              <SelectItem value="sv" className="text-indigo-300 hover:bg-indigo-500/20">Swedish</SelectItem>
+                              <SelectItem value="fil" className="text-indigo-300 hover:bg-indigo-500/20">Filipino</SelectItem>
+                              <SelectItem value="ms" className="text-indigo-300 hover:bg-indigo-500/20">Malay</SelectItem>
+                              <SelectItem value="ro" className="text-indigo-300 hover:bg-indigo-500/20">Romanian</SelectItem>
+                              <SelectItem value="uk" className="text-indigo-300 hover:bg-indigo-500/20">Ukrainian</SelectItem>
+                              <SelectItem value="el" className="text-indigo-300 hover:bg-indigo-500/20">Greek</SelectItem>
+                              <SelectItem value="cs" className="text-indigo-300 hover:bg-indigo-500/20">Czech</SelectItem>
+                              <SelectItem value="da" className="text-indigo-300 hover:bg-indigo-500/20">Danish</SelectItem>
+                              <SelectItem value="fi" className="text-indigo-300 hover:bg-indigo-500/20">Finnish</SelectItem>
+                              <SelectItem value="bg" className="text-indigo-300 hover:bg-indigo-500/20">Bulgarian</SelectItem>
+                              <SelectItem value="hr" className="text-indigo-300 hover:bg-indigo-500/20">Croatian</SelectItem>
+                              <SelectItem value="sk" className="text-indigo-300 hover:bg-indigo-500/20">Slovak</SelectItem>
+                              <SelectItem value="ta" className="text-indigo-300 hover:bg-indigo-500/20">Tamil</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Watermark Option (Video Only) */}
+                      {dubbingFile && dubbingFile.type.startsWith('video/') && (
+                        <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-indigo-500/20">
+                          <div>
+                            <label className="text-indigo-400 text-sm font-semibold">Use Watermark (Video Only)</label>
+                            <p className="text-xs text-gray-400">Reduce credit usage with watermarked output</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={dubbingUseWatermark}
+                              onChange={(e) => setDubbingUseWatermark(e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleDubbing}
+                        disabled={isDubbing || !dubbingFile || dubbingSourceLanguage === dubbingTargetLanguage}
+                        className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isDubbing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            DUBBING...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            START DUBBING
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Dubbing Progress */}
+                      {isDubbing && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-indigo-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-indigo-400 text-sm text-center">
+                            {dubbingProgress || 'Translating and preserving emotion, timing, and tone...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Dubbed File Result */}
+                      {dubbingUrl && (
+                        <div className="p-4 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                          <p className="text-xs text-indigo-300 mb-2">
+                            ✓ Dubbing completed successfully!
+                          </p>
+                          {dubbingFile?.type.startsWith('video/') ? (
+                            <video 
+                              src={dubbingUrl} 
+                              controls 
+                              className="w-full rounded-lg max-h-[400px]"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <div className="space-y-2">
+                              <audio src={dubbingUrl} controls className="w-full" />
+                              <p className="text-xs text-indigo-300">
+                                Audio is also available in the audio player below.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                        <p className="text-xs text-indigo-300">
+                          💡 <strong>Features:</strong> Automatically detects multiple speakers (up to 9 recommended), 
+                          preserves original voices and emotional tone, keeps background audio, supports 32 languages. 
+                          For fine-tuning, use Dubbing Studio for interactive editing. Creator plan or higher required.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Isolator Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-teal-500/30 shadow-teal-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('voice-isolator')) {
+                        newSet.delete('voice-isolator')
+                      } else {
+                        newSet.add('voice-isolator')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-teal-400" />
+                    <h2 className="text-xl font-semibold text-white">🎤 Voice Isolator</h2>
+                  </div>
+                  {expandedCards.has('voice-isolator') ? (
+                    <ChevronUp className="h-5 w-5 text-teal-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-teal-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('voice-isolator') && (
+                  <>
+                    <div className="p-3 bg-teal-500/10 rounded-lg border border-teal-500/20 mb-4">
+                      <p className="text-xs text-teal-300">
+                        🎤 Transform audio recordings with background noise into clean, studio-quality speech. 
+                        Isolates speech from background noise, music, and ambient sounds. Perfect for noisy environments.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-teal-400 text-sm font-semibold">Audio or Video File</label>
+                        <input
+                          type="file"
+                          accept="audio/*,video/*"
+                          onChange={handleVoiceIsolatorFileSelect}
+                          className="w-full bg-black/30 border border-teal-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-teal-600 file:text-white hover:file:bg-teal-700"
+                        />
+                        {voiceIsolatorFile && (
+                          <div className="p-2 bg-teal-500/10 rounded border border-teal-500/20">
+                            <p className="text-xs text-teal-300">
+                              ✓ Selected: {voiceIsolatorFile.name} ({(voiceIsolatorFile.size / 1024 / 1024).toFixed(2)} MB)
+                              {voiceIsolatorFile.type.startsWith('video/') && ' - Video'}
+                              {voiceIsolatorFile.type.startsWith('audio/') && ' - Audio'}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio or video file. Supports files up to 500MB and 1 hour in length. 
+                          Audio formats: AAC, AIFF, OGG, MP3, OPUS, WAV, FLAC, M4A. 
+                          Video formats: MP4, AVI, MKV, MOV, WMV, FLV, WEBM, MPEG, 3GPP.
+                        </p>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleVoiceIsolation}
+                        disabled={isIsolatingVoice || !voiceIsolatorFile}
+                        className="w-full bg-gradient-to-r from-teal-600 via-cyan-600 to-teal-800 hover:from-teal-700 hover:via-cyan-700 hover:to-teal-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isIsolatingVoice ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            ISOLATING VOICE...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            ISOLATE VOICE
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Voice Isolation Progress */}
+                      {isIsolatingVoice && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-teal-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-teal-600 via-cyan-600 to-teal-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-teal-400 text-sm text-center">
+                            {voiceIsolationProgress || 'Isolating speech from background noise...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Isolated Voice Result */}
+                      {isolatedVoiceUrl && (
+                        <div className="p-4 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                          <p className="text-xs text-teal-300 mb-2">
+                            ✓ Voice isolation completed successfully!
+                          </p>
+                          {voiceIsolatorFile?.type.startsWith('video/') ? (
+                            <video 
+                              src={isolatedVoiceUrl} 
+                              controls 
+                              className="w-full rounded-lg max-h-[400px]"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <div className="space-y-2">
+                              <audio src={isolatedVoiceUrl} controls className="w-full" />
+                              <p className="text-xs text-teal-300">
+                                Isolated audio is also available in the audio player below.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                        <p className="text-xs text-teal-300">
+                          💡 <strong>Cost:</strong> 1000 characters for every minute of audio. 
+                          <strong> File limits:</strong> Up to 500MB and 1 hour in length. 
+                          <strong> Note:</strong> Not specifically optimized for isolating vocals from music, but may work depending on the content.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Forced Alignment Section */}
+            <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-pink-500/30 shadow-pink-500/20">
+              <div className="space-y-4">
+                <div 
+                  className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('forced-alignment')) {
+                        newSet.delete('forced-alignment')
+                      } else {
+                        newSet.add('forced-alignment')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-pink-400" />
+                    <h2 className="text-xl font-semibold text-white">⏱️ Forced Alignment</h2>
+                  </div>
+                  {expandedCards.has('forced-alignment') ? (
+                    <ChevronUp className="h-5 w-5 text-pink-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-pink-400" />
+                  )}
+                </div>
+
+                {expandedCards.has('forced-alignment') && (
+                  <>
+                    <div className="p-3 bg-pink-500/10 rounded-lg border border-pink-500/20 mb-4">
+                      <p className="text-xs text-pink-300">
+                        ⏱️ Turn spoken audio and text into a time-aligned transcript with exact timestamps for each word or phrase. 
+                        Perfect for matching subtitles to video or generating timings for audiobooks.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Audio File Upload */}
+                      <div className="space-y-2">
+                        <label className="text-pink-400 text-sm font-semibold">Audio File</label>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleForcedAlignmentFileSelect}
+                          className="w-full bg-black/30 border border-pink-500/50 rounded-lg px-3 py-2 text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-pink-600 file:text-white hover:file:bg-pink-700"
+                        />
+                        {forcedAlignmentFile && (
+                          <div className="p-2 bg-pink-500/10 rounded border border-pink-500/20">
+                            <p className="text-xs text-pink-300">
+                              ✓ Selected: {forcedAlignmentFile.name} ({(forcedAlignmentFile.size / 1024 / 1024).toFixed(2)} MB)
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          💡 Upload audio file. Maximum file size: 3GB. Maximum duration: 10 hours.
+                        </p>
+                      </div>
+
+                      {/* Transcript Text Input */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-pink-400 text-sm font-semibold">Transcript Text</label>
+                          <span className="text-xs text-pink-300/70">
+                            {forcedAlignmentText.length.toLocaleString()} / 675,000 characters
+                          </span>
+                        </div>
+                        <Textarea
+                          value={forcedAlignmentText}
+                          onChange={(e) => setForcedAlignmentText(e.target.value)}
+                          placeholder="Enter the transcript text that matches your audio file. Use plain text format (no JSON or special formatting). Example: 'Hello, how are you?'"
+                          className="w-full bg-black/30 border-pink-500/50 text-white placeholder-gray-500 min-h-[150px]"
+                          maxLength={675000}
+                        />
+                        <p className="text-xs text-gray-400">
+                          💡 Enter plain text transcript (no JSON formatting). Maximum: 675,000 characters. 
+                          The text should match the spoken content in the audio file.
+                        </p>
+                      </div>
+
+                      {/* Language Selection */}
+                      <div className="space-y-2">
+                        <label className="text-pink-400 text-sm font-semibold">Language</label>
+                        <Select value={forcedAlignmentLanguage} onValueChange={setForcedAlignmentLanguage}>
+                          <SelectTrigger className="bg-transparent border-pink-500/50 text-pink-300 hover:border-pink-400">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-black/90 border-pink-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                            <SelectItem value="en" className="text-pink-300 hover:bg-pink-500/20">English (USA, UK, Australia, Canada)</SelectItem>
+                            <SelectItem value="ja" className="text-pink-300 hover:bg-pink-500/20">Japanese</SelectItem>
+                            <SelectItem value="zh" className="text-pink-300 hover:bg-pink-500/20">Chinese</SelectItem>
+                            <SelectItem value="de" className="text-pink-300 hover:bg-pink-500/20">German</SelectItem>
+                            <SelectItem value="hi" className="text-pink-300 hover:bg-pink-500/20">Hindi</SelectItem>
+                            <SelectItem value="fr" className="text-pink-300 hover:bg-pink-500/20">French (France, Canada)</SelectItem>
+                            <SelectItem value="ko" className="text-pink-300 hover:bg-pink-500/20">Korean</SelectItem>
+                            <SelectItem value="pt" className="text-pink-300 hover:bg-pink-500/20">Portuguese (Brazil, Portugal)</SelectItem>
+                            <SelectItem value="it" className="text-pink-300 hover:bg-pink-500/20">Italian</SelectItem>
+                            <SelectItem value="es" className="text-pink-300 hover:bg-pink-500/20">Spanish (Spain, Mexico)</SelectItem>
+                            <SelectItem value="id" className="text-pink-300 hover:bg-pink-500/20">Indonesian</SelectItem>
+                            <SelectItem value="nl" className="text-pink-300 hover:bg-pink-500/20">Dutch</SelectItem>
+                            <SelectItem value="tr" className="text-pink-300 hover:bg-pink-500/20">Turkish</SelectItem>
+                            <SelectItem value="fil" className="text-pink-300 hover:bg-pink-500/20">Filipino</SelectItem>
+                            <SelectItem value="pl" className="text-pink-300 hover:bg-pink-500/20">Polish</SelectItem>
+                            <SelectItem value="sv" className="text-pink-300 hover:bg-pink-500/20">Swedish</SelectItem>
+                            <SelectItem value="bg" className="text-pink-300 hover:bg-pink-500/20">Bulgarian</SelectItem>
+                            <SelectItem value="ro" className="text-pink-300 hover:bg-pink-500/20">Romanian</SelectItem>
+                            <SelectItem value="ar" className="text-pink-300 hover:bg-pink-500/20">Arabic (Saudi Arabia, UAE)</SelectItem>
+                            <SelectItem value="cs" className="text-pink-300 hover:bg-pink-500/20">Czech</SelectItem>
+                            <SelectItem value="el" className="text-pink-300 hover:bg-pink-500/20">Greek</SelectItem>
+                            <SelectItem value="fi" className="text-pink-300 hover:bg-pink-500/20">Finnish</SelectItem>
+                            <SelectItem value="hr" className="text-pink-300 hover:bg-pink-500/20">Croatian</SelectItem>
+                            <SelectItem value="ms" className="text-pink-300 hover:bg-pink-500/20">Malay</SelectItem>
+                            <SelectItem value="sk" className="text-pink-300 hover:bg-pink-500/20">Slovak</SelectItem>
+                            <SelectItem value="da" className="text-pink-300 hover:bg-pink-500/20">Danish</SelectItem>
+                            <SelectItem value="ta" className="text-pink-300 hover:bg-pink-500/20">Tamil</SelectItem>
+                            <SelectItem value="uk" className="text-pink-300 hover:bg-pink-500/20">Ukrainian</SelectItem>
+                            <SelectItem value="ru" className="text-pink-300 hover:bg-pink-500/20">Russian</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">
+                          Select the language of the audio and transcript. Supports 29 languages.
+                        </p>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleForcedAlignment}
+                        disabled={isAligning || !forcedAlignmentFile || !forcedAlignmentText.trim()}
+                        className="w-full bg-gradient-to-r from-pink-600 via-rose-600 to-pink-800 hover:from-pink-700 hover:via-rose-700 hover:to-pink-900 text-white font-bold py-6 text-lg tracking-widest disabled:opacity-50"
+                      >
+                        {isAligning ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/40 border-t-white mr-3"></div>
+                            ALIGNING...
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-5 w-5 mr-3" />
+                            ALIGN AUDIO & TRANSCRIPT
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Alignment Progress */}
+                      {isAligning && (
+                        <div className="space-y-2">
+                          <div className="w-full bg-black/40 rounded-full h-2 border border-pink-500/50 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-pink-600 via-rose-600 to-pink-800 transition-all duration-500 ease-out animate-pulse"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <p className="text-pink-400 text-sm text-center">
+                            {alignmentProgress || 'Aligning audio with transcript...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Aligned Transcript Result */}
+                      {alignedTranscript && (
+                        <div className="p-4 bg-pink-500/10 rounded-lg border border-pink-500/20">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs text-pink-300 font-semibold">
+                              ✓ Time-aligned transcript generated!
+                            </p>
+                            <Button
+                              onClick={() => {
+                                const jsonStr = JSON.stringify(alignedTranscript, null, 2)
+                                navigator.clipboard.writeText(jsonStr)
+                                setCopied(true)
+                                setTimeout(() => setCopied(false), 2000)
+                              }}
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-xs text-pink-400 hover:text-pink-300"
+                            >
+                              {copied ? (
+                                <>
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy JSON
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          <div className="bg-black/30 rounded-lg p-3 max-h-[400px] overflow-y-auto">
+                            <pre className="text-xs text-pink-200 font-mono whitespace-pre-wrap break-words">
+                              {JSON.stringify(alignedTranscript, null, 2)}
+                            </pre>
+                          </div>
+                          <p className="text-xs text-pink-300/70 mt-2">
+                            The transcript includes timestamps for each word or phrase aligned with the audio.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Info */}
+                      <div className="p-3 bg-pink-500/10 rounded-lg border border-pink-500/20">
+                        <p className="text-xs text-pink-300">
+                          💡 <strong>Use cases:</strong> Matching subtitles to video recordings, generating timings for audiobook recordings. 
+                          <strong> Cost:</strong> Same as Speech to Text API. 
+                          <strong> Note:</strong> Does not support diarization. Use plain text format (no JSON).
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -3460,12 +6324,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {selectedAudioModel === 'elevenlabs' && (
               <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-blue-500/30 shadow-blue-500/20">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <BrainCircuit className="h-5 w-5 text-blue-400" />
-                    <h2 className="text-xl font-semibold text-white">🤖 ElevenLabs Agents Platform</h2>
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('agents-platform')) {
+                          newSet.delete('agents-platform')
+                        } else {
+                          newSet.add('agents-platform')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <BrainCircuit className="h-5 w-5 text-blue-400" />
+                      <h2 className="text-xl font-semibold text-white">🤖 ElevenLabs Agents Platform</h2>
+                    </div>
+                    {expandedCards.has('agents-platform') ? (
+                      <ChevronUp className="h-5 w-5 text-blue-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-blue-400" />
+                    )}
                   </div>
 
-                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 mb-4">
+                  {expandedCards.has('agents-platform') && (
+                    <>
+                      <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 mb-4">
                     <p className="text-xs text-blue-300">
                       🎯 Build, deploy, and scale voice agents with natural dialogue. Multimodal agents that handle 
                       complex workflows through conversation. Create agents in the ElevenLabs dashboard first.
@@ -3474,7 +6360,19 @@ Return ONLY the enhanced text without any explanation or extra text.`,
 
                   {/* Agent Selection */}
                   <div className="space-y-2">
-                    <label className="text-blue-400 text-sm font-semibold">Select Agent</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-blue-400 text-sm font-semibold">Select Agent</label>
+                      <Button
+                        onClick={fetchAvailableAgents}
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                        disabled={isLoadingAgents}
+                        title="Refresh agents list"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isLoadingAgents ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
                     {isLoadingAgents ? (
                       <div className="flex items-center gap-2 text-blue-400">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-400/40 border-t-blue-400"></div>
@@ -3486,6 +6384,15 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                           <SelectValue placeholder="Select an agent" />
                         </SelectTrigger>
                         <SelectContent className="bg-black/90 border-blue-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                          <SelectItem 
+                            value="new"
+                            className="text-green-400 hover:bg-green-500/20 font-semibold"
+                          >
+                            ➕ Create New Agent
+                          </SelectItem>
+                          {availableAgents.length > 0 && (
+                            <div className="border-t border-blue-500/30 my-1" />
+                          )}
                           {availableAgents.length > 0 ? (
                             availableAgents.map((agent) => (
                               <SelectItem 
@@ -3501,7 +6408,7 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                             ))
                           ) : (
                             <SelectItem value="no-agents" disabled className="text-gray-500">
-                              No agents available. Create agents in ElevenLabs dashboard.
+                              No existing agents
                             </SelectItem>
                           )}
                         </SelectContent>
@@ -3535,7 +6442,11 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     <div className="mt-4 p-4 bg-black/40 rounded-lg border border-blue-500/30 space-y-4">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-blue-400">Agent Configuration</h3>
-                        {!selectedAgentId || selectedAgentId === 'no-agents' ? (
+                        {selectedAgentId === 'new' ? (
+                          <span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">
+                            Creating New Agent
+                          </span>
+                        ) : !selectedAgentId || selectedAgentId === 'no-agents' ? (
                           <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded">
                             No agent selected - settings for reference only
                           </span>
@@ -3546,12 +6457,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                         )}
                       </div>
                       
-                      {(!selectedAgentId || selectedAgentId === 'no-agents') && (
+                      {selectedAgentId === 'new' && (
+                        <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20 mb-4">
+                          <p className="text-xs text-green-300">
+                            ✨ <strong>Creating New Agent:</strong> Fill in the details below and click "Create Agent" to save.
+                          </p>
+                        </div>
+                      )}
+                      
+                      {(!selectedAgentId || selectedAgentId === 'no-agents') && selectedAgentId !== 'new' && (
                         <div className="p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20 mb-4">
                           <p className="text-xs text-yellow-300">
-                            ⚠️ <strong>Note:</strong> You're viewing default settings. To save changes, select an agent first. 
-                            If no agents are available, create them in the ElevenLabs dashboard.
+                            ⚠️ <strong>Note:</strong> Select "Create New Agent" or an existing agent to save changes.
                           </p>
+                        </div>
+                      )}
+                      
+                      {/* Agent Name - Required for new agents */}
+                      {(selectedAgentId === 'new' || selectedAgentId === '') && (
+                        <div className="space-y-2">
+                          <label className="text-blue-300 text-sm font-semibold">Agent Name <span className="text-red-400">*</span></label>
+                          <input
+                            type="text"
+                            value={agentName}
+                            onChange={(e) => setAgentName(e.target.value)}
+                            placeholder="Enter a name for your agent"
+                            className="w-full px-3 py-2 bg-black/30 border-blue-500/50 rounded text-white placeholder-gray-500"
+                          />
+                          <p className="text-xs text-gray-400">A unique name to identify this agent.</p>
                         </div>
                       )}
                       
@@ -3698,12 +6631,14 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       <div className="space-y-2">
                         <label className="text-blue-300 text-sm font-semibold">Personalization Variables (JSON)</label>
                         <Textarea
-                          value={JSON.stringify(agentPersonalization, null, 2)}
+                          value={agentPersonalizationRaw}
                           onChange={(e) => {
+                            const newValue = e.target.value
+                            setAgentPersonalizationRaw(newValue)
                             try {
-                              setAgentPersonalization(JSON.parse(e.target.value))
+                              setAgentPersonalization(JSON.parse(newValue))
                             } catch {
-                              // Invalid JSON, ignore
+                              // Invalid JSON, allow typing but don't update parsed state
                             }
                           }}
                           placeholder='{"variable1": "value1", "variable2": "value2"}'
@@ -3715,18 +6650,18 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       {/* Save Button */}
                       <Button
                         onClick={saveAgentSettings}
-                        disabled={isSavingAgentSettings || !selectedAgentId || selectedAgentId === 'no-agents'}
+                        disabled={isSavingAgentSettings || (!selectedAgentId || selectedAgentId === 'no-agents')}
                         className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSavingAgentSettings ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                            Saving Settings...
+                            {selectedAgentId === 'new' ? 'Creating Agent...' : 'Saving Settings...'}
                           </>
                         ) : (
                           <>
                             <Wand2 className="h-4 w-4 mr-2" />
-                            {selectedAgentId && selectedAgentId !== 'no-agents' ? 'Save Agent Settings' : 'Select an Agent to Save'}
+                            {selectedAgentId === 'new' ? 'Create Agent' : selectedAgentId && selectedAgentId !== 'no-agents' ? 'Save Agent Settings' : 'Select an Agent to Save'}
                           </>
                         )}
                       </Button>
@@ -3856,6 +6791,8 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       </div>
                     </div>
                   )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -3864,12 +6801,34 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {selectedAudioModel === 'elevenlabs' && (
               <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
                 <div className="space-y-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Volume2 className="h-5 w-5 text-cyan-400" />
-                    <h2 className="text-xl font-semibold text-white">ElevenLabs Voice Settings</h2>
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('voice-settings')) {
+                          newSet.delete('voice-settings')
+                        } else {
+                          newSet.add('voice-settings')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="h-5 w-5 text-cyan-400" />
+                      <h2 className="text-xl font-semibold text-white">ElevenLabs Voice Settings</h2>
+                    </div>
+                    {expandedCards.has('voice-settings') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
                   </div>
 
-                  {/* Voice Selection */}
+                  {expandedCards.has('voice-settings') && (
+                    <>
+                      {/* Voice Selection */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-cyan-400 text-sm font-semibold">Voice</label>
@@ -4375,6 +7334,8 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       💡 <strong>Tip:</strong> Adjust these settings to fine-tune your voice output. Stability controls consistency, Similarity Boost affects voice matching, Style adds expressiveness, and Speaker Boost enhances overall quality.
                     </p>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -4382,11 +7343,31 @@ Return ONLY the enhanced text without any explanation or extra text.`,
             {/* Text Generation Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
               <div className="space-y-4">
-                <div className="flex items-center justify-between mb-4">
+                <div 
+                  className="flex items-center justify-between mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('generate-text')) {
+                        newSet.delete('generate-text')
+                      } else {
+                        newSet.add('generate-text')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
                   <h2 className="text-xl font-semibold text-white">Generate Text</h2>
+                  {expandedCards.has('generate-text') ? (
+                    <ChevronUp className="h-5 w-5 text-cyan-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-cyan-400" />
+                  )}
                 </div>
 
-                <textarea
+                {expandedCards.has('generate-text') && (
+                  <>
+                    <textarea
                   placeholder="Enter a prompt to generate text... (e.g., 'Write a story about a futuristic city', 'Create a narration about space exploration')"
                   className="w-full bg-black/30 text-lg text-white placeholder-cyan-600 resize-none border border-cyan-500/30 rounded-lg p-4 focus:ring-2 focus:ring-cyan-400 min-h-[100px]"
                   value={prompt}
@@ -4548,20 +7529,43 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     </div>
                   </div>
                 )}
+                  </>
+                )}
               </div>
             </div>
 
             {/* Text to Audio Section */}
             <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
               <div className="space-y-4">
-                <div className="flex items-center justify-between mb-4">
+                <div 
+                  className="flex items-center justify-between mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    setExpandedCards(prev => {
+                      const newSet = new Set(prev)
+                      if (newSet.has('text-to-audio')) {
+                        newSet.delete('text-to-audio')
+                      } else {
+                        newSet.add('text-to-audio')
+                      }
+                      return newSet
+                    })
+                  }}
+                >
                   <h2 className="text-xl font-semibold text-white">Text to Convert to Audio</h2>
                   <div className="flex items-center gap-2">
+                    {expandedCards.has('text-to-audio') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
                     {userCredits <= 50 && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setShowCreditsDialog(true)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowCreditsDialog(true)
+                        }}
                         className={`${userCredits <= 10 ? 'text-red-400 hover:bg-red-400/10' : 'text-cyan-400 hover:bg-cyan-400/10'}`}
                       >
                         <CreditCard className="h-4 w-4 mr-2" />
@@ -4571,7 +7575,10 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => window.location.reload()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.location.reload()
+                      }}
                       className="text-cyan-400 hover:bg-cyan-400/10"
                     >
                       <RefreshCw className="h-4 w-4" />
@@ -4579,7 +7586,9 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                   </div>
                 </div>
 
-                <textarea
+                {expandedCards.has('text-to-audio') && (
+                  <>
+                    <textarea
                   placeholder="Enter the text you want to convert to speech... (e.g., 'Hello, welcome to INFINITO AI. How can I help you today?')"
                   className="w-full bg-black/30 text-lg text-white placeholder-cyan-600 resize-none border border-cyan-500/30 rounded-lg p-4 focus:ring-2 focus:ring-cyan-400 min-h-[120px]"
                   value={text}
@@ -4628,8 +7637,116 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                     )}
                   </Button>
                 </div>
+                  </>
+                )}
               </div>
             </div>
+
+            {/* Custom Voice Selector - Only shown when ElevenLabs is selected */}
+            {selectedAudioModel === 'elevenlabs' && (
+              <div className="aztec-panel backdrop-blur-md shadow-2xl p-6 rounded-2xl border border-cyan-500/30 shadow-cyan-500/20">
+                <div className="space-y-4">
+                  <div 
+                    className="flex items-center justify-between gap-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      setExpandedCards(prev => {
+                        const newSet = new Set(prev)
+                        if (newSet.has('custom-voice')) {
+                          newSet.delete('custom-voice')
+                        } else {
+                          newSet.add('custom-voice')
+                        }
+                        return newSet
+                      })
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="h-5 w-5 text-cyan-400" />
+                      <h2 className="text-xl font-semibold text-white">Select Custom Voice</h2>
+                    </div>
+                    {expandedCards.has('custom-voice') ? (
+                      <ChevronUp className="h-5 w-5 text-cyan-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-cyan-400" />
+                    )}
+                  </div>
+
+                  {expandedCards.has('custom-voice') && (
+                    <>
+                      <div className="p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20 mb-4">
+                        <p className="text-xs text-cyan-300">
+                          🎤 Choose a custom voice for your text-to-speech conversion. Select from your available ElevenLabs voices.
+                        </p>
+                      </div>
+
+                      {/* Voice Selection */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-cyan-400 text-sm font-semibold">Custom Voice</label>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              fetchAvailableVoices()
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                            disabled={isLoadingVoices}
+                            title="Refresh voices list"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                        {isLoadingVoices ? (
+                          <div className="flex items-center gap-2 text-cyan-400">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-cyan-400/40 border-t-cyan-400"></div>
+                            Loading voices...
+                          </div>
+                        ) : (
+                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                            <SelectTrigger className="bg-transparent border-cyan-500/50 text-cyan-300 hover:border-cyan-400">
+                              <SelectValue placeholder="Select a custom voice" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black/90 border-cyan-500/50 backdrop-blur-md max-h-[300px] overflow-y-auto">
+                              {availableVoices.length > 0 ? (
+                                availableVoices.map((voice) => (
+                                  <SelectItem 
+                                    key={voice.id || voice.voice_id} 
+                                    value={voice.id || voice.voice_id}
+                                    className="text-cyan-300 hover:bg-cyan-500/20"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {voice.name || voice.voice_id}
+                                      {voice.category && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                                          {voice.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {voice.description && (
+                                      <span className="text-xs text-gray-400 ml-2 block">- {voice.description}</span>
+                                    )}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="no-voices" disabled className="text-gray-500">
+                                  No custom voices available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {selectedVoiceId && availableVoices.length > 0 && (
+                          <p className="text-xs text-cyan-400/70 mt-2">
+                            Selected voice will be used for text-to-speech conversion
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -4731,14 +7848,42 @@ Return ONLY the enhanced text without any explanation or extra text.`,
                       </div>
                     </div>
                     
-                    <a 
-                      href={audioUrl} 
-                      download
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      Download Audio
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleSaveToLibrary}
+                        disabled={isSavingToLibrary || savedToLibrary}
+                        className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                          savedToLibrary
+                            ? 'bg-green-600 text-white cursor-default'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {isSavingToLibrary ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white"></div>
+                            Saving...
+                          </>
+                        ) : savedToLibrary ? (
+                          <>
+                            <Check className="h-4 w-4" />
+                            Saved to Library
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4" />
+                            Save to Library
+                          </>
+                        )}
+                      </Button>
+                      <a 
+                        href={audioUrl} 
+                        download
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download Audio
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4750,7 +7895,7 @@ Return ONLY the enhanced text without any explanation or extra text.`,
         {/* Credits Purchase Dialog */}
         <CreditsPurchaseDialog 
           open={showCreditsDialog} 
-          onClose={() => setShowCreditsDialog(false)}
+          onOpenChange={setShowCreditsDialog}
           currentCredits={userCredits}
         />
       </div>
