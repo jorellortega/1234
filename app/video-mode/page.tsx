@@ -343,11 +343,18 @@ export default function VideoModePage() {
 
 Original prompt: "${prompt}"
 
-Return ONLY the enhanced prompt without any explanation or extra text.`,
+CRITICAL REQUIREMENTS:
+- Return ONLY the enhanced prompt text, no explanations, no prefixes, no quotes
+- The enhanced prompt MUST be EXACTLY 950 characters or LESS
+- Count your characters carefully - if your response exceeds 950 characters, it will be rejected
+- Keep it detailed but concise - prioritize quality over length
+- Do NOT include phrases like "Enhanced prompt:" or any other text before/after the prompt
+
+Generate the enhanced prompt now (max 950 characters):`,
           mode: selectedLLM,
-          temperature: 0.8,
-          max_tokens: 300,
-          response_style: 'detailed'
+          temperature: 0.7,
+          max_tokens: 250,
+          response_style: 'concise'
         })
       })
 
@@ -359,9 +366,12 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       const data = await response.json()
       const enhanced = data.output || data.response || ''
       
-      setEnhancedPrompt(enhanced.trim())
+      // Truncate to 950 characters to prevent RunwayML API errors (max is 1000)
+      const truncatedEnhanced = enhanced.trim().substring(0, 950)
+      
+      setEnhancedPrompt(truncatedEnhanced)
       // Auto-copy to main prompt
-      setPrompt(enhanced.trim())
+      setPrompt(truncatedEnhanced)
     } catch (error: any) {
       console.error('Prompt enhancement error:', error)
       setError(error.message || 'Failed to enhance prompt')
@@ -614,7 +624,9 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       setVideoGenerationProgress('Preparing request...')
       setProgressPercentage(20)
       const formData = new FormData()
-      formData.append('prompt', prompt)
+      // Truncate prompt to 950 characters to prevent RunwayML API errors (max is 1000)
+      const truncatedPrompt = prompt.trim().substring(0, 950)
+      formData.append('prompt', truncatedPrompt)
       formData.append('model', selectedVideoModel)
       formData.append('duration', videoDuration.toString())
       formData.append('ratio', videoRatio)
@@ -1027,12 +1039,40 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                   </div>
                 </div>
 
-                <textarea
-                  placeholder="Describe the video you want to generate... (e.g., 'A cat playing with a ball', 'Ocean waves at sunset')"
-                  className="w-full bg-black/30 text-lg text-white placeholder-pink-600 resize-none border border-pink-500/30 rounded-lg p-4 focus:ring-2 focus:ring-pink-400 min-h-[120px]"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                />
+                <div className="space-y-2">
+                  <textarea
+                    placeholder="Describe the video you want to generate... (e.g., 'A cat playing with a ball', 'Ocean waves at sunset')"
+                    className="w-full bg-black/30 text-lg text-white placeholder-pink-600 resize-none border border-pink-500/30 rounded-lg p-4 focus:ring-2 focus:ring-pink-400 min-h-[120px]"
+                    value={prompt}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Limit to 950 characters to prevent RunwayML API errors
+                      if (value.length <= 950) {
+                        setPrompt(value)
+                      } else {
+                        setPrompt(value.substring(0, 950))
+                        setError('Prompt limited to 950 characters (RunwayML API maximum is 1000)')
+                        setTimeout(() => setError(null), 3000)
+                      }
+                    }}
+                    maxLength={950}
+                  />
+                  <div className="flex justify-between items-center text-xs">
+                    <span className={`${prompt.length >= 900 ? 'text-yellow-400' : prompt.length >= 950 ? 'text-red-400' : 'text-gray-400'}`}>
+                      {prompt.length} / 950 characters
+                    </span>
+                    {prompt.length >= 900 && prompt.length < 950 && (
+                      <span className="text-yellow-400">
+                        ⚠️ Approaching limit
+                      </span>
+                    )}
+                    {prompt.length >= 950 && (
+                      <span className="text-red-400">
+                        ⚠️ Maximum length reached
+                      </span>
+                    )}
+                  </div>
+                </div>
 
                 {/* Enhance Prompt Button */}
                 <div className="flex items-center gap-2">

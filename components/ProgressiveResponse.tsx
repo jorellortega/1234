@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save, Edit2, X } from "lucide-react"
+import { ChevronDown, ChevronUp, Copy, Check, Loader2, Volume2, Play, Pause, Download, FileText, Save, Edit2, X, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List, Sparkles, Zap, ArrowUp, ArrowDown, Minus, Heading, Type } from "lucide-react"
 
 interface ProgressiveResponseProps {
   content: string
@@ -62,18 +62,38 @@ export function ProgressiveResponse({
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [hasPreviousResponse, setHasPreviousResponse] = useState(false)
   const [wasExpandedBeforeEdit, setWasExpandedBeforeEdit] = useState(false)
+  const [originalContentHeight, setOriginalContentHeight] = useState<number | null>(null)
+  const [selectedText, setSelectedText] = useState<string>("")
+  const [selectionStart, setSelectionStart] = useState<number>(0)
+  const [selectionEnd, setSelectionEnd] = useState<number>(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLDivElement>(null)
+  const contentDisplayRef = useRef<HTMLDivElement>(null)
   
   // Auto-resize textarea to fit content
   useEffect(() => {
     if (isEditing && textareaRef.current) {
-      // Reset height to auto to get proper scrollHeight
-      textareaRef.current.style.height = 'auto'
-      // Set height based on content
-      textareaRef.current.style.height = `${Math.max(200, textareaRef.current.scrollHeight)}px`
+      // Use original height if available, otherwise calculate from content
+      const targetHeight = originalContentHeight 
+        ? Math.max(originalContentHeight, textareaRef.current.scrollHeight)
+        : Math.max(200, textareaRef.current.scrollHeight)
+      
+      // Set height immediately to prevent layout shift
+      textareaRef.current.style.height = `${targetHeight}px`
+      
+      // Then adjust if content is taller
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto'
+          const contentHeight = textareaRef.current.scrollHeight
+          const finalHeight = originalContentHeight 
+            ? Math.max(originalContentHeight, contentHeight)
+            : Math.max(200, contentHeight)
+          textareaRef.current.style.height = `${finalHeight}px`
+        }
+      })
     }
-  }, [isEditing, editedContent])
+  }, [isEditing, editedContent, originalContentHeight])
   
   // Track if we just finished editing to prevent state resets
   const justFinishedEditingRef = useRef(false)
@@ -206,25 +226,16 @@ export function ProgressiveResponse({
 
   const previousContentRef = useRef<string>("")
 
-  // Auto-scroll once when a brand new response appears
+  // Removed auto-scroll - user stays at top of response during generation
+  // Auto-scroll disabled to allow user to stay at top while text generates
   useEffect(() => {
     if (!content) {
       previousContentRef.current = ""
       return
     }
 
-    const wasEmpty = previousContentRef.current.length === 0
     previousContentRef.current = content
-
-    if (wasEmpty && responseRef.current) {
-      requestAnimationFrame(() => {
-        responseRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-          inline: 'nearest'
-        })
-      })
-    }
+    // Scroll disabled - user controls their own scroll position
   }, [content])
 
   // Split content into concise and detailed parts
@@ -299,15 +310,33 @@ export function ProgressiveResponse({
     try {
       // Get prompt from URL or current input if available
       const urlParams = new URLSearchParams(window.location.search)
-      const prompt = urlParams.get('prompt') || ''
+      const promptText = urlParams.get('prompt') || prompt || ''
       
       // Use expanded content if available, otherwise use original content
-      const contentToExport = isExpanded && detailedContent 
+      const rawContent = isExpanded && detailedContent 
         ? `${concisePart}\n\n${detailedContent}` 
         : content
       
-      // Generate PDF export URL
-      const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(contentToExport)}&prompt=${encodeURIComponent(prompt)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
+      // Strip HTML tags and convert to plain text
+      let cleanContent = rawContent
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+        .replace(/&amp;/g, '&') // Replace HTML entities
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+      
+      // Normalize markdown formatting and extract paragraphs
+      const paragraphs = extractParagraphs(cleanContent)
+      
+      // Join paragraphs with double line breaks for proper formatting
+      const contentToExport = paragraphs.length > 0
+        ? paragraphs.join('\n\n')
+        : normalizeText(cleanContent)
+      
+      // Generate PDF export URL with clean, formatted text (no prompt - only response)
+      const pdfUrl = `/api/export-pdf?response=${encodeURIComponent(contentToExport)}&timestamp=${encodeURIComponent(new Date().toISOString())}`
       
       // Fetch the PDF as a blob
       const response = await fetch(pdfUrl)
@@ -344,7 +373,52 @@ export function ProgressiveResponse({
     }
   }
 
+  // Helper function to apply AI transformation to selected text or full content
+  const applyAITransformation = async (
+    transformation: string,
+    textToTransform: string,
+    prompt: string,
+    temperature: number = 0.7,
+    maxTokens: number = 2000
+  ) => {
+    try {
+      const { supabase } = await import('@/lib/supabase-client')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return null
+      
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          prompt: `${transformation}: ${textToTransform}`,
+          mode: 'gpt-4o-mini',
+          temperature,
+          max_tokens: maxTokens
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        return data.output || data.response || ''
+      }
+      return null
+    } catch (error) {
+      console.error('Failed to apply AI transformation:', error)
+      return null
+    }
+  }
+
   const handleStartEdit = () => {
+    // Capture the height of the content display before switching to edit mode
+    if (contentDisplayRef.current) {
+      const height = contentDisplayRef.current.offsetHeight
+      setOriginalContentHeight(height)
+      console.log('📏 [EDIT] Captured original content height:', height)
+    }
+    
     // Prepare readable text for editing using the same formatting as display
     const formattedParagraphs = extractParagraphs(detailedContent || detailedPart || content)
     const editableText = formattedParagraphs.length > 0
@@ -352,6 +426,10 @@ export function ProgressiveResponse({
       : normalizeText(content)
 
     setEditedContent(editableText)
+    // Reset selection
+    setSelectedText("")
+    setSelectionStart(0)
+    setSelectionEnd(0)
     // Remember if content was expanded before editing
     setWasExpandedBeforeEdit(isExpanded)
     setIsEditing(true)
@@ -361,6 +439,10 @@ export function ProgressiveResponse({
   const handleCancelEdit = () => {
     setIsEditing(false)
     setEditedContent("")
+    // Reset original height after cancel
+    setTimeout(() => {
+      setOriginalContentHeight(null)
+    }, 300)
   }
 
   const handleSaveEdit = async () => {
@@ -497,6 +579,10 @@ export function ProgressiveResponse({
       // Close edit mode after state is updated
       setIsEditing(false)
       setEditedContent("")
+      // Reset original height after save
+      setTimeout(() => {
+        setOriginalContentHeight(null)
+      }, 300)
       console.log('✅ [EDIT] Edit saved successfully! Content should now show:', editedContent.substring(0, 50) + '...')
     } catch (error) {
       console.error('❌ [EDIT] Failed to save edit:', error)
@@ -742,123 +828,65 @@ export function ProgressiveResponse({
             </div>
           )}
           
-          {/* Export PDF Button - Only show for text responses */}
-          {!hasMediaContent && (
-            <>
-              {/* Divider */}
-              <div className="h-6 w-px bg-gray-600 mx-1"></div>
-              
-              {/* Document Actions */}
-              <div className="flex items-center gap-1">
-            <Button 
-              onClick={handleExportPDF}
-              variant="ghost" 
-              size="sm"
-              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
-            >
-              <FileText className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-              <span className="text-xs hidden sm:inline">PDF</span>
-            </Button>
-              </div>
-            </>
-          )}
-          
-          {/* Download Button - Only show for image/video */}
+          {/* Download Button - Only show for image/video/audio */}
           {hasMediaContent && (
-            <Button 
-              onClick={async () => {
-                try {
-                  const imageMatch = content.match(/\[IMAGE_DISPLAY:(.*?)\]/);
-                  const videoMatch = content.match(/\[VIDEO_DISPLAY:(.*?)\]/);
-                  const audioMatch = content.match(/\[AUDIO_DISPLAY:(.*?)\]/);
-                  
-                  if (imageMatch) {
-                    // Download image via API proxy using blob
-                    const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`);
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `Infinito Image.png`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } else if (videoMatch) {
-                    // Download video
-                    const response = await fetch(videoMatch[1]);
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `Infinito Video.mp4`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } else if (audioMatch) {
-                    // Download audio via API proxy
-                    const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioMatch[1])}`);
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `Infinito-Audio.mp3`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  }
-                } catch (error) {
-                  console.error('Failed to download media:', error);
-                }
-              }}
-              variant="ghost" 
-              size="sm"
-              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
-            >
-              <Download className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-              <span className="text-xs hidden sm:inline">Download</span>
-            </Button>
-          )}
-          
-          {/* Copy Button */}
-          <div className="flex items-center gap-1">
-          <Button 
-            onClick={handleCopy}
-            variant="ghost" 
-            size="sm"
-            className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                <span className="text-xs hidden sm:inline">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                <span className="text-xs hidden sm:inline">Copy</span>
-              </>
-            )}
-          </Button>
-          </div>
-          
-          {/* Edit Button - Only show for text responses when not editing */}
-          {!hasMediaContent && onContentChange && !isEditing && (
             <>
               <div className="h-6 w-px bg-gray-600 mx-1"></div>
-              <div className="flex items-center gap-1">
-                <Button 
-                  onClick={handleStartEdit}
-                  variant="ghost" 
-                  size="sm"
-                  className="text-yellow-400 hover:bg-yellow-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
-                >
-                  <Edit2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                  <span className="text-xs hidden sm:inline">Edit</span>
-                </Button>
-              </div>
+              <Button 
+                onClick={async () => {
+                  try {
+                    const imageMatch = content.match(/\[IMAGE_DISPLAY:(.*?)\]/);
+                    const videoMatch = content.match(/\[VIDEO_DISPLAY:(.*?)\]/);
+                    const audioMatch = content.match(/\[AUDIO_DISPLAY:(.*?)\]/);
+                    
+                    if (imageMatch) {
+                      // Download image via API proxy using blob
+                      const response = await fetch(`/api/download-image?url=${encodeURIComponent(imageMatch[1])}`);
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Infinito Image.png`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                    } else if (videoMatch) {
+                      // Download video
+                      const response = await fetch(videoMatch[1]);
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Infinito Video.mp4`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                    } else if (audioMatch) {
+                      // Download audio via API proxy
+                      const response = await fetch(`/api/download-audio?url=${encodeURIComponent(audioMatch[1])}`);
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Infinito-Audio.mp3`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                    }
+                  } catch (error) {
+                    console.error('Failed to download media:', error);
+                  }
+                }}
+                variant="ghost" 
+                size="sm"
+                className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-7 sm:h-8 px-2 sm:px-3"
+              >
+                <Download className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                <span className="text-xs hidden sm:inline">Download</span>
+              </Button>
             </>
           )}
         </div>
@@ -869,7 +897,12 @@ export function ProgressiveResponse({
       
       {/* Edit Mode - Show textarea */}
       {isEditing ? (
-        <div className="border border-yellow-500/50 rounded p-3 sm:p-4 bg-black/30">
+        <div 
+          className="border border-yellow-500/50 rounded p-3 sm:p-4 bg-black/30"
+          style={{ 
+            minHeight: originalContentHeight ? `${originalContentHeight + 60}px` : 'auto' // Add padding for header
+          }}
+        >
           <div className="mb-2 flex items-center justify-between">
             <span className="text-yellow-400 text-sm font-semibold">Editing Response</span>
             <div className="flex gap-2">
@@ -908,12 +941,31 @@ export function ProgressiveResponse({
             ref={textareaRef}
             value={editedContent}
             onChange={(e) => setEditedContent(e.target.value)}
-            className="w-full min-h-[200px] p-3 bg-black/50 border border-cyan-500/30 rounded text-gray-100 text-sm font-mono resize-none overflow-y-auto focus:outline-none focus:border-cyan-500"
+            onSelect={(e) => {
+              const target = e.target as HTMLTextAreaElement
+              const start = target.selectionStart
+              const end = target.selectionEnd
+              const selected = editedContent.substring(start, end)
+              setSelectionStart(start)
+              setSelectionEnd(end)
+              setSelectedText(selected)
+            }}
+            className="w-full p-3 bg-black/50 border border-cyan-500/30 rounded text-gray-100 text-sm font-mono resize-none overflow-y-auto focus:outline-none focus:border-cyan-500"
+            style={{
+              minHeight: originalContentHeight ? `${originalContentHeight}px` : '200px',
+              height: originalContentHeight ? `${originalContentHeight}px` : 'auto'
+            }}
             placeholder="Edit your response here..."
           />
         </div>
       ) : (
-        <div className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden">
+        <div 
+          ref={contentDisplayRef}
+          className="text-gray-100 whitespace-pre-wrap break-words border border-cyan-500/20 rounded p-2 sm:p-3 bg-black/20 overflow-hidden"
+          style={{ 
+            minHeight: originalContentHeight && !isEditing ? `${originalContentHeight}px` : 'auto'
+          }}
+        >
           {/* Concise part - only show if progressive mode, otherwise handled below */}
           {shouldShowProgressive && normalizedConcise && (
             <div className="mb-3">
@@ -1337,6 +1389,560 @@ export function ProgressiveResponse({
                 </>
               )}
             </Button>
+          </div>
+        )}
+        
+        {/* Toolbar 1: PDF, Copy, Edit - Only for text responses */}
+        {!hasMediaContent && !isEditing && (
+          <div className="mt-4 pt-3 border-t border-cyan-500/20 flex flex-wrap items-center gap-2">
+            <Button 
+              onClick={handleExportPDF}
+              variant="ghost" 
+              size="sm"
+              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+            >
+              <FileText className="h-4 w-4 mr-1.5" />
+              <span className="text-xs">PDF</span>
+            </Button>
+            
+            <Button 
+              onClick={handleCopy}
+              variant="ghost" 
+              size="sm"
+              className="text-cyan-400 hover:bg-cyan-400/10 hover:text-white transition-all h-8 px-3"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4 mr-1.5" />
+                  <span className="text-xs">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4 mr-1.5" />
+                  <span className="text-xs">Copy</span>
+                </>
+              )}
+            </Button>
+            
+            {onContentChange && (
+              <Button 
+                onClick={handleStartEdit}
+                variant="ghost" 
+                size="sm"
+                className="text-yellow-400 hover:bg-yellow-400/10 hover:text-white transition-all h-8 px-3"
+              >
+                <Edit2 className="h-4 w-4 mr-1.5" />
+                <span className="text-xs">Edit</span>
+              </Button>
+            )}
+          </div>
+        )}
+        
+        {/* Toolbar 2: Text Formatting & AI Tools - Show for text responses (including edit mode) */}
+        {!hasMediaContent && onContentChange && (
+          <div className="mt-2 pt-2 border-t border-gray-600/30 flex flex-wrap items-center gap-1.5">
+            {/* Text Formatting Tools */}
+            <div className="flex items-center gap-1 pr-2 border-r border-gray-600/30">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-300 hover:bg-gray-700/50 hover:text-white h-7 px-2"
+                disabled={!isEditing}
+                onClick={() => {
+                  if (!isEditing || !textareaRef.current) return
+                  
+                  const textarea = textareaRef.current
+                  const start = textarea.selectionStart
+                  const end = textarea.selectionEnd
+                  const selectedText = editedContent.substring(start, end)
+                  
+                  if (!selectedText.trim()) {
+                    // No selection - insert bold markers at cursor
+                    const newContent = editedContent.substring(0, start) + 
+                                      '**bold text**' + 
+                                      editedContent.substring(end)
+                    setEditedContent(newContent)
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        const newPos = start + 2 // Position after **
+                        textareaRef.current.setSelectionRange(newPos, newPos + 9) // Select "bold text"
+                        textareaRef.current.focus()
+                      }
+                    }, 0)
+                  } else {
+                    // Wrap selected text in **
+                    // Check if already bold
+                    const isAlreadyBold = editedContent.substring(Math.max(0, start - 2), end + 2) === `**${selectedText}**`
+                    
+                    if (isAlreadyBold) {
+                      // Remove bold formatting
+                      const newContent = editedContent.substring(0, start - 2) + 
+                                        selectedText + 
+                                        editedContent.substring(end + 2)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start - 2, start - 2 + selectedText.length)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    } else {
+                      // Add bold formatting
+                      const newContent = editedContent.substring(0, start) + 
+                                        `**${selectedText}**` + 
+                                        editedContent.substring(end)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start, start + selectedText.length + 4)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? "Make bold (B)" : "Bold (Select text in edit mode)"}
+              >
+                <Bold className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-300 hover:bg-gray-700/50 hover:text-white h-7 px-2"
+                disabled={!isEditing}
+                onClick={() => {
+                  if (!isEditing || !textareaRef.current) return
+                  
+                  const textarea = textareaRef.current
+                  const start = textarea.selectionStart
+                  const end = textarea.selectionEnd
+                  const selectedText = editedContent.substring(start, end)
+                  
+                  if (!selectedText.trim()) {
+                    // No selection - insert italic markers at cursor
+                    const newContent = editedContent.substring(0, start) + 
+                                      '*italic text*' + 
+                                      editedContent.substring(end)
+                    setEditedContent(newContent)
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        const newPos = start + 1 // Position after *
+                        textareaRef.current.setSelectionRange(newPos, newPos + 12) // Select "italic text"
+                        textareaRef.current.focus()
+                      }
+                    }, 0)
+                  } else {
+                    // Wrap selected text in *
+                    // Check if already italic
+                    const isAlreadyItalic = editedContent.substring(Math.max(0, start - 1), end + 1) === `*${selectedText}*`
+                    
+                    if (isAlreadyItalic) {
+                      // Remove italic formatting
+                      const newContent = editedContent.substring(0, start - 1) + 
+                                        selectedText + 
+                                        editedContent.substring(end + 1)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start - 1, start - 1 + selectedText.length)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    } else {
+                      // Add italic formatting
+                      const newContent = editedContent.substring(0, start) + 
+                                        `*${selectedText}*` + 
+                                        editedContent.substring(end)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start, start + selectedText.length + 2)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? "Make italic (I)" : "Italic (Select text in edit mode)"}
+              >
+                <Italic className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-300 hover:bg-gray-700/50 hover:text-white h-7 px-2"
+                disabled={!isEditing}
+                onClick={() => {
+                  if (!isEditing || !textareaRef.current) return
+                  
+                  const textarea = textareaRef.current
+                  const start = textarea.selectionStart
+                  const end = textarea.selectionEnd
+                  const selectedText = editedContent.substring(start, end)
+                  
+                  if (!selectedText.trim()) {
+                    // No selection - insert underline markers at cursor
+                    const newContent = editedContent.substring(0, start) + 
+                                      '<u>underlined text</u>' + 
+                                      editedContent.substring(end)
+                    setEditedContent(newContent)
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        const newPos = start + 3 // Position after <u>
+                        textareaRef.current.setSelectionRange(newPos, newPos + 16) // Select "underlined text"
+                        textareaRef.current.focus()
+                      }
+                    }, 0)
+                  } else {
+                    // Wrap selected text in <u></u>
+                    // Check if already underlined
+                    const isAlreadyUnderlined = editedContent.substring(Math.max(0, start - 3), end + 4) === `<u>${selectedText}</u>`
+                    
+                    if (isAlreadyUnderlined) {
+                      // Remove underline formatting
+                      const newContent = editedContent.substring(0, start - 3) + 
+                                        selectedText + 
+                                        editedContent.substring(end + 4)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start - 3, start - 3 + selectedText.length)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    } else {
+                      // Add underline formatting
+                      const newContent = editedContent.substring(0, start) + 
+                                        `<u>${selectedText}</u>` + 
+                                        editedContent.substring(end)
+                      setEditedContent(newContent)
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.setSelectionRange(start, start + selectedText.length + 7)
+                          textareaRef.current.focus()
+                        }
+                      }, 0)
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? "Make underlined (U)" : "Underline (Select text in edit mode)"}
+              >
+                <Underline className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-300 hover:bg-gray-700/50 hover:text-white h-7 px-2"
+                disabled={!isEditing}
+                onClick={() => {
+                  if (!isEditing || !textareaRef.current) return
+                  
+                  const textarea = textareaRef.current
+                  const start = textarea.selectionStart
+                  const end = textarea.selectionEnd
+                  const selectedText = editedContent.substring(start, end)
+                  
+                  if (!selectedText.trim()) {
+                    // No selection - insert list item
+                    const newContent = editedContent.substring(0, start) + 
+                                      '- List item' + 
+                                      editedContent.substring(end)
+                    setEditedContent(newContent)
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        const newPos = start + 2 // Position after "- "
+                        textareaRef.current.setSelectionRange(newPos, newPos + 9) // Select "List item"
+                        textareaRef.current.focus()
+                      }
+                    }, 0)
+                  } else {
+                    // Convert selected text to list items (split by lines)
+                    const lines = selectedText.split('\n').filter(line => line.trim())
+                    const listItems = lines.map(line => `- ${line.trim()}`).join('\n')
+                    
+                    const newContent = editedContent.substring(0, start) + 
+                                      listItems + 
+                                      editedContent.substring(end)
+                    setEditedContent(newContent)
+                    
+                    // Select the converted list
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        textareaRef.current.setSelectionRange(start, start + listItems.length)
+                        textareaRef.current.focus()
+                      }
+                    }, 0)
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? "Convert to list" : "List (Select text in edit mode)"}
+              >
+                <List className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            
+            {/* AI Tools */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-purple-400 hover:bg-purple-400/10 hover:text-white h-7 px-2"
+                onClick={async () => {
+                  const textToTransform = isEditing 
+                    ? (selectedText.trim() || editedContent)
+                    : content
+                  
+                  if (!textToTransform.trim()) return
+                  
+                  const transformed = await applyAITransformation(
+                    'Improve and enhance the following text while keeping its meaning',
+                    textToTransform,
+                    prompt || '',
+                    0.7,
+                    2000
+                  )
+                  
+                  if (transformed && transformed.trim()) {
+                    if (isEditing && selectedText.trim() && textareaRef.current) {
+                      // Replace selected text
+                      const newContent = editedContent.substring(0, selectionStart) + 
+                                        transformed.trim() + 
+                                        editedContent.substring(selectionEnd)
+                      setEditedContent(newContent)
+                      // Clear selection
+                      setSelectedText("")
+                      // Set cursor after replaced text
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          const newPos = selectionStart + transformed.trim().length
+                          textareaRef.current.setSelectionRange(newPos, newPos)
+                        }
+                      }, 0)
+                    } else if (isEditing) {
+                      // Replace entire content
+                      setEditedContent(transformed.trim())
+                    } else {
+                      // Update main content
+                      await onContentChange(transformed.trim())
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? `Improve selected text (${selectedText.length} chars)` : "Improve entire response with AI"}
+              >
+                <Sparkles className="h-3.5 w-3.5 mr-1" />
+                <span className="text-xs hidden sm:inline">Improve</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-blue-400 hover:bg-blue-400/10 hover:text-white h-7 px-2"
+                onClick={async () => {
+                  const textToTransform = isEditing 
+                    ? (selectedText.trim() || editedContent)
+                    : content
+                  
+                  if (!textToTransform.trim()) return
+                  
+                  const transformed = await applyAITransformation(
+                    'Expand and add more detail to the following text',
+                    textToTransform,
+                    prompt || '',
+                    0.7,
+                    2000
+                  )
+                  
+                  if (transformed && transformed.trim()) {
+                    if (isEditing && selectedText.trim() && textareaRef.current) {
+                      // Replace selected text
+                      const newContent = editedContent.substring(0, selectionStart) + 
+                                        transformed.trim() + 
+                                        editedContent.substring(selectionEnd)
+                      setEditedContent(newContent)
+                      setSelectedText("")
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          const newPos = selectionStart + transformed.trim().length
+                          textareaRef.current.setSelectionRange(newPos, newPos)
+                        }
+                      }, 0)
+                    } else if (isEditing) {
+                      setEditedContent(transformed.trim())
+                    } else {
+                      await onContentChange(transformed.trim())
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? `Expand selected text (${selectedText.length} chars)` : "Expand entire response with AI"}
+              >
+                <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                <span className="text-xs hidden sm:inline">Expand</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-green-400 hover:bg-green-400/10 hover:text-white h-7 px-2"
+                onClick={async () => {
+                  const textToTransform = isEditing 
+                    ? (selectedText.trim() || editedContent)
+                    : content
+                  
+                  if (!textToTransform.trim()) return
+                  
+                  const transformed = await applyAITransformation(
+                    'Summarize the following text concisely',
+                    textToTransform,
+                    prompt || '',
+                    0.5,
+                    500
+                  )
+                  
+                  if (transformed && transformed.trim()) {
+                    if (isEditing && selectedText.trim() && textareaRef.current) {
+                      // Replace selected text
+                      const newContent = editedContent.substring(0, selectionStart) + 
+                                        transformed.trim() + 
+                                        editedContent.substring(selectionEnd)
+                      setEditedContent(newContent)
+                      setSelectedText("")
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          const newPos = selectionStart + transformed.trim().length
+                          textareaRef.current.setSelectionRange(newPos, newPos)
+                        }
+                      }, 0)
+                    } else if (isEditing) {
+                      setEditedContent(transformed.trim())
+                    } else {
+                      await onContentChange(transformed.trim())
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? `Summarize selected text (${selectedText.length} chars)` : "Summarize entire response with AI"}
+              >
+                <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                <span className="text-xs hidden sm:inline">Summarize</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-yellow-400 hover:bg-yellow-400/10 hover:text-white h-7 px-2"
+                onClick={async () => {
+                  const textToTransform = isEditing 
+                    ? (selectedText.trim() || editedContent)
+                    : content
+                  
+                  if (!textToTransform.trim()) return
+                  
+                  const transformed = await applyAITransformation(
+                    'Rewrite the following text in a different style while keeping the same meaning',
+                    textToTransform,
+                    prompt || '',
+                    0.8,
+                    2000
+                  )
+                  
+                  if (transformed && transformed.trim()) {
+                    if (isEditing && selectedText.trim() && textareaRef.current) {
+                      // Replace selected text
+                      const newContent = editedContent.substring(0, selectionStart) + 
+                                        transformed.trim() + 
+                                        editedContent.substring(selectionEnd)
+                      setEditedContent(newContent)
+                      setSelectedText("")
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          const newPos = selectionStart + transformed.trim().length
+                          textareaRef.current.setSelectionRange(newPos, newPos)
+                        }
+                      }, 0)
+                    } else if (isEditing) {
+                      setEditedContent(transformed.trim())
+                    } else {
+                      await onContentChange(transformed.trim())
+                    }
+                  }
+                }}
+                title={isEditing && selectedText.trim() ? `Rewrite selected text (${selectedText.length} chars)` : "Rewrite entire response with AI"}
+              >
+                <Zap className="h-3.5 w-3.5 mr-1" />
+                <span className="text-xs hidden sm:inline">Rewrite</span>
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-pink-400 hover:bg-pink-400/10 hover:text-white h-7 px-2"
+                onClick={async () => {
+                  const textForTitle = isEditing ? editedContent : content
+                  
+                  if (!textForTitle.trim()) return
+                  
+                  // Remove existing title if present to get clean content (handles both ## and plain titles)
+                  const contentWithoutTitle = textForTitle.replace(/^##?\s+.+\n\n/, '')
+                  
+                  // Generate a title based on the content
+                  const generatedTitle = await applyAITransformation(
+                    'Generate a concise, compelling title (5-10 words max) for the following text. Return ONLY the title, no explanation, no quotes, no colons, just the title text',
+                    contentWithoutTitle.substring(0, 1000),
+                    prompt || '',
+                    0.9,
+                    50
+                  )
+                  
+                  if (generatedTitle && generatedTitle.trim()) {
+                    // Clean up the title (remove quotes, extra spaces, prefixes)
+                    let title = generatedTitle.trim()
+                      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+                      .replace(/^Title:\s*/i, '') // Remove "Title:" prefix if present
+                      .replace(/^#+\s*/, '') // Remove markdown headers if present
+                      .replace(/^[-*]\s*/, '') // Remove list markers
+                      .trim()
+                    
+                    // Format title without markdown (just title with spacing)
+                    const formattedTitle = `${title}\n\n`
+                    
+                    if (isEditing) {
+                      // Check if there's already a title at the start (with or without ##)
+                      const hasExistingTitle = /^##?\s+.+\n\n/.test(editedContent)
+                      
+                      if (hasExistingTitle) {
+                        // Replace existing title (handles both ## and plain titles)
+                        const withoutTitle = editedContent.replace(/^##?\s+.+\n\n/, '')
+                        setEditedContent(formattedTitle + withoutTitle)
+                      } else {
+                        // Add new title at the top
+                        setEditedContent(formattedTitle + editedContent)
+                      }
+                      
+                      // Scroll to top after adding title
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.scrollTop = 0
+                        }
+                      }, 100)
+                    } else {
+                      // Check if there's already a title (with or without ##)
+                      const hasExistingTitle = /^##?\s+.+\n\n/.test(content)
+                      
+                      if (hasExistingTitle) {
+                        // Replace existing title (handles both ## and plain titles)
+                        const withoutTitle = content.replace(/^##?\s+.+\n\n/, '')
+                        await onContentChange(formattedTitle + withoutTitle)
+                      } else {
+                        // Add new title at the top
+                        await onContentChange(formattedTitle + content)
+                      }
+                    }
+                  }
+                }}
+                title="Generate and add title at the top (click again for different title)"
+              >
+                <Heading className="h-3.5 w-3.5 mr-1" />
+                <span className="text-xs hidden sm:inline">Title</span>
+              </Button>
+            </div>
           </div>
         )}
         </div>

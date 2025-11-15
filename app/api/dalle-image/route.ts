@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json()
-    const { prompt, model } = body
+    const { prompt, model, ratio = '1024:1024' } = body
 
     if (!prompt) {
       return NextResponse.json(
@@ -132,6 +132,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Convert aspect ratio from "1024:1024" format to "1024x1024" format for DALL-E
+    // DALL-E 3 supports: 1024x1024, 1024x1792, 1792x1024
+    const ratioMap: Record<string, string> = {
+      '1024:1024': '1024x1024',
+      '1024:1792': '1024x1792',
+      '1792:1024': '1792x1024'
+    }
+    const dalleSize = ratioMap[ratio] || '1024x1024'
 
     try {
       // Get OpenAI API key from the database
@@ -173,7 +182,7 @@ export async function POST(req: NextRequest) {
 
       // DALL-E models support additional parameters
       if (imageModel === 'dall-e-3' || imageModel === 'dall-e-2') {
-        requestBody.size = "1024x1024"
+        requestBody.size = dalleSize
         requestBody.response_format = "url"
         
         // Only DALL-E 3 supports quality parameter

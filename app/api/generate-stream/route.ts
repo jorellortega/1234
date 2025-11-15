@@ -9,9 +9,9 @@ export async function POST(req: Request) {
   const { prompt = "", mode = "gpt", temperature = 0.7, max_tokens = 512, response_style = "detailed", image } = body;
   const m = String(mode).toLowerCase();
 
-  // Handle vision models with Ollama, other non-Ollama modes → simple SSE stub
-  if (m === "blip" || m === "llava") {
-    // Vision models - call Ollama directly
+  // Handle BLIP with GPT-4o Vision, LLaVA still uses Ollama
+  if (m === "blip") {
+    // BLIP now uses GPT-4o Vision instead of Ollama
     const stream = new ReadableStream({
       async start(controller) {
         const enc = new TextEncoder();
@@ -19,23 +19,190 @@ export async function POST(req: Request) {
         
         try {
           if (!image) {
-            const errorMsg = m === "blip" 
-              ? "[BLIP] Please upload an image first. BLIP is a vision-language model that can analyze images and answer questions about visual content."
-              : "[LLaVA] Please upload an image first. LLaVA is a multimodal model that can have natural conversations about visual content.";
-            send(errorMsg);
+            send("[BLIP] Please upload an image first. BLIP is a vision-language model that can analyze images and answer questions about visual content.");
+            controller.close();
+            return;
+          }
+          
+          // Get OpenAI API key from the database
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!supabaseUrl || !supabaseKey) {
+            send("[BLIP Error] Database not configured. Please check your Supabase setup.");
+            controller.close();
+            return;
+          }
+          
+          const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+          
+          // Get OpenAI API key - first try system-wide key, then user-specific key
+          let apiKey = null;
+          
+          // First, try to get system-wide key
+          const { data: systemApiKey, error: systemError } = await supabase
+            .from('api_keys')
+            .select('encrypted_key')
+            .is('user_id', null)
+            .eq('service_id', 'openai')
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (systemApiKey && !systemError) {
+            apiKey = systemApiKey;
+          } else {
+            // If no system key, try user-specific key (if user is authenticated)
+            const authHeader = req.headers.get('authorization');
+            if (authHeader) {
+              const token = authHeader.replace('Bearer ', '');
+              const { createClient: createAnonClient } = await import('@supabase/supabase-js');
+              const supabaseAnon = createAnonClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+              );
+              
+              const { data: { user } } = await supabaseAnon.auth.getUser(token);
+              if (user) {
+                const { data: userApiKey, error: userError } = await supabase
+                  .from('api_keys')
+                  .select('encrypted_key')
+                  .eq('user_id', user.id)
+                  .eq('service_id', 'openai')
+                  .eq('is_active', true)
+                  .maybeSingle();
+
+                if (userApiKey && !userError) {
+                  apiKey = userApiKey;
+                }
+              }
+            }
+          }
+          
+          if (!apiKey) {
+            send("[BLIP Error] OpenAI API key not found. Please add your OpenAI API key in the AI Settings page or contact admin to set system-wide key.");
+            controller.close();
+            return;
+          }
+          
+          const openaiApiKey = apiKey.encrypted_key;
+          
+          // Build the vision prompt
+          const visionPrompt = prompt 
+            ? `Question: ${prompt}\n\nPlease analyze this image and provide a ${response_style} response.` 
+            : `Please describe this image in a ${response_style} manner.`;
+          
+          // Call GPT-4o Vision API with streaming
+          const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openaiApiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "gpt-4o",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: visionPrompt
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: image // OpenAI accepts data URLs directly
+                      }
+                    }
+                  ]
+                }
+              ],
+              temperature: temperature,
+              max_tokens: max_tokens,
+              stream: true
+            })
+          });
+          
+          if (!openaiResponse.ok || !openaiResponse.body) {
+            const errorData = await openaiResponse.json().catch(() => ({}));
+            throw new Error(`OpenAI API error: ${errorData.error?.message || openaiResponse.statusText}`);
+          }
+          
+          // Stream the response
+          const reader = openaiResponse.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          const hb = setInterval(() => controller.enqueue(enc.encode(":hb\n\n")), 15000);
+          
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            
+            for (const line of lines) {
+              if (!line.trim() || !line.startsWith("data: ")) continue;
+              
+              try {
+                const data = line.slice(6); // Remove "data: " prefix
+                if (data === "[DONE]") {
+                  clearInterval(hb);
+                  controller.close();
+                  return;
+                }
+                
+                const json = JSON.parse(data);
+                const delta = json.choices?.[0]?.delta?.content;
+                if (delta) {
+                  send(delta);
+                }
+              } catch {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+          
+          clearInterval(hb);
+          controller.close();
+        } catch (error: any) {
+          send(`[BLIP Error] Failed to process image: ${error.message}. Please try again.`);
+          controller.close();
+        }
+      },
+    });
+    
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Connection": "keep-alive",
+      },
+    });
+  } else if (m === "llava") {
+    // LLaVA still uses Ollama
+    const stream = new ReadableStream({
+      async start(controller) {
+        const enc = new TextEncoder();
+        const send = (s: string) => controller.enqueue(enc.encode(`data: ${s}\n\n`));
+        
+        try {
+          if (!image) {
+            send("[LLaVA] Please upload an image first. LLaVA is a multimodal model that can have natural conversations about visual content.");
             controller.close();
             return;
           }
           
           const visionPrompt = prompt ? `Question: ${prompt}\n\nPlease analyze this image and provide a ${response_style} response.` : `Please describe this image in a ${response_style} manner.`;
-          const modelName = m === "blip" ? "bakllava:latest" : "llava:latest";
           
-          // Call Ollama with vision model
-          const ollamaResponse = await fetch("http://localhost:11434/api/generate", {
+          // Call Ollama with llava model
+          const ollamaResponse = await fetch(`${OLLAMA_URL}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: modelName,
+              model: "llava:latest",
               prompt: visionPrompt,
               images: [image.replace(/^data:image\/[a-z]+;base64,/, '')], // Remove data URL prefix, keep only base64
               stream: true,
@@ -44,7 +211,11 @@ export async function POST(req: Request) {
           });
           
           if (!ollamaResponse.ok || !ollamaResponse.body) {
-            throw new Error(`Ollama vision model error ${ollamaResponse.status}`);
+            const errorText = await ollamaResponse.text().catch(() => "Unknown error");
+            if (ollamaResponse.status === 0 || errorText.includes('fetch failed') || errorText.includes('ECONNREFUSED')) {
+              throw new Error(`Ollama is not running or not accessible at ${OLLAMA_URL}. Please make sure Ollama is installed and running.`);
+            }
+            throw new Error(`Ollama vision model error ${ollamaResponse.status}: ${errorText}`);
           }
           
           const reader = ollamaResponse.body.getReader();
@@ -68,7 +239,12 @@ export async function POST(req: Request) {
           }
           controller.close();
         } catch (error: any) {
-          const errorMsg = `[${m.toUpperCase()} Error] Failed to process image: ${error.message}. Please try again.`;
+          let errorMsg: string;
+          if (error.message && (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED') || error.message.includes('not running'))) {
+            errorMsg = `[LLaVA Error] Ollama is not running or not accessible at ${OLLAMA_URL}. Please make sure Ollama is installed and running, then try again.`;
+          } else {
+            errorMsg = `[LLaVA Error] Failed to process image: ${error.message}. Please try again.`;
+          }
           send(errorMsg);
           controller.close();
         }

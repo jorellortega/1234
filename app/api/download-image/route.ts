@@ -17,10 +17,16 @@ export async function GET(request: Request) {
     
     const blob = await response.blob()
     
+    // Get the content type from the original response or default to image/png
+    const contentType = response.headers.get('content-type') || 'image/png'
+    
     return new NextResponse(blob, {
       headers: {
-        'Content-Type': 'image/png',
-        'Content-Disposition': `attachment; filename="Infinito-Image.png"`,
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="Infinito-Image-${Date.now()}.png"`,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
       },
     })
   } catch (error) {

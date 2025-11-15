@@ -4,11 +4,12 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Home, BookUser, BrainCircuit, User, LogOut, CreditCard, RefreshCw, Wand2, Image as ImageIcon, Upload, X, Eye, EyeOff, Check, Loader2, Paintbrush, Eraser, Square } from "lucide-react"
+import { Home, BookUser, BrainCircuit, User, LogOut, CreditCard, RefreshCw, Wand2, Image as ImageIcon, Upload, X, Eye, EyeOff, Check, Loader2, Paintbrush, Eraser, Square, Crop, ZoomIn, ZoomOut, Move } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { CreditsPurchaseDialog } from "@/components/CreditsPurchaseDialog"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
+import { Switch } from "@/components/ui/switch"
 
 export default function ImageModePage() {
   // State
@@ -27,6 +28,8 @@ export default function ImageModePage() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false)
   const [imageAnalysisResult, setImageAnalysisResult] = useState<string | null>(null)
+  const [useImageAsReference, setUseImageAsReference] = useState(false)
+  const [storedImageReference, setStoredImageReference] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Save state
@@ -44,6 +47,30 @@ export default function ImageModePage() {
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [brushSize, setBrushSize] = useState(30)
+  
+  // Crop state
+  const [enableCrop, setEnableCrop] = useState(false)
+  const [showCrop, setShowCrop] = useState(false)
+  const cropCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const cropImageCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const cropImageRef = useRef<HTMLImageElement | null>(null)
+  const isCenteringRef = useRef(false)
+  const isInitialCropSetupRef = useRef(false)
+  const prevCropAreaRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const [cropStart, setCropStart] = useState<{ x: number; y: number } | null>(null)
+  const [cropEnd, setCropEnd] = useState<{ x: number; y: number } | null>(null)
+  const [isCropSelecting, setIsCropSelecting] = useState(false)
+  const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const [cropInputValues, setCropInputValues] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  const [isResizing, setIsResizing] = useState(false)
+  const [resizeHandle, setResizeHandle] = useState<string | null>(null)
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; cropX: number; cropY: number; cropWidth: number; cropHeight: number } | null>(null)
+  // Zoom and pan state for crop tool
+  const [cropZoom, setCropZoom] = useState(1.0)
+  const [cropPan, setCropPan] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null)
+  const [originalImageSize, setOriginalImageSize] = useState<{ width: number; height: number } | null>(null)
   
   // Loading states
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
@@ -65,6 +92,59 @@ export default function ImageModePage() {
   // Panel visibility state
   const [showPanels, setShowPanels] = useState(false)
   
+  // Get supported aspect ratios for each model
+  const getSupportedRatios = (model: string): Array<{ value: string; label: string }> => {
+    const ratios: Record<string, Array<{ value: string; label: string }>> = {
+      'dalle_image': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1024:1792', label: '9:16 Portrait (1024×1792)' },
+        { value: '1792:1024', label: '16:9 Landscape (1792×1024)' }
+      ],
+      'gpt-image-1': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1024:1792', label: '9:16 Portrait (1024×1792)' },
+        { value: '1792:1024', label: '16:9 Landscape (1792×1024)' }
+      ],
+      'gen4_image': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1280:720', label: '16:9 Landscape (1280×720)' },
+        { value: '720:1280', label: '9:16 Portrait (720×1280)' },
+        { value: '1104:832', label: '4:3 Horizontal (1104×832)' },
+        { value: '832:1104', label: '3:4 Vertical (832×1104)' },
+        { value: '960:960', label: '1:1 Square (960×960)' },
+        { value: '1584:672', label: '21:9 Ultra Wide (1584×672)' }
+      ],
+      'gen4_image_turbo': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1280:720', label: '16:9 Landscape (1280×720)' },
+        { value: '720:1280', label: '9:16 Portrait (720×1280)' },
+        { value: '1104:832', label: '4:3 Horizontal (1104×832)' },
+        { value: '832:1104', label: '3:4 Vertical (832×1104)' },
+        { value: '960:960', label: '1:1 Square (960×960)' },
+        { value: '1584:672', label: '21:9 Ultra Wide (1584×672)' }
+      ],
+      'gemini_2.5_flash': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1280:720', label: '16:9 Landscape (1280×720)' },
+        { value: '720:1280', label: '9:16 Portrait (720×1280)' },
+        { value: '1104:832', label: '4:3 Horizontal (1104×832)' },
+        { value: '832:1104', label: '3:4 Vertical (832×1104)' },
+        { value: '960:960', label: '1:1 Square (960×960)' },
+        { value: '1584:672', label: '21:9 Ultra Wide (1584×672)' }
+      ],
+      'runway_image': [
+        { value: '1024:1024', label: '1:1 Square (1024×1024)' },
+        { value: '1280:720', label: '16:9 Landscape (1280×720)' },
+        { value: '720:1280', label: '9:16 Portrait (720×1280)' },
+        { value: '1104:832', label: '4:3 Horizontal (1104×832)' },
+        { value: '832:1104', label: '3:4 Vertical (832×1104)' },
+        { value: '960:960', label: '1:1 Square (960×960)' },
+        { value: '1584:672', label: '21:9 Ultra Wide (1584×672)' }
+      ]
+    }
+    return ratios[model] || ratios['gen4_image']
+  }
+
   // Save state to localStorage
   const saveGenerationState = () => {
     try {
@@ -120,6 +200,17 @@ export default function ImageModePage() {
     window.addEventListener('save-generation-state', handleSaveState)
     return () => window.removeEventListener('save-generation-state', handleSaveState)
   }, [prompt, enhancedPrompt, selectedImageModel, selectedLLM, imageRatio])
+
+  // Update aspect ratio when model changes to ensure it's valid
+  useEffect(() => {
+    const supportedRatios = getSupportedRatios(selectedImageModel)
+    const currentRatioValid = supportedRatios.some(r => r.value === imageRatio)
+    
+    if (!currentRatioValid && supportedRatios.length > 0) {
+      // Set to first supported ratio (usually square)
+      setImageRatio(supportedRatios[0].value)
+    }
+  }, [selectedImageModel, imageRatio])
 
   // Check authentication and restore state on mount
   useEffect(() => {
@@ -267,20 +358,15 @@ export default function ImageModePage() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          prompt: `You are an expert image prompt engineer. Enhance the following image generation prompt to be more detailed, artistic, and specific. Focus on:
-1. Visual details (lighting, composition, colors, textures)
-2. Mood and atmosphere
-3. Style and aesthetic
-4. Technical photography/art terms
-5. Composition and framing
+          prompt: `You are an expert image prompt engineer. Enhance the following image generation prompt by adding 2-3 key visual details (like lighting, colors, or style) while keeping the same meaning and length similar. Keep it concise - maximum 2-3 sentences. Do NOT write a long description.
 
 Original prompt: "${prompt}"
 
-Return ONLY the enhanced prompt without any explanation or extra text.`,
+Return ONLY the enhanced prompt without any explanation or extra text. Keep it short and similar to the original.`,
           mode: selectedLLM,
-          temperature: 0.8,
-          max_tokens: 300,
-          response_style: 'detailed'
+          temperature: 0.7,
+          max_tokens: 150,
+          response_style: 'concise'
         })
       })
 
@@ -383,6 +469,124 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       setImageGenerationProgress('Preparing request...')
       setProgressPercentage(20)
       
+      // Check if user wants to use the image as reference
+      let finalPrompt = prompt
+      if (useImageAsReference && selectedImage && imagePreview) {
+        // If we have stored analysis, use it
+        if (storedImageReference) {
+          finalPrompt = `${prompt}\n\nReference image description: ${storedImageReference}\n\nGenerate an image that matches the style, composition, and visual elements described above.`
+        } else {
+          // Need to analyze first
+          setImageGenerationProgress('Analyzing uploaded image for reference...')
+          setProgressPercentage(25)
+          
+          try {
+            const analysisResponse = await fetch('/api/generate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                prompt: 'Please describe this image in detail, focusing on visual elements, style, composition, colors, mood, and key features that would help generate a similar image.',
+                mode: 'blip',
+                temperature: 0.7,
+                max_tokens: 300,
+                response_style: 'detailed',
+                image: imagePreview
+              })
+            })
+            
+            if (analysisResponse.ok) {
+              const analysisData = await analysisResponse.json()
+              const imageDescription = analysisData.output || analysisData.response || ''
+              
+              // Extract the actual description (remove BLIP Analysis prefix if present)
+              let cleanDescription = imageDescription
+                .replace(/^\[BLIP Analysis\]\s*/i, '')
+                .replace(/^\[BLIP Error\].*/i, '')
+                .trim()
+              
+              if (cleanDescription && !cleanDescription.startsWith('[BLIP Error]')) {
+                // Store it for future use
+                setStoredImageReference(cleanDescription)
+                // Enhance the prompt with the image description
+                finalPrompt = `${prompt}\n\nReference image description: ${cleanDescription}\n\nGenerate an image that matches the style, composition, and visual elements described above.`
+                setImageGenerationProgress('Image analyzed, generating...')
+              } else {
+                // If analysis failed, just use the original prompt
+                console.warn('Image analysis failed, using original prompt')
+                setUseImageAsReference(false)
+              }
+            } else {
+              console.warn('Image analysis failed, using original prompt')
+              setUseImageAsReference(false)
+            }
+          } catch (analysisError) {
+            // If analysis fails, continue with original prompt
+            console.warn('Image analysis error:', analysisError)
+            setUseImageAsReference(false)
+          }
+        }
+      } else if (selectedImage && imagePreview) {
+        // Legacy keyword-based detection (kept for backward compatibility)
+        const promptLower = prompt.toLowerCase()
+        const imageReferenceKeywords = [
+          'like this', 'similar to this', 'like the uploaded image', 'like the image',
+          'similar to the image', 'based on this', 'like this image', 'similar image',
+          'generate like this', 'create like this', 'make like this'
+        ]
+        
+        const isReferencingImage = imageReferenceKeywords.some(keyword => promptLower.includes(keyword))
+        
+        if (isReferencingImage) {
+          // Automatically analyze the uploaded image first
+          setImageGenerationProgress('Analyzing uploaded image...')
+          setProgressPercentage(25)
+          
+          try {
+            const analysisResponse = await fetch('/api/generate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                prompt: 'Please describe this image in detail, focusing on visual elements, style, composition, colors, mood, and key features that would help generate a similar image.',
+                mode: 'blip',
+                temperature: 0.7,
+                max_tokens: 300,
+                response_style: 'detailed',
+                image: imagePreview
+              })
+            })
+            
+            if (analysisResponse.ok) {
+              const analysisData = await analysisResponse.json()
+              const imageDescription = analysisData.output || analysisData.response || ''
+              
+              // Extract the actual description (remove BLIP Analysis prefix if present)
+              let cleanDescription = imageDescription
+                .replace(/^\[BLIP Analysis\]\s*/i, '')
+                .replace(/^\[BLIP Error\].*/i, '')
+                .trim()
+              
+              if (cleanDescription && !cleanDescription.startsWith('[BLIP Error]')) {
+                // Enhance the prompt with the image description
+                finalPrompt = `${prompt}\n\nReference image description: ${cleanDescription}\n\nGenerate an image that matches the style, composition, and visual elements described above.`
+                setImageGenerationProgress('Image analyzed, generating...')
+              } else {
+                // If analysis failed, just use the original prompt
+                console.warn('Image analysis failed, using original prompt')
+              }
+            }
+          } catch (analysisError) {
+            // If analysis fails, continue with original prompt
+            console.warn('Image analysis error:', analysisError)
+          }
+        }
+      }
+      
       // Determine which API to use
       let apiEndpoint = '/api/runway-image'
       let modelName = 'RunwayML'
@@ -413,7 +617,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         return
       }
 
-      setImageGenerationProgress(`Sending to ${modelName}...`)
+      setImageGenerationProgress('GENERATING IMAGE...')
       setProgressPercentage(30)
       
       // Simulate progress during API call
@@ -432,14 +636,21 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       }
       const apiModel = modelMapping[selectedImageModel] || selectedImageModel
       
+      // Log what's being sent for debugging
+      console.log('[IMAGE GEN DEBUG] useImageAsReference:', useImageAsReference)
+      console.log('[IMAGE GEN DEBUG] storedImageReference:', storedImageReference ? 'exists' : 'null')
+      console.log('[IMAGE GEN DEBUG] Original prompt:', prompt)
+      console.log('[IMAGE GEN DEBUG] Final prompt being sent:', finalPrompt)
+      
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt: prompt,
+          prompt: finalPrompt,
           model: apiModel,
+          ratio: imageRatio,
         }),
       })
       
@@ -557,6 +768,8 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
     setSelectedImage(null)
     setImagePreview(null)
     setImageAnalysisResult(null)
+    setUseImageAsReference(false)
+    setStoredImageReference(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -610,7 +823,12 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
       const data = await response.json()
       const analysis = data.output || data.response || 'Analysis completed'
-      setImageAnalysisResult(analysis)
+      // Remove [BLIP Analysis] prefix if present
+      const cleanAnalysis = analysis.replace(/^\[BLIP Analysis\]\s*/i, '').trim()
+      setImageAnalysisResult(cleanAnalysis)
+      // Reset reference when new analysis is done (user needs to click button again)
+      setUseImageAsReference(false)
+      setStoredImageReference(null)
 
       // Refresh credits
       if (user?.id) {
@@ -621,6 +839,82 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       setError(error.message || 'Failed to analyze image')
     } finally {
       setIsAnalyzingImage(false)
+    }
+  }
+
+  // Handle using image as reference - just toggles the state
+  const handleUseImageAsReference = () => {
+    if (!selectedImage || !imagePreview) {
+      setError('Please upload an image first')
+      return
+    }
+
+    // If already using as reference, turn it off
+    if (useImageAsReference) {
+      setUseImageAsReference(false)
+      setStoredImageReference(null)
+      return
+    }
+
+    // If we have existing analysis, use it
+    if (imageAnalysisResult) {
+      const cleanAnalysis = imageAnalysisResult.replace(/\*\*/g, '').trim()
+      setUseImageAsReference(true)
+      setStoredImageReference(cleanAnalysis)
+      return
+    }
+
+    // Otherwise, just mark it as reference (will analyze when generating)
+    setUseImageAsReference(true)
+    setStoredImageReference(null) // Will be set when analyzing during generation
+  }
+
+  // Download image
+  const handleDownloadImage = async () => {
+    if (!imageUrl) {
+      setError('No image to download')
+      return
+    }
+
+    try {
+      // Use the server-side download endpoint to handle CORS issues
+      const downloadUrl = `/api/download-image?url=${encodeURIComponent(imageUrl)}`
+      
+      // Try iframe method first (works better on Mac)
+      const iframe = document.createElement('iframe')
+      iframe.style.display = 'none'
+      iframe.src = downloadUrl
+      document.body.appendChild(iframe)
+      
+      // Clean up iframe after a delay
+      setTimeout(() => {
+        document.body.removeChild(iframe)
+      }, 5000)
+      
+      // Also try the blob method as backup
+      try {
+        const response = await fetch(downloadUrl)
+        if (response.ok) {
+          const blob = await response.blob()
+          const blobUrl = window.URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = blobUrl
+          link.download = `infinito-image-${Date.now()}.png`
+          link.style.display = 'none'
+          document.body.appendChild(link)
+          link.click()
+          setTimeout(() => {
+            document.body.removeChild(link)
+            window.URL.revokeObjectURL(blobUrl)
+          }, 100)
+        }
+      } catch (blobError) {
+        // Iframe method should still work
+        console.log('Blob download method failed, using iframe method')
+      }
+    } catch (error: any) {
+      console.error('Download error:', error)
+      setError('Failed to download image. Please try right-clicking the image and selecting "Save Image As".')
     }
   }
 
@@ -647,6 +941,15 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
         throw new Error('Please log in to save images')
       }
 
+      // Get the image URL - use cropped version if crop is enabled and area is selected
+      let imageToSave = imageUrl
+      if (enableCrop && cropArea) {
+        const croppedImageUrl = await getCroppedImage()
+        if (croppedImageUrl) {
+          imageToSave = croppedImageUrl
+        }
+      }
+
       // Map frontend model names to API model names for saving
       const modelMapping: Record<string, string> = {
         'dalle_image': 'dall-e-3',
@@ -658,6 +961,20 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       }
       const apiModel = modelMapping[selectedImageModel] || selectedImageModel
 
+      // If it's a blob URL, we need to convert it to a data URL or upload it first
+      let finalImageUrl = imageToSave
+      if (imageToSave.startsWith('blob:')) {
+        // Convert blob URL to data URL
+        const response = await fetch(imageToSave)
+        const blob = await response.blob()
+        finalImageUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+      }
+
       const response = await fetch('/api/generations/save-media', {
         method: 'POST',
         headers: {
@@ -665,7 +982,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          mediaUrl: imageUrl,
+          mediaUrl: finalImageUrl,
           mediaType: 'image',
           prompt: promptToSave,
           model: apiModel
@@ -1201,6 +1518,910 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
     }
   }
 
+  // Crop canvas setup - only initialize default crop area, don't reset canvas size
+  useEffect(() => {
+    console.log('[CROP TOGGLE] showCrop changed:', {
+      showCrop,
+      hasImageUrl: !!imageUrl,
+      hasImageRef: !!cropImageRef.current,
+      imageComplete: cropImageRef.current?.complete
+    })
+    
+    if (!showCrop || !imageUrl || !cropImageRef.current) {
+      if (!showCrop) {
+        console.log('[CROP TOGGLE] Crop disabled, clearing state')
+      }
+      return
+    }
+
+    const img = cropImageRef.current
+    if (img && img.complete && img.offsetWidth > 0 && img.offsetHeight > 0) {
+      // Initialize crop area with default values (centered, 80% of image size) if not set
+      // Only initialize once when crop is first enabled
+      if (cropInputValues.width === 0 && cropInputValues.height === 0 && !cropArea) {
+        const defaultWidth = Math.floor(img.offsetWidth * 0.8)
+        const defaultHeight = Math.floor(img.offsetHeight * 0.8)
+        const defaultX = Math.floor((img.offsetWidth - defaultWidth) / 2)
+        const defaultY = Math.floor((img.offsetHeight - defaultHeight) / 2)
+        
+        const defaultArea = {
+          x: defaultX,
+          y: defaultY,
+          width: defaultWidth,
+          height: defaultHeight
+        }
+        console.log('[CROP INIT] ========== INITIALIZING CROP ==========')
+        console.log('[CROP INIT] Image dimensions:', {
+          offsetWidth: img.offsetWidth,
+          offsetHeight: img.offsetHeight,
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+          getBoundingClientRect: img.getBoundingClientRect()
+        })
+        console.log('[CROP INIT] Default crop area:', defaultArea)
+        const cropCenterX = defaultArea.x + defaultArea.width / 2
+        const cropCenterY = defaultArea.y + defaultArea.height / 2
+        console.log('[CROP INIT] Crop center:', {
+          x: cropCenterX,
+          y: cropCenterY
+        })
+        const imgCenterX = img.offsetWidth / 2
+        const imgCenterY = img.offsetHeight / 2
+        console.log('[CROP INIT] Image center (before transform):', {
+          x: imgCenterX,
+          y: imgCenterY
+        })
+        
+        // Keep image visually in place when crop is enabled
+        // Image is displayed at (0, 0) when crop is off, so keep it at (0, 0) when crop is enabled
+        // This ensures the image doesn't move when crop is turned on
+        console.log('[CROP INIT] Keeping image at pan (0, 0) to maintain visual position')
+        
+        isInitialCropSetupRef.current = true
+        setCropInputValues(defaultArea)
+        setCropArea(defaultArea)
+        // Keep pan at (0, 0) to maintain visual position, zoom at 1.0
+        setCropPan({ x: 0, y: 0 })
+        setCropZoom(1.0)
+        console.log('[CROP INIT] ========== INITIALIZATION COMPLETE ==========')
+        // Reset flag after a short delay to allow state to update
+        setTimeout(() => {
+          isInitialCropSetupRef.current = false
+          console.log('[CROP INIT] Initial setup flag cleared')
+        }, 200)
+      }
+    }
+  }, [showCrop, imageUrl])
+
+  // Draw crop selection overlay
+  useEffect(() => {
+    if (!showCrop || !cropCanvasRef.current) return
+
+    const canvas = cropCanvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Update canvas size - use crop area size if larger than image, otherwise use image size
+    const img = cropImageRef.current
+    let canvasWidth = 0
+    let canvasHeight = 0
+    
+    if (img && img.complete) {
+      const imgWidth = img.offsetWidth
+      const imgHeight = img.offsetHeight
+      
+      if (cropArea) {
+        // Canvas should be at least as large as the crop area
+        canvasWidth = Math.max(imgWidth, cropArea.x + cropArea.width)
+        canvasHeight = Math.max(imgHeight, cropArea.y + cropArea.height)
+        console.log('[CROP DEBUG] Canvas size calculation:', {
+          imgWidth,
+          imgHeight,
+          cropArea,
+          calculatedWidth: canvasWidth,
+          calculatedHeight: canvasHeight,
+          currentCanvasSize: { width: canvas.width, height: canvas.height }
+        })
+        
+        // Only update canvas size if it needs to be larger
+        if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+          console.log('[CROP DEBUG] Updating canvas size from', canvas.width, 'x', canvas.height, 'to', canvasWidth, 'x', canvasHeight)
+          canvas.width = canvasWidth
+          canvas.height = canvasHeight
+        }
+      } else {
+        // No crop area yet, use image size
+        if (canvas.width !== imgWidth || canvas.height !== imgHeight) {
+          canvasWidth = imgWidth
+          canvasHeight = imgHeight
+          console.log('[CROP DEBUG] Setting canvas to image size:', canvasWidth, 'x', canvasHeight)
+          canvas.width = canvasWidth
+          canvas.height = canvasHeight
+        }
+      }
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    const area = cropArea || (cropStart && cropEnd ? {
+      x: Math.min(cropStart.x, cropEnd.x),
+      y: Math.min(cropStart.y, cropEnd.y),
+      width: Math.abs(cropEnd.x - cropStart.x),
+      height: Math.abs(cropEnd.y - cropStart.y)
+    } : null)
+
+    if (area && area.width > 0 && area.height > 0) {
+      const { x, y, width, height } = area
+      console.log('[CROP DEBUG] Drawing crop area:', { x, y, width, height, canvasSize: { width: canvas.width, height: canvas.height } })
+
+      // Draw dark overlay
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+      // Clear the crop area
+      ctx.clearRect(x, y, width, height)
+
+      // Draw crop border
+      ctx.strokeStyle = '#10b981'
+      ctx.lineWidth = 2
+      ctx.setLineDash([5, 5])
+      ctx.strokeRect(x, y, width, height)
+      ctx.setLineDash([])
+
+      // Draw corner handles
+      const handleSize = 12
+      ctx.fillStyle = '#10b981'
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      
+      // Top-left
+      ctx.fillRect(x - handleSize/2, y - handleSize/2, handleSize, handleSize)
+      ctx.strokeRect(x - handleSize/2, y - handleSize/2, handleSize, handleSize)
+      // Top-right
+      ctx.fillRect(x + width - handleSize/2, y - handleSize/2, handleSize, handleSize)
+      ctx.strokeRect(x + width - handleSize/2, y - handleSize/2, handleSize, handleSize)
+      // Bottom-left
+      ctx.fillRect(x - handleSize/2, y + height - handleSize/2, handleSize, handleSize)
+      ctx.strokeRect(x - handleSize/2, y + height - handleSize/2, handleSize, handleSize)
+      // Bottom-right
+      ctx.fillRect(x + width - handleSize/2, y + height - handleSize/2, handleSize, handleSize)
+      ctx.strokeRect(x + width - handleSize/2, y + height - handleSize/2, handleSize, handleSize)
+    }
+  }, [showCrop, cropStart, cropEnd, cropArea])
+
+  // Get which handle is being clicked
+  const getHandleAt = (x: number, y: number, area: { x: number; y: number; width: number; height: number }): string | null => {
+    const handleSize = 12
+    const tolerance = handleSize / 2 + 5
+    
+    // Top-left
+    if (Math.abs(x - area.x) < tolerance && Math.abs(y - area.y) < tolerance) return 'tl'
+    // Top-right
+    if (Math.abs(x - (area.x + area.width)) < tolerance && Math.abs(y - area.y) < tolerance) return 'tr'
+    // Bottom-left
+    if (Math.abs(x - area.x) < tolerance && Math.abs(y - (area.y + area.height)) < tolerance) return 'bl'
+    // Bottom-right
+    if (Math.abs(x - (area.x + area.width)) < tolerance && Math.abs(y - (area.y + area.height)) < tolerance) return 'br'
+    
+    // Check if inside crop area (for moving)
+    if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {
+      return 'move'
+    }
+    
+    return null
+  }
+
+  // Crop selection handlers
+  const handleCropMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!cropCanvasRef.current) return
+    const rect = cropCanvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    // Check if clicking on existing crop area to resize
+    if (cropArea) {
+      const handle = getHandleAt(x, y, cropArea)
+      if (handle) {
+        if (handle === 'move') {
+          // Start moving the crop area
+          setResizeStart({ x, y, cropX: cropArea.x, cropY: cropArea.y, cropWidth: cropArea.width, cropHeight: cropArea.height })
+          setIsResizing(true)
+          setResizeHandle('move')
+        } else {
+          // Start resizing from a corner
+          setResizeStart({ x, y, cropX: cropArea.x, cropY: cropArea.y, cropWidth: cropArea.width, cropHeight: cropArea.height })
+          setIsResizing(true)
+          setResizeHandle(handle)
+        }
+        return
+      }
+    }
+
+    // Start new selection
+    setCropStart({ x, y })
+    setCropEnd({ x, y })
+    setIsCropSelecting(true)
+    setCropArea(null)
+  }
+
+  const handleCropMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!cropCanvasRef.current) return
+    const rect = cropCanvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    // Update cursor based on hover position
+    if (!isResizing && !isCropSelecting && cropArea) {
+      const handle = getHandleAt(x, y, cropArea)
+      if (handle === 'move') {
+        cropCanvasRef.current.style.cursor = 'move'
+      } else if (handle === 'tl' || handle === 'br') {
+        cropCanvasRef.current.style.cursor = 'nwse-resize'
+      } else if (handle === 'tr' || handle === 'bl') {
+        cropCanvasRef.current.style.cursor = 'nesw-resize'
+      } else {
+        cropCanvasRef.current.style.cursor = 'crosshair'
+      }
+    } else if (!isResizing && !isCropSelecting) {
+      cropCanvasRef.current.style.cursor = 'crosshair'
+    }
+
+    if (isResizing && resizeStart && resizeHandle && cropArea) {
+      const deltaX = x - resizeStart.x
+      const deltaY = y - resizeStart.y
+      let newArea = { ...cropArea }
+
+      switch (resizeHandle) {
+        case 'tl': // Top-left
+          newArea.x = Math.max(0, Math.min(resizeStart.cropX + deltaX, resizeStart.cropX + resizeStart.cropWidth - 10))
+          newArea.y = Math.max(0, Math.min(resizeStart.cropY + deltaY, resizeStart.cropY + resizeStart.cropHeight - 10))
+          newArea.width = resizeStart.cropX + resizeStart.cropWidth - newArea.x
+          newArea.height = resizeStart.cropY + resizeStart.cropHeight - newArea.y
+          break
+        case 'tr': // Top-right
+          newArea.y = Math.max(0, Math.min(resizeStart.cropY + deltaY, resizeStart.cropY + resizeStart.cropHeight - 10))
+          newArea.width = Math.max(10, resizeStart.cropWidth + deltaX)
+          newArea.height = resizeStart.cropY + resizeStart.cropHeight - newArea.y
+          break
+        case 'bl': // Bottom-left
+          newArea.x = Math.max(0, Math.min(resizeStart.cropX + deltaX, resizeStart.cropX + resizeStart.cropWidth - 10))
+          newArea.width = resizeStart.cropX + resizeStart.cropWidth - newArea.x
+          newArea.height = Math.max(10, resizeStart.cropHeight + deltaY)
+          break
+        case 'br': // Bottom-right
+          newArea.width = Math.max(10, resizeStart.cropWidth + deltaX)
+          newArea.height = Math.max(10, resizeStart.cropHeight + deltaY)
+          break
+        case 'move': // Move entire area
+          newArea.x = Math.max(0, Math.min(resizeStart.cropX + deltaX, rect.width - resizeStart.cropWidth))
+          newArea.y = Math.max(0, Math.min(resizeStart.cropY + deltaY, rect.height - resizeStart.cropHeight))
+          break
+      }
+
+      // Constrain to canvas bounds
+      if (newArea.x < 0) {
+        newArea.width += newArea.x
+        newArea.x = 0
+      }
+      if (newArea.y < 0) {
+        newArea.height += newArea.y
+        newArea.y = 0
+      }
+      if (newArea.x + newArea.width > rect.width) {
+        newArea.width = rect.width - newArea.x
+      }
+      if (newArea.y + newArea.height > rect.height) {
+        newArea.height = rect.height - newArea.y
+      }
+
+      if (newArea.width > 10 && newArea.height > 10) {
+        setCropArea(newArea)
+        setCropInputValues(newArea)
+      }
+    } else if (isCropSelecting && cropStart) {
+      setCropEnd({ x, y })
+    }
+  }
+
+  const handleCropMouseUp = () => {
+    if (isCropSelecting && cropStart && cropEnd) {
+      const x = Math.min(cropStart.x, cropEnd.x)
+      const y = Math.min(cropStart.y, cropEnd.y)
+      const width = Math.abs(cropEnd.x - cropStart.x)
+      const height = Math.abs(cropEnd.y - cropStart.y)
+
+      if (width > 10 && height > 10) {
+        const newArea = { x, y, width, height }
+        setCropArea(newArea)
+        setCropInputValues(newArea)
+      }
+    }
+    
+    setIsCropSelecting(false)
+    setIsResizing(false)
+    setResizeHandle(null)
+    setResizeStart(null)
+  }
+
+  // Extract cropped image with zoom/pan support
+  const getCroppedImage = async (): Promise<string | null> => {
+    console.log('[CROP DEBUG] getCroppedImage called')
+    console.log('[CROP DEBUG] imageUrl:', imageUrl)
+    console.log('[CROP DEBUG] cropArea:', cropArea)
+    console.log('[CROP DEBUG] originalImageSize:', originalImageSize)
+    console.log('[CROP DEBUG] cropZoom:', cropZoom)
+    console.log('[CROP DEBUG] cropPan:', cropPan)
+    
+    if (!imageUrl || !cropArea || !cropImageRef.current || !originalImageSize) {
+      console.log('[CROP DEBUG] Missing required data, returning original imageUrl')
+      return imageUrl
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      
+      const currentImageUrl = imageUrl
+      const isExternalUrl = currentImageUrl.startsWith('http://') || currentImageUrl.startsWith('https://')
+      
+      if (isExternalUrl) {
+        const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(currentImageUrl)}`
+        img.src = proxyUrl
+      } else {
+        img.src = currentImageUrl
+      }
+
+      img.onload = () => {
+        console.log('[CROP DEBUG] Image loaded, natural size:', img.width, 'x', img.height)
+        
+        const displayedImg = cropImageRef.current
+        if (!displayedImg) {
+          console.log('[CROP DEBUG] No displayed image ref')
+          resolve(imageUrl)
+          return
+        }
+
+        // Get displayed image dimensions
+        const displayedWidth = displayedImg.offsetWidth
+        const displayedHeight = displayedImg.offsetHeight
+        console.log('[CROP DEBUG] Displayed size:', displayedWidth, 'x', displayedHeight)
+        
+        // Calculate scale from displayed to original
+        const displayToOriginalScaleX = originalImageSize.width / displayedWidth
+        const displayToOriginalScaleY = originalImageSize.height / displayedHeight
+        console.log('[CROP DEBUG] Scale factors:', { displayToOriginalScaleX, displayToOriginalScaleY })
+        
+        // Calculate source coordinates accounting for zoom/pan
+        const sourceX = (cropArea.x - cropPan.x) / cropZoom
+        const sourceY = (cropArea.y - cropPan.y) / cropZoom
+        const sourceWidth = cropArea.width / cropZoom
+        const sourceHeight = cropArea.height / cropZoom
+        console.log('[CROP DEBUG] Source coordinates (displayed space):', { sourceX, sourceY, sourceWidth, sourceHeight })
+        
+        // Convert to original image coordinates
+        const actualX = sourceX * displayToOriginalScaleX
+        const actualY = sourceY * displayToOriginalScaleY
+        const actualWidth = sourceWidth * displayToOriginalScaleX
+        const actualHeight = sourceHeight * displayToOriginalScaleY
+        console.log('[CROP DEBUG] Actual coordinates (original image):', { actualX, actualY, actualWidth, actualHeight })
+        
+        // Ensure we don't go outside image bounds
+        const clampedX = Math.max(0, Math.min(actualX, img.width - 1))
+        const clampedY = Math.max(0, Math.min(actualY, img.height - 1))
+        const clampedWidth = Math.min(actualWidth, img.width - clampedX)
+        const clampedHeight = Math.min(actualHeight, img.height - clampedY)
+        console.log('[CROP DEBUG] Clamped coordinates:', { clampedX, clampedY, clampedWidth, clampedHeight })
+
+        // Create new canvas for cropped image at the requested crop size
+        const cropCanvas = document.createElement('canvas')
+        cropCanvas.width = cropArea.width  // Use crop area size (e.g., 1600x1600)
+        cropCanvas.height = cropArea.height
+        console.log('[CROP DEBUG] Crop canvas size:', cropCanvas.width, 'x', cropCanvas.height)
+        const ctx = cropCanvas.getContext('2d')
+        
+        if (ctx) {
+          // Draw the source area from original image, scaled to fit crop canvas
+          ctx.drawImage(
+            img,
+            clampedX, clampedY, clampedWidth, clampedHeight,
+            0, 0, cropArea.width, cropArea.height
+          )
+          console.log('[CROP DEBUG] Image drawn to canvas')
+          
+          // Convert to blob URL
+          cropCanvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob)
+              console.log('[CROP DEBUG] Cropped image created, blob size:', blob.size)
+              resolve(url)
+            } else {
+              console.log('[CROP DEBUG] Failed to create blob')
+              resolve(imageUrl)
+            }
+          }, 'image/png')
+        } else {
+          console.log('[CROP DEBUG] Failed to get canvas context')
+          resolve(imageUrl)
+        }
+      }
+
+      img.onerror = (error) => {
+        console.error('[CROP DEBUG] Image load error:', error)
+        resolve(imageUrl)
+      }
+    })
+  }
+
+  // Clear crop selection
+  const clearCrop = () => {
+    setCropStart(null)
+    setCropEnd(null)
+    setCropArea(null)
+    setIsCropSelecting(false)
+    setIsResizing(false)
+    setResizeHandle(null)
+    setResizeStart(null)
+    setCropInputValues({ x: 0, y: 0, width: 0, height: 0 })
+    setCropZoom(1.0)
+    setCropPan({ x: 0, y: 0 })
+    setIsPanning(false)
+    setPanStart(null)
+    isCenteringRef.current = false
+    isInitialCropSetupRef.current = false
+    prevCropAreaRef.current = null
+  }
+
+  // Handle pan start
+  const handlePanStart = (e: React.MouseEvent) => {
+    if (!cropArea) {
+      console.log('[PAN START] Skipped - no crop area')
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const startPos = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    console.log('[PAN START] Starting pan:', {
+      startPos,
+      currentPan: cropPan,
+      currentZoom: cropZoom,
+      cropArea
+    })
+    setPanStart(startPos)
+    setIsPanning(true)
+  }
+
+  // Handle pan move
+  const handlePanMove = (e: React.MouseEvent) => {
+    if (!isPanning || !panStart || !cropArea) return
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const currentX = e.clientX - rect.left
+    const currentY = e.clientY - rect.top
+    const deltaX = currentX - panStart.x
+    const deltaY = currentY - panStart.y
+    const newPan = {
+      x: cropPan.x + deltaX,
+      y: cropPan.y + deltaY
+    }
+    console.log('[PAN MOVE] Panning:', {
+      delta: { x: deltaX, y: deltaY },
+      oldPan: cropPan,
+      newPan
+    })
+    setCropPan(newPan)
+    setPanStart({ x: currentX, y: currentY })
+  }
+
+  // Handle pan end
+  const handlePanEnd = () => {
+    console.log('[PAN END] Ending pan, final pan:', cropPan)
+    setIsPanning(false)
+    setPanStart(null)
+  }
+
+  // Helper function to center image in crop frame for a given zoom level
+  const centerImageForZoom = (zoom: number) => {
+    if (!cropArea || !cropImageRef.current || !cropImageRef.current.complete) {
+      console.log('[ZOOM CENTER] Skipping - missing cropArea or image not ready:', {
+        hasCropArea: !!cropArea,
+        hasImage: !!cropImageRef.current,
+        imageComplete: cropImageRef.current?.complete
+      })
+      return
+    }
+    
+    const img = cropImageRef.current
+    const imgWidth = img.offsetWidth
+    const imgHeight = img.offsetHeight
+    const cropCenterX = cropArea.x + cropArea.width / 2
+    const cropCenterY = cropArea.y + cropArea.height / 2
+    const imgCenterX = imgWidth / 2
+    const imgCenterY = imgHeight / 2
+    
+    // Center the image in the crop frame: crop center - (scaled image center)
+    // Since transform origin is (0, 0), we translate by: cropCenter - (imgCenter * zoom)
+    const newPanX = cropCenterX - (imgCenterX * zoom)
+    const newPanY = cropCenterY - (imgCenterY * zoom)
+    
+    // Calculate where image center will be after transform
+    const finalImageCenterX = newPanX + (imgCenterX * zoom)
+    const finalImageCenterY = newPanY + (imgCenterY * zoom)
+    const centerOffsetX = finalImageCenterX - cropCenterX
+    const centerOffsetY = finalImageCenterY - cropCenterY
+    
+    console.log('[ZOOM CENTER] ========== CENTERING FOR ZOOM ==========')
+    console.log('[ZOOM CENTER] Zoom change:', {
+      oldZoom: cropZoom,
+      newZoom: zoom,
+      zoomDelta: zoom - cropZoom
+    })
+    console.log('[ZOOM CENTER] Crop frame:', {
+      area: cropArea,
+      center: { x: cropCenterX, y: cropCenterY }
+    })
+    console.log('[ZOOM CENTER] Image dimensions:', {
+      offsetWidth: imgWidth,
+      offsetHeight: imgHeight,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight
+    })
+    console.log('[ZOOM CENTER] Image center (local):', {
+      x: imgCenterX,
+      y: imgCenterY
+    })
+    console.log('[ZOOM CENTER] Scaled image center:', {
+      x: imgCenterX * zoom,
+      y: imgCenterY * zoom
+    })
+    console.log('[ZOOM CENTER] Pan calculation:', {
+      currentPan: { x: cropPan.x, y: cropPan.y },
+      calculatedPan: { x: newPanX, y: newPanY },
+      panDelta: { x: newPanX - cropPan.x, y: newPanY - cropPan.y },
+      formula: `pan = cropCenter(${cropCenterX}, ${cropCenterY}) - scaledImgCenter(${imgCenterX * zoom}, ${imgCenterY * zoom})`
+    })
+    console.log('[ZOOM CENTER] Verification - final image center:', {
+      x: finalImageCenterX,
+      y: finalImageCenterY,
+      cropCenter: { x: cropCenterX, y: cropCenterY },
+      offset: { x: centerOffsetX, y: centerOffsetY },
+      isCentered: Math.abs(centerOffsetX) < 0.1 && Math.abs(centerOffsetY) < 0.1
+    })
+    console.log('[ZOOM CENTER] =========================================')
+    
+    setCropPan({ x: newPanX, y: newPanY })
+  }
+
+  // Handle zoom with wheel - keep image centered in crop frame
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    if (!cropArea || !cropImageRef.current) {
+      console.log('[WHEEL ZOOM] Skipped - no crop area or image')
+      return
+    }
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -0.05 : 0.05  // Smaller increments
+    console.log('[WHEEL ZOOM] Wheel event:', {
+      deltaY: e.deltaY,
+      zoomDelta: delta,
+      currentZoom: cropZoom
+    })
+    setCropZoom(prev => {
+      const newZoom = Math.max(0.1, Math.min(5.0, prev + delta))
+      console.log('[WHEEL ZOOM] Zoom changing from', prev, 'to', newZoom)
+      // Center image for the new zoom level
+      centerImageForZoom(newZoom)
+      return newZoom
+    })
+  }
+
+  // Update crop area from input values - allow any size, crop frame is independent of image
+  const updateCropFromInputs = () => {
+    console.log('[CROP DEBUG] updateCropFromInputs called')
+    console.log('[CROP DEBUG] Input values:', cropInputValues)
+    
+    const { x, y, width, height } = cropInputValues
+    
+    // Allow any size and position - crop frame is independent of displayed image
+    // Minimum 10px for width/height, but no maximum constraint
+    // X and Y can be any value (even negative or beyond image bounds)
+    let constrainedX = x  // Don't constrain - allow any position
+    let constrainedY = y  // Don't constrain - allow any position
+    const constrainedWidth = Math.max(10, width)
+    const constrainedHeight = Math.max(10, height)
+    
+    // If crop is larger than displayed image, auto-position it at (0, 0) for visibility
+    const img = cropImageRef.current
+    if (img && img.complete) {
+      const imgWidth = img.offsetWidth
+      const imgHeight = img.offsetHeight
+      
+      // If crop is larger than image, position it at (0, 0) so it's visible
+      if (constrainedWidth > imgWidth) {
+        constrainedX = 0
+      }
+      if (constrainedHeight > imgHeight) {
+        constrainedY = 0
+      }
+      
+      // If crop fits within image and position is 0, center it
+      if (constrainedWidth <= imgWidth && constrainedHeight <= imgHeight && constrainedX === 0 && constrainedY === 0) {
+        constrainedX = Math.floor((imgWidth - constrainedWidth) / 2)
+        constrainedY = Math.floor((imgHeight - constrainedHeight) / 2)
+      }
+    }
+    
+    const newArea = {
+      x: constrainedX,
+      y: constrainedY,
+      width: constrainedWidth,
+      height: constrainedHeight
+    }
+    
+    console.log('[CROP DEBUG] New crop area:', newArea)
+    console.log('[CROP DEBUG] Previous cropArea:', cropArea)
+    
+    setCropArea(newArea)
+    setCropInputValues(newArea)
+    
+    // Reset zoom when crop SIZE changes significantly, image will be centered by useEffect
+    if (cropArea && (Math.abs(cropArea.width - newArea.width) > 100 || Math.abs(cropArea.height - newArea.height) > 100)) {
+      console.log('[CROP DEBUG] Resetting zoom due to significant crop size change')
+      setCropZoom(1)
+      // Pan will be recalculated by the useEffect that watches cropArea and cropZoom
+    }
+    
+    console.log('[CROP DEBUG] Crop area updated to:', newArea)
+  }
+
+  // Update input values when crop area changes (prevent infinite loop)
+  useEffect(() => {
+    if (cropArea) {
+      // Only update if values are actually different to prevent infinite loop
+      if (cropInputValues.x !== cropArea.x || 
+          cropInputValues.y !== cropArea.y || 
+          cropInputValues.width !== cropArea.width || 
+          cropInputValues.height !== cropArea.height) {
+        console.log('[CROP DEBUG] cropArea changed, updating input values:', cropArea)
+        setCropInputValues(cropArea)
+      }
+      
+      // When crop area SIZE changes, center the image in the crop frame
+      // Only adjust if width or height changed, not just position
+      const sizeChanged = !prevCropAreaRef.current || 
+        prevCropAreaRef.current.width !== cropArea.width || 
+        prevCropAreaRef.current.height !== cropArea.height
+      
+      if (cropImageRef.current && cropImageRef.current.complete && !isPanning && !isCenteringRef.current && !isInitialCropSetupRef.current && sizeChanged && prevCropAreaRef.current) {
+        const img = cropImageRef.current
+        const imgWidth = img.offsetWidth
+        const imgHeight = img.offsetHeight
+        
+        // Calculate the crop frame center
+        const oldCropCenterX = prevCropAreaRef.current.x + prevCropAreaRef.current.width / 2
+        const oldCropCenterY = prevCropAreaRef.current.y + prevCropAreaRef.current.height / 2
+        const cropCenterX = cropArea.x + cropArea.width / 2
+        const cropCenterY = cropArea.y + cropArea.height / 2
+        
+        // Image center in image-local coordinates (before transform)
+        const imgCenterX = imgWidth / 2
+        const imgCenterY = imgHeight / 2
+        
+        // Calculate where image center currently is (in container coordinates)
+        const currentImageCenterX = cropPan.x + (imgCenterX * cropZoom)
+        const currentImageCenterY = cropPan.y + (imgCenterY * cropZoom)
+        
+        // Calculate the offset from the old crop center to the current image center
+        // This offset represents where the user wants the image relative to the crop center
+        const offsetFromOldCenterX = currentImageCenterX - oldCropCenterX
+        const offsetFromOldCenterY = currentImageCenterY - oldCropCenterY
+        
+        // Maintain the same visual position relative to the new crop center
+        // The new image center should be at: new crop center + same offset
+        const targetImageCenterX = cropCenterX + offsetFromOldCenterX
+        const targetImageCenterY = cropCenterY + offsetFromOldCenterY
+        
+        // Calculate pan to achieve this: pan = targetImageCenter - (scaled image center)
+        const newPanX = targetImageCenterX - (imgCenterX * cropZoom)
+        const newPanY = targetImageCenterY - (imgCenterY * cropZoom)
+        
+        // Calculate where image center will be after transform
+        const finalImageCenterX = newPanX + (imgCenterX * cropZoom)
+        const finalImageCenterY = newPanY + (imgCenterY * cropZoom)
+        const centerOffsetX = finalImageCenterX - cropCenterX
+        const centerOffsetY = finalImageCenterY - cropCenterY
+        
+        console.log('[CROP SIZE CHANGE] ========== CROP SIZE CHANGED ==========')
+        console.log('[CROP SIZE CHANGE] Conditions check:', {
+          hasImage: !!cropImageRef.current,
+          imageComplete: cropImageRef.current?.complete,
+          isPanning,
+          isCentering: isCenteringRef.current,
+          isInitialSetup: isInitialCropSetupRef.current,
+          sizeChanged,
+          hasPrevArea: !!prevCropAreaRef.current
+        })
+        console.log('[CROP SIZE CHANGE] Crop area change:', {
+          oldCropArea: prevCropAreaRef.current,
+          newCropArea: cropArea,
+          sizeDelta: {
+            width: cropArea.width - prevCropAreaRef.current.width,
+            height: cropArea.height - prevCropAreaRef.current.height
+          },
+          positionDelta: {
+            x: cropArea.x - prevCropAreaRef.current.x,
+            y: cropArea.y - prevCropAreaRef.current.y
+          }
+        })
+        console.log('[CROP SIZE CHANGE] Crop center change:', {
+          oldCenter: { x: oldCropCenterX, y: oldCropCenterY },
+          newCenter: { x: cropCenterX, y: cropCenterY },
+          centerDelta: {
+            x: cropCenterX - oldCropCenterX,
+            y: cropCenterY - oldCropCenterY
+          }
+        })
+        console.log('[CROP SIZE CHANGE] Image dimensions:', {
+          offsetWidth: imgWidth,
+          offsetHeight: imgHeight,
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight
+        })
+        console.log('[CROP SIZE CHANGE] Image center (local):', {
+          x: imgCenterX,
+          y: imgCenterY
+        })
+        console.log('[CROP SIZE CHANGE] Current state:', {
+          currentPan: { x: cropPan.x, y: cropPan.y },
+          currentZoom: cropZoom,
+          currentImageCenter: { x: currentImageCenterX, y: currentImageCenterY }
+        })
+        console.log('[CROP SIZE CHANGE] Pan calculation:', {
+          oldCropCenter: { x: oldCropCenterX, y: oldCropCenterY },
+          newCropCenter: { x: cropCenterX, y: cropCenterY },
+          currentImageCenter: { x: currentImageCenterX, y: currentImageCenterY },
+          offsetFromOldCenter: { x: offsetFromOldCenterX, y: offsetFromOldCenterY },
+          targetImageCenter: { x: targetImageCenterX, y: targetImageCenterY },
+          scaledImgCenter: { x: imgCenterX * cropZoom, y: imgCenterY * cropZoom },
+          calculatedPan: { x: newPanX, y: newPanY },
+          panDelta: { x: newPanX - cropPan.x, y: newPanY - cropPan.y },
+          formula: `pan = targetImageCenter(${targetImageCenterX}, ${targetImageCenterY}) - scaledImgCenter(${imgCenterX * cropZoom}, ${imgCenterY * cropZoom})`
+        })
+        console.log('[CROP SIZE CHANGE] Verification - final image center:', {
+          x: finalImageCenterX,
+          y: finalImageCenterY,
+          cropCenter: { x: cropCenterX, y: cropCenterY },
+          offset: { x: centerOffsetX, y: centerOffsetY },
+          isCentered: Math.abs(centerOffsetX) < 0.1 && Math.abs(centerOffsetY) < 0.1
+        })
+        console.log('[CROP SIZE CHANGE] =====================================')
+        
+        prevCropAreaRef.current = cropArea
+        isCenteringRef.current = true
+        
+        // Update pan to center image in crop frame
+        setCropPan({ x: newPanX, y: newPanY })
+        
+        // Reset flag after a short delay to allow state update
+        setTimeout(() => {
+          isCenteringRef.current = false
+          console.log('[CROP SIZE CHANGE] Centering flag cleared')
+        }, 100)
+      } else if (sizeChanged) {
+        // First time setting crop area, just store it
+        console.log('[CROP SIZE CHANGE] First time setting crop area, storing:', cropArea)
+        prevCropAreaRef.current = cropArea
+      } else {
+        // Log why centering was skipped
+        if (sizeChanged) {
+          console.log('[CROP SIZE CHANGE] Skipped centering - conditions:', {
+            hasImage: !!cropImageRef.current,
+            imageComplete: cropImageRef.current?.complete,
+            isPanning,
+            isCentering: isCenteringRef.current,
+            isInitialSetup: isInitialCropSetupRef.current,
+            hasPrevArea: !!prevCropAreaRef.current
+          })
+        }
+      }
+      
+      // Scroll crop area into view if it extends beyond visible area
+      if (cropCanvasRef.current) {
+        const canvas = cropCanvasRef.current
+        const container = canvas.parentElement?.parentElement
+        if (container) {
+          // Check if crop area extends beyond visible area
+          const containerRect = container.getBoundingClientRect()
+          const cropRight = cropArea.x + cropArea.width
+          const cropBottom = cropArea.y + cropArea.height
+          
+          // Scroll to show crop area if needed
+          if (cropRight > containerRect.width || cropBottom > containerRect.height) {
+            container.scrollTo({
+              left: Math.max(0, cropArea.x - 50),
+              top: Math.max(0, cropArea.y - 50),
+              behavior: 'smooth'
+            })
+          }
+        }
+      }
+    }
+  }, [cropArea, cropZoom, isPanning])
+  
+  // Debug: Log crop input value changes (throttled to reduce spam)
+  // useEffect(() => {
+  //   console.log('[CROP DEBUG] cropInputValues changed:', cropInputValues)
+  // }, [cropInputValues])
+  
+  // Debug: Log zoom/pan changes (throttled to reduce spam)
+  useEffect(() => {
+    // Only log if zoom changed significantly (removed to reduce console spam)
+    // const timeoutId = setTimeout(() => {
+    //   console.log('[CROP DEBUG] Zoom set to:', cropZoom)
+    // }, 100)
+    // return () => clearTimeout(timeoutId)
+  }, [cropZoom])
+  
+  useEffect(() => {
+    // Log pan/zoom changes with detailed info
+    if (cropArea && cropImageRef.current && cropImageRef.current.complete) {
+      const img = cropImageRef.current
+      const imgWidth = img.offsetWidth
+      const imgHeight = img.offsetHeight
+      const imgCenterX = imgWidth / 2
+      const imgCenterY = imgHeight / 2
+      const cropCenterX = cropArea.x + cropArea.width / 2
+      const cropCenterY = cropArea.y + cropArea.height / 2
+      
+      // Calculate where image center actually is
+      const actualImageCenterX = cropPan.x + (imgCenterX * cropZoom)
+      const actualImageCenterY = cropPan.y + (imgCenterY * cropZoom)
+      const offsetFromCropCenterX = actualImageCenterX - cropCenterX
+      const offsetFromCropCenterY = actualImageCenterY - cropCenterY
+      
+      console.log('[PAN/ZOOM STATE] ========== STATE CHANGE ==========')
+      console.log('[PAN/ZOOM STATE] Pan:', cropPan)
+      console.log('[PAN/ZOOM STATE] Zoom:', cropZoom)
+      console.log('[PAN/ZOOM STATE] Transform:', `translate(${cropPan.x}px, ${cropPan.y}px) scale(${cropZoom})`)
+      console.log('[PAN/ZOOM STATE] Image dimensions:', {
+        offsetWidth: imgWidth,
+        offsetHeight: imgHeight
+      })
+      console.log('[PAN/ZOOM STATE] Crop frame:', {
+        area: cropArea,
+        center: { x: cropCenterX, y: cropCenterY }
+      })
+      console.log('[PAN/ZOOM STATE] Image center position:', {
+        local: { x: imgCenterX, y: imgCenterY },
+        scaled: { x: imgCenterX * cropZoom, y: imgCenterY * cropZoom },
+        actual: { x: actualImageCenterX, y: actualImageCenterY }
+      })
+      console.log('[PAN/ZOOM STATE] Centering status:', {
+        cropCenter: { x: cropCenterX, y: cropCenterY },
+        imageCenter: { x: actualImageCenterX, y: actualImageCenterY },
+        offset: { x: offsetFromCropCenterX, y: offsetFromCropCenterY },
+        isCentered: Math.abs(offsetFromCropCenterX) < 1 && Math.abs(offsetFromCropCenterY) < 1,
+        isCentering: isCenteringRef.current
+      })
+      console.log('[PAN/ZOOM STATE] ===================================')
+    } else {
+      console.log('[PAN/ZOOM STATE] State changed but crop not ready:', {
+        pan: cropPan,
+        zoom: cropZoom,
+        hasCropArea: !!cropArea,
+        hasImage: !!cropImageRef.current,
+        imageComplete: cropImageRef.current?.complete
+      })
+    }
+  }, [cropPan.x, cropPan.y, cropZoom, cropArea?.x, cropArea?.y, cropArea?.width, cropArea?.height])
+  
+  // Debug: Log original image size
+  useEffect(() => {
+    if (originalImageSize) {
+      console.log('[CROP DEBUG] Original image size set:', originalImageSize)
+    }
+  }, [originalImageSize])
+
   // Get image model display info
   const getImageModelInfo = (model: string) => {
     const models: Record<string, { cost: string, features: string }> = {
@@ -1487,23 +2708,43 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                         <p className="text-purple-300 text-sm font-medium">{selectedImage.name}</p>
                         <p className="text-purple-400 text-xs mb-2">{(selectedImage.size / 1024 / 1024).toFixed(2)} MB</p>
                         <p className="text-green-400 text-xs mb-4">✅ Image loaded! Ask a question about it below or click "Analyze Image" for a detailed description.</p>
-                        <Button
-                          onClick={handleAnalyzeImage}
-                          disabled={isAnalyzingImage}
-                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                        >
-                          {isAnalyzingImage ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                              Analyzing...
-                            </>
-                          ) : (
-                            <>
-                              <BrainCircuit className="h-4 w-4 mr-2" />
-                              Analyze Image with AI
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleAnalyzeImage}
+                            disabled={isAnalyzingImage}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white flex-1"
+                          >
+                            {isAnalyzingImage ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                                Analyzing...
+                              </>
+                            ) : (
+                              <>
+                                <BrainCircuit className="h-4 w-4 mr-2" />
+                                Analyze Image with AI
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            onClick={handleUseImageAsReference}
+                            disabled={isAnalyzingImage}
+                            className={`${useImageAsReference ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+                            size="sm"
+                          >
+                            {useImageAsReference ? (
+                              <>
+                                <Check className="h-4 w-4 mr-2" />
+                                Using as Reference
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon className="h-4 w-4 mr-2" />
+                                Use as Reference
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1511,9 +2752,29 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
                 {/* Image Analysis Result */}
                 {imageAnalysisResult && (
-                  <div className="mt-4 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
-                    <h3 className="text-green-400 text-sm font-semibold mb-2">AI Analysis Result:</h3>
-                    <p className="text-green-300 text-sm whitespace-pre-wrap">{imageAnalysisResult}</p>
+                  <div className="mt-4 p-4 bg-gray-900/20 border border-gray-500/30 rounded-lg">
+                    <h3 className="text-white text-sm font-semibold mb-2">AI Analysis Result:</h3>
+                    <p className="text-gray-300 text-sm whitespace-pre-wrap mb-3">{imageAnalysisResult.replace(/\*\*/g, '')}</p>
+                    <Button
+                      onClick={() => {
+                        setUseImageAsReference(true)
+                        setStoredImageReference(imageAnalysisResult.replace(/\*\*/g, '').trim())
+                      }}
+                      className={`w-full ${useImageAsReference && storedImageReference === imageAnalysisResult.replace(/\*\*/g, '').trim() ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+                      size="sm"
+                    >
+                      {useImageAsReference && storedImageReference === imageAnalysisResult.replace(/\*\*/g, '').trim() ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Using as Reference
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="h-4 w-4 mr-2" />
+                          Use This Image as Reference
+                        </>
+                      )}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1560,30 +2821,11 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {selectedImage && (
-                    <Button
-                      onClick={handleAnalyzeImage}
-                      disabled={isAnalyzingImage || !user}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
-                    >
-                      {isAnalyzingImage ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <BrainCircuit className="h-4 w-4 mr-2" />
-                          Analyze Image
-                        </>
-                      )}
-                    </Button>
-                  )}
                   <Button
                     onClick={enhancePromptWithLLM}
-                    disabled={!prompt.trim() || isEnhancingPrompt || !!selectedImage}
+                    disabled={!prompt.trim() || isEnhancingPrompt}
                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                    title={selectedImage ? "Clear the uploaded image first to enhance prompts" : "Enhance your prompt with AI"}
+                    title="Enhance your prompt with AI"
                   >
                     {isEnhancingPrompt ? (
                       <>
@@ -1608,20 +2850,29 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 {/* Aspect Ratio */}
                 <div>
                   <label className="text-purple-400 text-sm font-medium mb-2 block">Aspect Ratio</label>
-                  <Select value={imageRatio} onValueChange={setImageRatio}>
+                  <Select 
+                    value={imageRatio} 
+                    onValueChange={(value) => {
+                      setImageRatio(value)
+                    }}
+                  >
                     <SelectTrigger className="bg-black/30 border-purple-500/50 text-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-purple-500/50">
-                      <SelectItem value="1024:1024">1:1 Square</SelectItem>
-                      <SelectItem value="1024:1792">9:16 Portrait</SelectItem>
-                      <SelectItem value="1792:1024">16:9 Landscape</SelectItem>
-                      <SelectItem value="1536:640">21:9 Ultra Wide</SelectItem>
-                      <SelectItem value="640:1536">9:21 Tall</SelectItem>
+                      {getSupportedRatios(selectedImageModel).map((ratio) => (
+                        <SelectItem 
+                          key={ratio.value} 
+                          value={ratio.value}
+                          className="text-purple-300 hover:bg-purple-500/20"
+                        >
+                          {ratio.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <p className="text-purple-400/70 text-xs mt-2">
-                    Note: Some models may have limited ratio support
+                    Supported ratios for {selectedImageModel.replace('_', ' ').toUpperCase()}
                   </p>
                 </div>
                 
@@ -1699,7 +2950,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
             {/* Generated Image */}
             {imageUrl && (
-              <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30">
+              <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30 w-full max-w-full overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">Generated Image</h3>
                   {imageRatio && (
@@ -1710,7 +2961,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 </div>
                 
                 {/* Image Versions Thumbnails */}
-                {imageHistory.length > 1 && !showInpainting && (
+                {imageHistory.length > 1 && !showInpainting && !showCrop && (
                   <div className="mb-4 p-3 bg-black/30 rounded-lg border border-purple-500/20">
                     <p className="text-sm text-purple-300 mb-2 font-medium">Versions (click to view):</p>
                     <div className="flex gap-2 overflow-x-auto pb-2">
@@ -1755,7 +3006,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                   </div>
                 )}
                 
-                {!showInpainting ? (
+                {!showInpainting && !showCrop ? (
                   <>
                     <img 
                       key={`inpaint-${imageUrl}`} 
@@ -1773,53 +3024,470 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                       }}
                       style={{ imageRendering: 'auto' }}
                     />
-                    <div className="mt-4 flex gap-2 flex-wrap">
-                      <a 
-                        href={imageUrl} 
-                        download
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        Download Image
-                      </a>
-                      <Button
-                        onClick={() => setShowInpainting(true)}
-                        disabled={!user}
-                        className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
-                        variant="outline"
-                      >
-                        <Paintbrush className="h-4 w-4" />
-                        Inpaint Image
-                      </Button>
-                      <Button
-                        onClick={handleSaveImage}
-                        disabled={isSaving || saveStatus === 'saved' || !user}
-                        className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
-                        variant="outline"
-                      >
-                        {saveStatus === 'saving' ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : saveStatus === 'saved' ? (
-                          <>
-                            <Check className="h-4 w-4" />
-                            Saved!
-                          </>
-                        ) : (
-                          <>
-                            <BookUser className="h-4 w-4" />
-                            Save to Library
-                          </>
-                        )}
-                      </Button>
-                      {saveError && (
-                        <div className="w-full mt-2 text-sm text-red-400">
-                          {saveError}
+                    <div className="mt-4 space-y-3">
+                      {/* Crop Toggle */}
+                      <div className="flex items-center justify-between p-3 bg-black/30 rounded-lg border border-green-500/30">
+                        <div className="flex items-center gap-2">
+                          <Crop className="h-4 w-4 text-green-400" />
+                          <label htmlFor="crop-toggle" className="text-sm text-white cursor-pointer">
+                            Enable Crop Tool
+                          </label>
                         </div>
-                      )}
+                        <Switch
+                          id="crop-toggle"
+                          checked={enableCrop}
+                          onCheckedChange={(checked) => {
+                            if (checked && showInpainting) {
+                              setShowInpainting(false)
+                            }
+                            setEnableCrop(checked)
+                            if (checked) {
+                              setShowCrop(true)
+                            } else {
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2 flex-wrap">
+                        <Button
+                          onClick={handleDownloadImage}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                        >
+                          Download Image
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            if (enableCrop) {
+                              setEnableCrop(false)
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                            setShowInpainting(true)
+                          }}
+                          disabled={!user}
+                          className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          <Paintbrush className="h-4 w-4" />
+                          Inpaint Image
+                        </Button>
+                        <Button
+                          onClick={handleSaveImage}
+                          disabled={isSaving || saveStatus === 'saved' || !user}
+                          className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          {saveStatus === 'saving' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : saveStatus === 'saved' ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              Saved!
+                            </>
+                          ) : (
+                            <>
+                              <BookUser className="h-4 w-4" />
+                              Save to Library
+                            </>
+                          )}
+                        </Button>
+                        {saveError && (
+                          <div className="w-full mt-2 text-sm text-red-400">
+                            {saveError}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </>
+                ) : showCrop ? (
+                  <div className="space-y-4">
+                    {/* Crop Canvas */}
+                    <div 
+                      className="relative border border-green-500/50 rounded-lg overflow-auto bg-gray-900"
+                      onWheel={handleWheelZoom}
+                      style={{ 
+                        height: cropArea ? `${Math.max(400, Math.min(800, Math.max(cropArea.height, cropArea.y + cropArea.height) + 20))}px` : '400px',
+                        width: '100%',
+                        maxHeight: cropArea ? `${Math.max(800, Math.max(cropArea.height, cropArea.y + cropArea.height) + 100)}px` : '800px',
+                        maxWidth: '100%',
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        alignItems: 'flex-start',
+                        position: 'relative',
+                        boxSizing: 'border-box',
+                        // Allow scrolling when crop area extends beyond container
+                        overflow: 'auto'
+                      }}
+                    >
+                      <div className="relative" style={{ 
+                        position: 'relative', 
+                        minWidth: cropArea ? `${Math.max(cropArea.width, Math.max(0, cropArea.x) + cropArea.width)}px` : 'auto', 
+                        minHeight: cropArea ? `${Math.max(cropArea.height, Math.max(0, cropArea.y) + cropArea.height)}px` : 'auto',
+                        boxSizing: 'border-box',
+                        // Ensure the inner div expands to show the full crop area
+                        width: cropArea ? `${Math.max(cropArea.width, Math.max(0, cropArea.x) + cropArea.width)}px` : 'auto',
+                        height: cropArea ? `${Math.max(cropArea.height, Math.max(0, cropArea.y) + cropArea.height)}px` : 'auto'
+                      }}>
+                        {/* Display the actual image with zoom/pan */}
+                        <img
+                          ref={cropImageRef}
+                          src={imageUrl}
+                          alt="Crop"
+                          className="block"
+                          style={{ 
+                            imageRendering: 'auto',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto',
+                            transform: `translate(${cropPan.x}px, ${cropPan.y}px) scale(${cropZoom})`,
+                            transformOrigin: '0 0',
+                            cursor: isPanning ? 'grabbing' : (cropArea ? 'grab' : 'default'),
+                            userSelect: 'none'
+                          }}
+                          draggable={false}
+                          onLoad={(e) => {
+                            const img = e.target as HTMLImageElement
+                            // Store original image dimensions
+                            setOriginalImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+                            
+                            // Get displayed dimensions
+                            const displayedWidth = img.offsetWidth
+                            const displayedHeight = img.offsetHeight
+                            
+                            console.log('[IMAGE LOAD DEBUG] Image loaded:', {
+                              naturalSize: { width: img.naturalWidth, height: img.naturalHeight },
+                              displayedSize: { width: displayedWidth, height: displayedHeight },
+                              scaleFactor: {
+                                x: displayedWidth / img.naturalWidth,
+                                y: displayedHeight / img.naturalHeight
+                              },
+                              currentCropArea: cropArea,
+                              currentZoom: cropZoom,
+                              currentPan: cropPan,
+                              imageRect: img.getBoundingClientRect()
+                            })
+                            
+                            // Canvas size will be updated by the draw effect
+                          }}
+                          onMouseDown={(e) => {
+                            if (e.button === 0 && cropArea && !isResizing && !isCropSelecting) { // Left click
+                              handlePanStart(e)
+                            }
+                          }}
+                          onMouseMove={handlePanMove}
+                          onMouseUp={handlePanEnd}
+                          onMouseLeave={handlePanEnd}
+                        />
+                        {/* Overlay canvas for crop selection */}
+                        <canvas
+                          ref={cropCanvasRef}
+                          className="absolute top-0 left-0 block"
+                          style={{ 
+                            display: 'block',
+                            backgroundColor: 'transparent',
+                            cursor: isPanning ? 'grabbing' : (cropArea ? 'crosshair' : 'crosshair'),
+                            pointerEvents: isPanning ? 'none' : 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            if (!isPanning) {
+                              handleCropMouseDown(e)
+                            }
+                          }}
+                          onMouseMove={(e) => {
+                            if (!isPanning) {
+                              handleCropMouseMove(e)
+                            }
+                          }}
+                          onMouseUp={handleCropMouseUp}
+                          onMouseLeave={handleCropMouseUp}
+                        />
+                        <div className="absolute top-2 left-2 bg-black/70 text-white px-3 py-1 rounded text-xs z-10 pointer-events-none">
+                          {cropArea ? (
+                            <>Drag corners to resize crop • Drag image to pan • Scroll to zoom</>
+                          ) : (
+                            <>Drag to select crop area or enter dimensions</>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Crop Controls */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-black/30 rounded-lg border border-green-500/30">
+                        <div className="flex items-center gap-2">
+                          <Crop className="h-4 w-4 text-green-400" />
+                          <label htmlFor="crop-toggle-active" className="text-sm text-white cursor-pointer">
+                            Crop Tool Enabled
+                          </label>
+                        </div>
+                        <Switch
+                          id="crop-toggle-active"
+                          checked={enableCrop}
+                          onCheckedChange={(checked) => {
+                            setEnableCrop(checked)
+                            if (!checked) {
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                          }}
+                        />
+                      </div>
+                      
+                      {showCrop && (
+                        <div className="space-y-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                          <p className="text-green-400 text-sm font-medium">
+                            {cropArea ? (
+                              <>Crop Area: {Math.round(cropArea.width)} × {Math.round(cropArea.height)}px</>
+                            ) : (
+                              <>Set crop area by entering values or dragging on the image</>
+                            )}
+                          </p>
+                          
+                          {/* Pixel Input Fields */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">X Position</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.x) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] X input changed to:', val)
+                                  setCropInputValues({ ...cropInputValues, x: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Y Position</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.y) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Y input changed to:', val)
+                                  setCropInputValues({ ...cropInputValues, y: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Width</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.width) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Width input changed to:', val, 'Current values:', cropInputValues)
+                                  setCropInputValues({ ...cropInputValues, width: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="Width"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Height</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.height) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Height input changed to:', val, 'Current values:', cropInputValues)
+                                  setCropInputValues({ ...cropInputValues, height: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="Height"
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Zoom and Pan Controls */}
+                          {cropArea && (
+                            <div className="space-y-2 pt-2 border-t border-green-500/20">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs text-green-300">Zoom: {Math.round(cropZoom * 100)}%</label>
+                                <div className="flex gap-1">
+                                  <Button
+                                    onClick={() => {
+                                      const newZoom = Math.max(0.1, cropZoom - 0.1)
+                                      console.log('[ZOOM BUTTON] Zoom out clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom
+                                      })
+                                      setCropZoom(newZoom)
+                                      centerImageForZoom(newZoom)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                  >
+                                    <ZoomOut className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      console.log('[ZOOM BUTTON] Reset clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom: 1.0
+                                      })
+                                      setCropZoom(1.0)
+                                      centerImageForZoom(1.0)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs"
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      const newZoom = Math.min(5.0, cropZoom + 0.1)
+                                      console.log('[ZOOM BUTTON] Zoom in clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom
+                                      })
+                                      setCropZoom(newZoom)
+                                      centerImageForZoom(newZoom)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                  >
+                                    <ZoomIn className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <input
+                                type="range"
+                                max="500"
+                                value={cropZoom * 100}
+                                onChange={(e) => {
+                                  const newZoom = parseFloat(e.target.value) / 100
+                                  console.log('[ZOOM SLIDER] Slider changed:', {
+                                    oldZoom: cropZoom,
+                                    newZoom,
+                                    rawValue: e.target.value
+                                  })
+                                  setCropZoom(newZoom)
+                                  centerImageForZoom(newZoom)
+                                }}
+                                className="w-full"
+                              />
+                              <div className="flex items-center gap-2">
+                                <Move className="h-3 w-3 text-green-400" />
+                                <span className="text-xs text-green-300">Drag image to pan • Scroll to zoom</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={clearCrop}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Clear Selection
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setEnableCrop(false)
+                            setShowCrop(false)
+                            clearCrop()
+                            isCenteringRef.current = false
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel Crop
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowCrop(false)
+                          }}
+                          variant="outline"
+                          className="border-gray-500/50 text-gray-400 hover:bg-gray-500/10"
+                        >
+                          Done
+                        </Button>
+                      </div>
+                      
+                      <div className="flex gap-2 flex-wrap">
+                        <a 
+                          href={imageUrl} 
+                          download
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                        >
+                          Download Original
+                        </a>
+                        <Button
+                          onClick={handleSaveImage}
+                          disabled={isSaving || saveStatus === 'saved' || !user || !cropArea}
+                          className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          {saveStatus === 'saving' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving Cropped...
+                            </>
+                          ) : saveStatus === 'saved' ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              Saved!
+                            </>
+                          ) : (
+                            <>
+                              <BookUser className="h-4 w-4" />
+                              Save Cropped Image
+                            </>
+                          )}
+                        </Button>
+                        {saveError && (
+                          <div className="w-full mt-2 text-sm text-red-400">
+                            {saveError}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {/* Inpainting Canvas */}
@@ -2136,23 +3804,43 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                         <p className="text-purple-300 text-sm font-medium">{selectedImage.name}</p>
                         <p className="text-purple-400 text-xs mb-2">{(selectedImage.size / 1024 / 1024).toFixed(2)} MB</p>
                         <p className="text-green-400 text-xs mb-4">✅ Image loaded! Ask a question about it below or click "Analyze Image" for a detailed description.</p>
-                        <Button
-                          onClick={handleAnalyzeImage}
-                          disabled={isAnalyzingImage}
-                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                        >
-                          {isAnalyzingImage ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                              Analyzing...
-                            </>
-                          ) : (
-                            <>
-                              <BrainCircuit className="h-4 w-4 mr-2" />
-                              Analyze Image with AI
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleAnalyzeImage}
+                            disabled={isAnalyzingImage}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white flex-1"
+                          >
+                            {isAnalyzingImage ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
+                                Analyzing...
+                              </>
+                            ) : (
+                              <>
+                                <BrainCircuit className="h-4 w-4 mr-2" />
+                                Analyze Image with AI
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            onClick={handleUseImageAsReference}
+                            disabled={isAnalyzingImage}
+                            className={`${useImageAsReference ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+                            size="sm"
+                          >
+                            {useImageAsReference ? (
+                              <>
+                                <Check className="h-4 w-4 mr-2" />
+                                Using as Reference
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon className="h-4 w-4 mr-2" />
+                                Use as Reference
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2160,9 +3848,29 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
                 {/* Image Analysis Result */}
                 {imageAnalysisResult && (
-                  <div className="mt-4 p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
-                    <h3 className="text-green-400 text-sm font-semibold mb-2">AI Analysis Result:</h3>
-                    <p className="text-green-300 text-sm whitespace-pre-wrap">{imageAnalysisResult}</p>
+                  <div className="mt-4 p-4 bg-gray-900/20 border border-gray-500/30 rounded-lg">
+                    <h3 className="text-white text-sm font-semibold mb-2">AI Analysis Result:</h3>
+                    <p className="text-gray-300 text-sm whitespace-pre-wrap mb-3">{imageAnalysisResult.replace(/\*\*/g, '')}</p>
+                    <Button
+                      onClick={() => {
+                        setUseImageAsReference(true)
+                        setStoredImageReference(imageAnalysisResult.replace(/\*\*/g, '').trim())
+                      }}
+                      className={`w-full ${useImageAsReference && storedImageReference === imageAnalysisResult.replace(/\*\*/g, '').trim() ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+                      size="sm"
+                    >
+                      {useImageAsReference && storedImageReference === imageAnalysisResult.replace(/\*\*/g, '').trim() ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Using as Reference
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="h-4 w-4 mr-2" />
+                          Use This Image as Reference
+                        </>
+                      )}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -2209,30 +3917,11 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {selectedImage && (
-                    <Button
-                      onClick={handleAnalyzeImage}
-                      disabled={isAnalyzingImage || !user}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
-                    >
-                      {isAnalyzingImage ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/40 border-t-white mr-2"></div>
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <BrainCircuit className="h-4 w-4 mr-2" />
-                          Analyze Image
-                        </>
-                      )}
-                    </Button>
-                  )}
                   <Button
                     onClick={enhancePromptWithLLM}
-                    disabled={!prompt.trim() || isEnhancingPrompt || !!selectedImage}
+                    disabled={!prompt.trim() || isEnhancingPrompt}
                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                    title={selectedImage ? "Clear the uploaded image first to enhance prompts" : "Enhance your prompt with AI"}
+                    title="Enhance your prompt with AI"
                   >
                     {isEnhancingPrompt ? (
                       <>
@@ -2257,20 +3946,29 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 {/* Aspect Ratio */}
                 <div>
                   <label className="text-purple-400 text-sm font-medium mb-2 block">Aspect Ratio</label>
-                  <Select value={imageRatio} onValueChange={setImageRatio}>
+                  <Select 
+                    value={imageRatio} 
+                    onValueChange={(value) => {
+                      setImageRatio(value)
+                    }}
+                  >
                     <SelectTrigger className="bg-black/30 border-purple-500/50 text-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-black/90 border-purple-500/50">
-                      <SelectItem value="1024:1024">1:1 Square</SelectItem>
-                      <SelectItem value="1024:1792">9:16 Portrait</SelectItem>
-                      <SelectItem value="1792:1024">16:9 Landscape</SelectItem>
-                      <SelectItem value="1536:640">21:9 Ultra Wide</SelectItem>
-                      <SelectItem value="640:1536">9:21 Tall</SelectItem>
+                      {getSupportedRatios(selectedImageModel).map((ratio) => (
+                        <SelectItem 
+                          key={ratio.value} 
+                          value={ratio.value}
+                          className="text-purple-300 hover:bg-purple-500/20"
+                        >
+                          {ratio.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <p className="text-purple-400/70 text-xs mt-2">
-                    Note: Some models may have limited ratio support
+                    Supported ratios for {selectedImageModel.replace('_', ' ').toUpperCase()}
                   </p>
                 </div>
                 
@@ -2348,7 +4046,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
 
             {/* Generated Image */}
             {imageUrl && (
-              <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30">
+              <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30 w-full max-w-full overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">Generated Image</h3>
                   {imageRatio && (
@@ -2359,7 +4057,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 </div>
                 
                 {/* Image Versions Thumbnails */}
-                {imageHistory.length > 1 && !showInpainting && (
+                {imageHistory.length > 1 && !showInpainting && !showCrop && (
                   <div className="mb-4 p-3 bg-black/30 rounded-lg border border-purple-500/20">
                     <p className="text-sm text-purple-300 mb-2 font-medium">Versions (click to view):</p>
                     <div className="flex gap-2 overflow-x-auto pb-2">
@@ -2404,7 +4102,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                   </div>
                 )}
                 
-                {!showInpainting ? (
+                {!showInpainting && !showCrop ? (
                   <>
                     <img 
                       key={`inpaint-${imageUrl}`} 
@@ -2422,53 +4120,470 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                       }}
                       style={{ imageRendering: 'auto' }}
                     />
-                    <div className="mt-4 flex gap-2 flex-wrap">
-                      <a 
-                        href={imageUrl} 
-                        download
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        Download Image
-                      </a>
-                      <Button
-                        onClick={() => setShowInpainting(true)}
-                        disabled={!user}
-                        className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
-                        variant="outline"
-                      >
-                        <Paintbrush className="h-4 w-4" />
-                        Inpaint Image
-                      </Button>
-                      <Button
-                        onClick={handleSaveImage}
-                        disabled={isSaving || saveStatus === 'saved' || !user}
-                        className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
-                        variant="outline"
-                      >
-                        {saveStatus === 'saving' ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : saveStatus === 'saved' ? (
-                          <>
-                            <Check className="h-4 w-4" />
-                            Saved!
-                          </>
-                        ) : (
-                          <>
-                            <BookUser className="h-4 w-4" />
-                            Save to Library
-                          </>
-                        )}
-                      </Button>
-                      {saveError && (
-                        <div className="w-full mt-2 text-sm text-red-400">
-                          {saveError}
+                    <div className="mt-4 space-y-3">
+                      {/* Crop Toggle */}
+                      <div className="flex items-center justify-between p-3 bg-black/30 rounded-lg border border-green-500/30">
+                        <div className="flex items-center gap-2">
+                          <Crop className="h-4 w-4 text-green-400" />
+                          <label htmlFor="crop-toggle" className="text-sm text-white cursor-pointer">
+                            Enable Crop Tool
+                          </label>
                         </div>
-                      )}
+                        <Switch
+                          id="crop-toggle"
+                          checked={enableCrop}
+                          onCheckedChange={(checked) => {
+                            if (checked && showInpainting) {
+                              setShowInpainting(false)
+                            }
+                            setEnableCrop(checked)
+                            if (checked) {
+                              setShowCrop(true)
+                            } else {
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2 flex-wrap">
+                        <Button
+                          onClick={handleDownloadImage}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                        >
+                          Download Image
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            if (enableCrop) {
+                              setEnableCrop(false)
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                            setShowInpainting(true)
+                          }}
+                          disabled={!user}
+                          className="px-4 py-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          <Paintbrush className="h-4 w-4" />
+                          Inpaint Image
+                        </Button>
+                        <Button
+                          onClick={handleSaveImage}
+                          disabled={isSaving || saveStatus === 'saved' || !user}
+                          className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          {saveStatus === 'saving' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : saveStatus === 'saved' ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              Saved!
+                            </>
+                          ) : (
+                            <>
+                              <BookUser className="h-4 w-4" />
+                              Save to Library
+                            </>
+                          )}
+                        </Button>
+                        {saveError && (
+                          <div className="w-full mt-2 text-sm text-red-400">
+                            {saveError}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </>
+                ) : showCrop ? (
+                  <div className="space-y-4">
+                    {/* Crop Canvas */}
+                    <div 
+                      className="relative border border-green-500/50 rounded-lg overflow-auto bg-gray-900"
+                      onWheel={handleWheelZoom}
+                      style={{ 
+                        height: cropArea ? `${Math.max(400, Math.min(800, Math.max(cropArea.height, cropArea.y + cropArea.height) + 20))}px` : '400px',
+                        width: '100%',
+                        maxHeight: cropArea ? `${Math.max(800, Math.max(cropArea.height, cropArea.y + cropArea.height) + 100)}px` : '800px',
+                        maxWidth: '100%',
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        alignItems: 'flex-start',
+                        position: 'relative',
+                        boxSizing: 'border-box',
+                        // Allow scrolling when crop area extends beyond container
+                        overflow: 'auto'
+                      }}
+                    >
+                      <div className="relative" style={{ 
+                        position: 'relative', 
+                        minWidth: cropArea ? `${Math.max(cropArea.width, Math.max(0, cropArea.x) + cropArea.width)}px` : 'auto', 
+                        minHeight: cropArea ? `${Math.max(cropArea.height, Math.max(0, cropArea.y) + cropArea.height)}px` : 'auto',
+                        boxSizing: 'border-box',
+                        // Ensure the inner div expands to show the full crop area
+                        width: cropArea ? `${Math.max(cropArea.width, Math.max(0, cropArea.x) + cropArea.width)}px` : 'auto',
+                        height: cropArea ? `${Math.max(cropArea.height, Math.max(0, cropArea.y) + cropArea.height)}px` : 'auto'
+                      }}>
+                        {/* Display the actual image with zoom/pan */}
+                        <img
+                          ref={cropImageRef}
+                          src={imageUrl}
+                          alt="Crop"
+                          className="block"
+                          style={{ 
+                            imageRendering: 'auto',
+                            maxHeight: '800px',
+                            maxWidth: '100%',
+                            height: 'auto',
+                            width: 'auto',
+                            transform: `translate(${cropPan.x}px, ${cropPan.y}px) scale(${cropZoom})`,
+                            transformOrigin: '0 0',
+                            cursor: isPanning ? 'grabbing' : (cropArea ? 'grab' : 'default'),
+                            userSelect: 'none'
+                          }}
+                          draggable={false}
+                          onLoad={(e) => {
+                            const img = e.target as HTMLImageElement
+                            // Store original image dimensions
+                            setOriginalImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+                            
+                            // Get displayed dimensions
+                            const displayedWidth = img.offsetWidth
+                            const displayedHeight = img.offsetHeight
+                            
+                            console.log('[IMAGE LOAD DEBUG] Image loaded:', {
+                              naturalSize: { width: img.naturalWidth, height: img.naturalHeight },
+                              displayedSize: { width: displayedWidth, height: displayedHeight },
+                              scaleFactor: {
+                                x: displayedWidth / img.naturalWidth,
+                                y: displayedHeight / img.naturalHeight
+                              },
+                              currentCropArea: cropArea,
+                              currentZoom: cropZoom,
+                              currentPan: cropPan,
+                              imageRect: img.getBoundingClientRect()
+                            })
+                            
+                            // Canvas size will be updated by the draw effect
+                          }}
+                          onMouseDown={(e) => {
+                            if (e.button === 0 && cropArea && !isResizing && !isCropSelecting) { // Left click
+                              handlePanStart(e)
+                            }
+                          }}
+                          onMouseMove={handlePanMove}
+                          onMouseUp={handlePanEnd}
+                          onMouseLeave={handlePanEnd}
+                        />
+                        {/* Overlay canvas for crop selection */}
+                        <canvas
+                          ref={cropCanvasRef}
+                          className="absolute top-0 left-0 block"
+                          style={{ 
+                            display: 'block',
+                            backgroundColor: 'transparent',
+                            cursor: isPanning ? 'grabbing' : (cropArea ? 'crosshair' : 'crosshair'),
+                            pointerEvents: isPanning ? 'none' : 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            if (!isPanning) {
+                              handleCropMouseDown(e)
+                            }
+                          }}
+                          onMouseMove={(e) => {
+                            if (!isPanning) {
+                              handleCropMouseMove(e)
+                            }
+                          }}
+                          onMouseUp={handleCropMouseUp}
+                          onMouseLeave={handleCropMouseUp}
+                        />
+                        <div className="absolute top-2 left-2 bg-black/70 text-white px-3 py-1 rounded text-xs z-10 pointer-events-none">
+                          {cropArea ? (
+                            <>Drag corners to resize crop • Drag image to pan • Scroll to zoom</>
+                          ) : (
+                            <>Drag to select crop area or enter dimensions</>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Crop Controls */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-black/30 rounded-lg border border-green-500/30">
+                        <div className="flex items-center gap-2">
+                          <Crop className="h-4 w-4 text-green-400" />
+                          <label htmlFor="crop-toggle-active" className="text-sm text-white cursor-pointer">
+                            Crop Tool Enabled
+                          </label>
+                        </div>
+                        <Switch
+                          id="crop-toggle-active"
+                          checked={enableCrop}
+                          onCheckedChange={(checked) => {
+                            setEnableCrop(checked)
+                            if (!checked) {
+                              setShowCrop(false)
+                              clearCrop()
+                            }
+                          }}
+                        />
+                      </div>
+                      
+                      {showCrop && (
+                        <div className="space-y-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                          <p className="text-green-400 text-sm font-medium">
+                            {cropArea ? (
+                              <>Crop Area: {Math.round(cropArea.width)} × {Math.round(cropArea.height)}px</>
+                            ) : (
+                              <>Set crop area by entering values or dragging on the image</>
+                            )}
+                          </p>
+                          
+                          {/* Pixel Input Fields */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">X Position</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.x) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] X input changed to:', val)
+                                  setCropInputValues({ ...cropInputValues, x: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Y Position</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.y) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Y input changed to:', val)
+                                  setCropInputValues({ ...cropInputValues, y: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Width</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.width) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Width input changed to:', val, 'Current values:', cropInputValues)
+                                  setCropInputValues({ ...cropInputValues, width: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="Width"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-green-300 mb-1 block">Height</label>
+                              <input
+                                type="number"
+                                value={Math.round(cropInputValues.height) || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0
+                                  console.log('[CROP DEBUG] Height input changed to:', val, 'Current values:', cropInputValues)
+                                  setCropInputValues({ ...cropInputValues, height: val })
+                                }}
+                                onBlur={updateCropFromInputs}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateCropFromInputs()
+                                  }
+                                }}
+                                className="w-full bg-black/50 border border-green-500/50 text-white px-2 py-1 rounded text-sm"
+                                placeholder="Height"
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Zoom and Pan Controls */}
+                          {cropArea && (
+                            <div className="space-y-2 pt-2 border-t border-green-500/20">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs text-green-300">Zoom: {Math.round(cropZoom * 100)}%</label>
+                                <div className="flex gap-1">
+                                  <Button
+                                    onClick={() => {
+                                      const newZoom = Math.max(0.1, cropZoom - 0.1)
+                                      console.log('[ZOOM BUTTON] Zoom out clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom
+                                      })
+                                      setCropZoom(newZoom)
+                                      centerImageForZoom(newZoom)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                  >
+                                    <ZoomOut className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      console.log('[ZOOM BUTTON] Reset clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom: 1.0
+                                      })
+                                      setCropZoom(1.0)
+                                      centerImageForZoom(1.0)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2 border-green-500/50 text-green-400 hover:bg-green-500/10 text-xs"
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      const newZoom = Math.min(5.0, cropZoom + 0.1)
+                                      console.log('[ZOOM BUTTON] Zoom in clicked:', {
+                                        oldZoom: cropZoom,
+                                        newZoom
+                                      })
+                                      setCropZoom(newZoom)
+                                      centerImageForZoom(newZoom)
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                  >
+                                    <ZoomIn className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <input
+                                type="range"
+                                max="500"
+                                value={cropZoom * 100}
+                                onChange={(e) => {
+                                  const newZoom = parseFloat(e.target.value) / 100
+                                  console.log('[ZOOM SLIDER] Slider changed:', {
+                                    oldZoom: cropZoom,
+                                    newZoom,
+                                    rawValue: e.target.value
+                                  })
+                                  setCropZoom(newZoom)
+                                  centerImageForZoom(newZoom)
+                                }}
+                                className="w-full"
+                              />
+                              <div className="flex items-center gap-2">
+                                <Move className="h-3 w-3 text-green-400" />
+                                <span className="text-xs text-green-300">Drag image to pan • Scroll to zoom</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={clearCrop}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Clear Selection
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setEnableCrop(false)
+                            setShowCrop(false)
+                            clearCrop()
+                            isCenteringRef.current = false
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel Crop
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowCrop(false)
+                          }}
+                          variant="outline"
+                          className="border-gray-500/50 text-gray-400 hover:bg-gray-500/10"
+                        >
+                          Done
+                        </Button>
+                      </div>
+                      
+                      <div className="flex gap-2 flex-wrap">
+                        <a 
+                          href={imageUrl} 
+                          download
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                        >
+                          Download Original
+                        </a>
+                        <Button
+                          onClick={handleSaveImage}
+                          disabled={isSaving || saveStatus === 'saved' || !user || !cropArea}
+                          className="px-4 py-2 border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 flex items-center gap-2"
+                          variant="outline"
+                        >
+                          {saveStatus === 'saving' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving Cropped...
+                            </>
+                          ) : saveStatus === 'saved' ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              Saved!
+                            </>
+                          ) : (
+                            <>
+                              <BookUser className="h-4 w-4" />
+                              Save Cropped Image
+                            </>
+                          )}
+                        </Button>
+                        {saveError && (
+                          <div className="w-full mt-2 text-sm text-red-400">
+                            {saveError}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {/* Inpainting Canvas */}

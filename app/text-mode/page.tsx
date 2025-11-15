@@ -12,6 +12,7 @@ import AITextEditor from "@/components/ai-text-editor"
 import { useToast } from "@/hooks/use-toast"
 import { HudPanel } from "@/components/hud-panel"
 import { AztecIcon } from "@/components/aztec-icon"
+import { ProgressiveResponse } from "@/components/ProgressiveResponse"
 
 // Enhanced markdown renderer to format text properly
 function formatMarkdownText(text: string): string {
@@ -108,6 +109,7 @@ export default function TextModePage() {
   const [selectedLLM, setSelectedLLM] = useState<string>("gpt-4o")
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(1000)
+  const [responseStyle, setResponseStyle] = useState<"concise" | "detailed">("detailed")
   
   // Loading states
   const [isGenerating, setIsGenerating] = useState(false)
@@ -135,14 +137,11 @@ export default function TextModePage() {
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number } | null>(null)
   const [showAITextEditor, setShowAITextEditor] = useState(false)
   
-  // Direct text editing state
-  const [isEditingResponse, setIsEditingResponse] = useState(false)
-  const [editedResponse, setEditedResponse] = useState("")
-  const [responseDisplayHeight, setResponseDisplayHeight] = useState<number | null>(null)
-  
   // Refs
   const responseEndRef = useRef<HTMLDivElement>(null)
   const responseTextareaRef = useRef<HTMLDivElement>(null)
+  const previousResponseVisible = useRef(false)
+  const progressUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // Debug: Monitor response state changes
   useEffect(() => {
@@ -155,23 +154,7 @@ export default function TextModePage() {
     console.log('[DEBUG STATE] Will render?', !!(response && response.trim()))
   }, [response])
 
-  // Scroll to bottom when response updates
-  useEffect(() => {
-    console.log('[DEBUG] Response changed. Length:', response?.length || 0)
-    console.log('[DEBUG] Response value:', response?.substring(0, 100) || 'empty')
-    if (response && response.trim() && responseEndRef.current) {
-      console.log('[DEBUG] Scrolling to response...')
-      setTimeout(() => {
-        if (responseEndRef.current) {
-          responseEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-          console.log('[DEBUG] Scroll completed')
-        }
-      }, 100)
-    } else {
-      console.log('[DEBUG] Not scrolling - response invalid or ref not available')
-      console.log('[DEBUG] responseEndRef.current:', responseEndRef.current)
-    }
-  }, [response])
+  // Removed auto-scroll - user stays at top of response during generation
 
   // Keyboard shortcut for AI text editing (Ctrl/Cmd + Shift + A)
   useEffect(() => {
@@ -357,17 +340,6 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
     return adminPreferences[`model_${modelKey}`] !== false
   }
 
-  // Copy response to clipboard
-  const copyResponse = async () => {
-    try {
-      await navigator.clipboard.writeText(response)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (error) {
-      console.error('Failed to copy:', error)
-    }
-  }
-
   // Generate text
   const handleGenerateText = async () => {
     console.log('[DEBUG] handleGenerateText called')
@@ -393,6 +365,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       setIsStreaming(true)
       setError(null)
       setResponse("")
+      previousResponseVisible.current = false // Reset visibility tracking
       setTextGenerationProgress('Preparing text generation...')
       setProgressPercentage(5)
 
@@ -485,7 +458,21 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
               fullText += content
               console.log('[DEBUG STREAM] Added chunk:', JSON.stringify(content.substring(0, 50)), 'chars, Total:', fullText.length)
               setResponse(fullText)
-              setProgressPercentage(Math.min(30 + (fullText.length / 50), 90))
+              // Smooth progress calculation - throttle updates to prevent glitching
+              // Clear any pending update
+              if (progressUpdateTimeoutRef.current) {
+                clearTimeout(progressUpdateTimeoutRef.current)
+              }
+              // Throttle progress updates to every 100ms for smoother display
+              progressUpdateTimeoutRef.current = setTimeout(() => {
+                // Estimate based on text length with a reasonable max
+                const estimatedMax = Math.max(maxTokens * 4, 2000) // Rough estimate based on tokens
+                const baseProgress = 30
+                const maxProgress = 90
+                // Smooth progress calculation - use text length as estimate
+                const textProgress = Math.min((fullText.length / estimatedMax) * (maxProgress - baseProgress), maxProgress - baseProgress)
+                setProgressPercentage(Math.min(Math.floor(baseProgress + textProgress), 90))
+              }, 100) // Update every 100ms max
             } else if (line.trim() === 'event: done' || line.includes('event: done')) {
               console.log('[DEBUG STREAM] Received event: done')
               break
@@ -581,6 +568,11 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
       console.log('[DEBUG] Generation complete. isGenerating set to false')
       setIsGenerating(false)
       setIsStreaming(false)
+      // Clear any pending progress updates
+      if (progressUpdateTimeoutRef.current) {
+        clearTimeout(progressUpdateTimeoutRef.current)
+        progressUpdateTimeoutRef.current = null
+      }
     }
   }
 
@@ -895,7 +887,7 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
                 </div>
               )}
 
-              <div className="w-full space-y-6">
+              <div className="w-full space-y-6 max-w-5xl mx-auto">
             {/* Model Selectors */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {/* Text Model Selector */}
@@ -1106,164 +1098,36 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
               )}
             </Button>
 
-            {/* Generated Response */}
-            {response && response.trim() && (
-              <div className="space-y-4 mt-6">
-                <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-white">AI Response</h3>
-                    <div className="flex gap-2">
-                      {!isEditingResponse ? (
-                        <>
-                          <Button
-                            onClick={() => {
-                              // Capture the height of the display div before switching
-                              if (responseTextareaRef.current) {
-                                const height = responseTextareaRef.current.offsetHeight
-                                setResponseDisplayHeight(height)
-                              }
-                              setEditedResponse(response)
-                              setIsEditingResponse(true)
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-green-500/50 text-green-400 hover:bg-green-500/20"
-                          >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Edit Text
-                          </Button>
-                          {selectedText && selectedText.trim().length > 0 && (
-                            <Button
-                              onClick={() => setShowAITextEditor(true)}
-                              variant="outline"
-                              size="sm"
-                              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/20"
-                            >
-                              <Bot className="h-4 w-4 mr-2" />
-                              Edit Selected ({selectedText.length} chars)
-                            </Button>
-                          )}
-                          <Button
-                            onClick={copyResponse}
-                            variant="ghost"
-                            size="sm"
-                            className="text-yellow-400 hover:bg-yellow-400/10"
-                          >
-                            {copied ? (
-                              <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Copied!
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy
-                              </>
-                            )}
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            onClick={() => {
-                              setResponse(editedResponse)
-                              setIsEditingResponse(false)
-                              toast({
-                                title: "Text Updated",
-                                description: "Your edits have been saved."
-                              })
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-green-500/50 text-green-400 hover:bg-green-500/20"
-                          >
-                            <Check className="h-4 w-4 mr-2" />
-                            Save Changes
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setIsEditingResponse(false)
-                              setEditedResponse("")
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-red-500/50 text-red-400 hover:bg-red-500/20"
-                          >
-                            Cancel
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="prose prose-invert max-w-none">
-                    {isEditingResponse ? (
-                      <div 
-                        className="min-h-[50px]"
-                        style={{
-                          minHeight: responseDisplayHeight ? `${responseDisplayHeight}px` : 'auto'
-                        }}
-                      >
-                        <Textarea
-                          value={editedResponse}
-                          onChange={(e) => setEditedResponse(e.target.value)}
-                          className="w-full bg-black/20 text-white border-green-500/10 rounded-lg p-4 text-base leading-relaxed whitespace-pre-wrap break-words resize-none"
-                          style={{
-                            wordSpacing: 'normal',
-                            whiteSpace: 'pre-wrap',
-                            fontFamily: 'inherit',
-                            fontSize: 'inherit',
-                            lineHeight: 'inherit',
-                            minHeight: responseDisplayHeight ? `${responseDisplayHeight}px` : '50px',
-                            height: 'auto'
-                          }}
-                          placeholder="Edit your response here..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <div 
-                          ref={responseTextareaRef}
-                          className="text-white leading-relaxed select-all cursor-text min-h-[50px] break-words p-4 bg-black/20 rounded-lg border border-green-500/10"
-                          style={{ 
-                            wordSpacing: 'normal', 
-                            whiteSpace: 'pre-wrap', 
-                            userSelect: 'text',
-                            WebkitUserSelect: 'text',
-                            MozUserSelect: 'text',
-                            msUserSelect: 'text'
-                          }}
-                          onMouseUp={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                          onKeyUp={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                          onSelect={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                        >
-                          <span dangerouslySetInnerHTML={{ __html: formatMarkdownText(response) }} />
-                          {isStreaming && (
-                            <span className="inline-block w-2 h-5 bg-yellow-400 ml-1 animate-pulse"></span>
-                          )}
-                        </div>
-                        
-                        {/* Selection Helper Text */}
-                        {response && !selectedText && (
-                          <div className="mt-2 p-2 bg-purple-500/5 rounded border border-purple-500/20">
-                            <p className="text-xs text-purple-400">
-                              💡 Tip: Click "Edit Text" to edit the full response, or select text to edit with AI
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div ref={responseEndRef} />
+            {/* Generated Response - Show when streaming or when response exists */}
+            {(isStreaming || (response && response.trim())) && (
+              <div 
+                className="space-y-4 mt-6" 
+                ref={(el) => {
+                  // Scroll response container into view at the top when it first appears
+                  if (el && isStreaming && response && !previousResponseVisible.current) {
+                    previousResponseVisible.current = true
+                    setTimeout(() => {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 100)
+                  }
+                }}
+              >
+                <div className="w-full max-w-3xl mx-auto">
+                  <ProgressiveResponse 
+                    content={response || ''} 
+                    responseStyle={responseStyle}
+                    prompt={prompt}
+                    model={selectedTextModel}
+                    isAdmin={isAdmin}
+                    isModelEnabled={isModelEnabled}
+                    isAuthenticated={!!user}
+                    onContentChange={async (newContent: string) => {
+                      console.log('🔄 [TEXT MODE] Updating response state. Old length:', response.length, 'New length:', newContent.length)
+                      setResponse(newContent)
+                    }}
+                  />
                 </div>
+                <div ref={responseEndRef} />
 
                 {/* Selection Actions */}
                 {selectedText && selectedText.trim().length > 0 && (
@@ -1626,164 +1490,36 @@ Return ONLY the enhanced prompt without any explanation or extra text.`,
               )}
             </Button>
 
-            {/* Generated Response */}
-            {response && response.trim() && (
-              <div className="space-y-4 mt-6">
-                <div className="bg-neutral-900/50 p-6 rounded-2xl border border-green-500/30 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-white">AI Response</h3>
-                    <div className="flex gap-2">
-                      {!isEditingResponse ? (
-                        <>
-                          <Button
-                            onClick={() => {
-                              // Capture the height of the display div before switching
-                              if (responseTextareaRef.current) {
-                                const height = responseTextareaRef.current.offsetHeight
-                                setResponseDisplayHeight(height)
-                              }
-                              setEditedResponse(response)
-                              setIsEditingResponse(true)
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-green-500/50 text-green-400 hover:bg-green-500/20"
-                          >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Edit Text
-                          </Button>
-                          {selectedText && selectedText.trim().length > 0 && (
-                            <Button
-                              onClick={() => setShowAITextEditor(true)}
-                              variant="outline"
-                              size="sm"
-                              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/20"
-                            >
-                              <Bot className="h-4 w-4 mr-2" />
-                              Edit Selected ({selectedText.length} chars)
-                            </Button>
-                          )}
-                          <Button
-                            onClick={copyResponse}
-                            variant="ghost"
-                            size="sm"
-                            className="text-yellow-400 hover:bg-yellow-400/10"
-                          >
-                            {copied ? (
-                              <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Copied!
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy
-                              </>
-                            )}
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            onClick={() => {
-                              setResponse(editedResponse)
-                              setIsEditingResponse(false)
-                              toast({
-                                title: "Text Updated",
-                                description: "Your edits have been saved."
-                              })
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-green-500/50 text-green-400 hover:bg-green-500/20"
-                          >
-                            <Check className="h-4 w-4 mr-2" />
-                            Save Changes
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setIsEditingResponse(false)
-                              setEditedResponse("")
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="border-red-500/50 text-red-400 hover:bg-red-500/20"
-                          >
-                            Cancel
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="prose prose-invert max-w-none">
-                    {isEditingResponse ? (
-                      <div 
-                        className="min-h-[50px]"
-                        style={{
-                          minHeight: responseDisplayHeight ? `${responseDisplayHeight}px` : 'auto'
-                        }}
-                      >
-                        <Textarea
-                          value={editedResponse}
-                          onChange={(e) => setEditedResponse(e.target.value)}
-                          className="w-full bg-black/20 text-white border-green-500/10 rounded-lg p-4 text-base leading-relaxed whitespace-pre-wrap break-words resize-none"
-                          style={{
-                            wordSpacing: 'normal',
-                            whiteSpace: 'pre-wrap',
-                            fontFamily: 'inherit',
-                            fontSize: 'inherit',
-                            lineHeight: 'inherit',
-                            minHeight: responseDisplayHeight ? `${responseDisplayHeight}px` : '50px',
-                            height: 'auto'
-                          }}
-                          placeholder="Edit your response here..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <div 
-                          ref={responseTextareaRef}
-                          className="text-white leading-relaxed select-all cursor-text min-h-[50px] break-words p-4 bg-black/20 rounded-lg border border-green-500/10"
-                          style={{ 
-                            wordSpacing: 'normal', 
-                            whiteSpace: 'pre-wrap', 
-                            userSelect: 'text',
-                            WebkitUserSelect: 'text',
-                            MozUserSelect: 'text',
-                            msUserSelect: 'text'
-                          }}
-                          onMouseUp={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                          onKeyUp={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                          onSelect={(e) => {
-                            e.stopPropagation()
-                            handleTextSelection()
-                          }}
-                        >
-                          <span dangerouslySetInnerHTML={{ __html: formatMarkdownText(response) }} />
-                          {isStreaming && (
-                            <span className="inline-block w-2 h-5 bg-yellow-400 ml-1 animate-pulse"></span>
-                          )}
-                        </div>
-                        
-                        {/* Selection Helper Text */}
-                        {response && !selectedText && (
-                          <div className="mt-2 p-2 bg-purple-500/5 rounded border border-purple-500/20">
-                            <p className="text-xs text-purple-400">
-                              💡 Tip: Click "Edit Text" to edit the full response, or select text to edit with AI
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div ref={responseEndRef} />
+            {/* Generated Response - Show when streaming or when response exists */}
+            {(isStreaming || (response && response.trim())) && (
+              <div 
+                className="space-y-4 mt-6" 
+                ref={(el) => {
+                  // Scroll response container into view at the top when it first appears
+                  if (el && isStreaming && response && !previousResponseVisible.current) {
+                    previousResponseVisible.current = true
+                    setTimeout(() => {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 100)
+                  }
+                }}
+              >
+                <div className="w-full max-w-3xl mx-auto">
+                  <ProgressiveResponse 
+                    content={response || ''} 
+                    responseStyle={responseStyle}
+                    prompt={prompt}
+                    model={selectedTextModel}
+                    isAdmin={isAdmin}
+                    isModelEnabled={isModelEnabled}
+                    isAuthenticated={!!user}
+                    onContentChange={async (newContent: string) => {
+                      console.log('🔄 [TEXT MODE] Updating response state. Old length:', response.length, 'New length:', newContent.length)
+                      setResponse(newContent)
+                    }}
+                  />
                 </div>
+                <div ref={responseEndRef} />
 
                 {/* Selection Actions */}
                 {selectedText && selectedText.trim().length > 0 && (

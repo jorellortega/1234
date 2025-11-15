@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json()
-    const { prompt, model = 'gen4_image' } = body
+    const { prompt, model = 'gen4_image', ratio = '1024:1024' } = body
 
     if (!prompt) {
       return NextResponse.json(
@@ -75,6 +75,10 @@ export async function POST(req: NextRequest) {
     // Validate model
     const validModels = ['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash', 'runway_image']
     const modelToUse = validModels.includes(model) ? model : 'gen4_image'
+
+    // Validate and use aspect ratio
+    const validRatios = ['1024:1024', '1280:720', '720:1280', '1104:832', '832:1104', '960:960', '1584:672']
+    const aspectRatio = validRatios.includes(ratio) ? ratio : '1024:1024'
 
     // Initialize Runway client
     const runway = getRunwayClient()
@@ -95,7 +99,7 @@ export async function POST(req: NextRequest) {
       const result = await runway.textToImage.create({
         model: runwayModelName,
         promptText: prompt,
-        ratio: '1024:1024', // Square format for images
+        ratio: aspectRatio as any,
       })
 
       // Wait for the generation to complete

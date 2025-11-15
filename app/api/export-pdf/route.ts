@@ -47,36 +47,7 @@ export async function GET(req: NextRequest) {
       ? paragraphs 
       : response.split(/\n/).filter(p => p.trim().length > 0)
     
-    // Add optional prompt header if provided
-    if (prompt && prompt.trim()) {
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Question:', pageMargin, yPos)
-      yPos += lineHeight + 2
-      
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(10)
-      const promptLines = doc.splitTextToSize(prompt, maxWidth)
-      for (const line of promptLines) {
-        if (yPos > pageHeight) {
-          doc.addPage()
-          yPos = pageMargin
-        }
-        doc.text(line, pageMargin, yPos)
-        yPos += lineHeight
-      }
-      
-      yPos += paragraphSpacing + 4
-      
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Response:', pageMargin, yPos)
-      yPos += lineHeight + 4
-      
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(11)
-    }
-    
+    // Only include AI response - no prompt/question
     // Add each paragraph with proper spacing
     for (let i = 0; i < finalParagraphs.length; i++) {
       const paragraph = finalParagraphs[i].trim()
